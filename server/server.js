@@ -340,6 +340,10 @@ app.use((error, req, res, next) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`Kannada Bharati API running on http://localhost:${port}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Kannada Bharati API running on http://localhost:${port}`);
+  });
+}
+
+export default app;

@@ -1,6 +1,6 @@
 import { supabase } from './supabase.js';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:4000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 const storageMap = {
   'kb-registration-submissions': { path: '/submissions/registration', normalize: normalizeRegistration },
