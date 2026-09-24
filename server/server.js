@@ -10,8 +10,22 @@ const app = express();
 const port = process.env.PORT || 4000;
 const adminEmail = (process.env.ADMIN_EMAIL || 'test@gmail.com').toLowerCase();
 const jwtSecret = process.env.JWT_SECRET || 'dev-only-change-this-secret';
+const allowedOrigins = new Set([
+  process.env.CLIENT_ORIGIN,
+  'http://127.0.0.1:5173',
+  'http://localhost:5173'
+].filter(Boolean));
 
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://127.0.0.1:5173' }));
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`Origin ${origin} is not allowed by CORS.`));
+  }
+}));
 app.use(express.json({ limit: '12mb' }));
 
 function asyncHandler(handler) {

@@ -1,8 +1,9 @@
-import { Outlet, NavLink, Link, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Gauge, Globe2, HeartHandshake, LogIn, LogOut, Menu, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
 import { getCurrentUser, isAdmin, setCurrentUser } from './utils/storage.js';
+import PageLoader from './components/PageLoader.jsx';
 
 const nav = [
   ['navAbout', '/about'],
@@ -17,8 +18,10 @@ const nav = [
 export default function App() {
   const [open, setOpen] = useState(false);
   const [user, setUser] = useState(() => getCurrentUser());
+  const [routeLoading, setRouteLoading] = useState(true);
   const { t, toggleLanguage } = useLanguage();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     function syncUser() {
@@ -33,6 +36,12 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    setRouteLoading(true);
+    const timer = window.setTimeout(() => setRouteLoading(false), 520);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname]);
+
   function handleLogout() {
     setCurrentUser(null);
     setOpen(false);
@@ -41,6 +50,7 @@ export default function App() {
 
   return (
     <div className="site-shell">
+      <PageLoader active={routeLoading} />
       <header className="site-header">
         <Link className="brand" to="/" onClick={() => setOpen(false)}>
           <img className="brand-logo" src="/assets/kannada-bharati-logo.png" alt="Kannada Bharati logo" />

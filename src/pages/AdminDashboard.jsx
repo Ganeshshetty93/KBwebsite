@@ -8,6 +8,11 @@ import { useLanguage } from '../context/LanguageContext.jsx';
 import { getCurrentUser, isAdmin, readJson } from '../utils/storage.js';
 import { apiAdminDashboard } from '../utils/api.js';
 
+const fallbackPrograms = [
+  ...paataShaaleLevels.map((item) => ({ ...item, category: 'Language', date: 'Sep 13, 2026 - Jun 20, 2027' })),
+  ...culturalClasses
+];
+
 function DataTable({ title, rows, columns, emptyText, action }) {
   return (
     <section className="admin-panel">
@@ -53,8 +58,8 @@ export default function AdminDashboard() {
     donations: readJson('kb-donation-submissions', []),
     volunteers: readJson('kb-volunteer-submissions', []),
     contacts: readJson('kb-contact-submissions', []),
-    classes: readJson('kb-admin-classes', []),
-    events: readJson('kb-admin-events', [])
+    classes: [],
+    events: []
   }));
   const [dataSource, setDataSource] = useState('local demo');
 
@@ -76,8 +81,8 @@ export default function AdminDashboard() {
             donations: readJson('kb-donation-submissions', []),
             volunteers: readJson('kb-volunteer-submissions', []),
             contacts: readJson('kb-contact-submissions', []),
-            classes: readJson('kb-admin-classes', []),
-            events: readJson('kb-admin-events', [])
+            classes: [],
+            events: []
           });
           setDataSource('local demo');
         }
@@ -92,12 +97,8 @@ export default function AdminDashboard() {
   }
 
   const { registrations, logins, donations, volunteers, contacts } = dashboard;
-  const programs = [
-    ...paataShaaleLevels.map((item) => ({ ...item, category: 'Language', date: 'Sep 13, 2026 - Jun 20, 2027' })),
-    ...culturalClasses,
-    ...dashboard.classes
-  ];
-  const allEvents = [...events, ...dashboard.events];
+  const programs = dashboard.classes.length ? dashboard.classes : fallbackPrograms;
+  const allEvents = dashboard.events.length ? dashboard.events : events;
 
   const totalDonated = donations.reduce((sum, item) => sum + Number(item.amount || 0), 0);
 

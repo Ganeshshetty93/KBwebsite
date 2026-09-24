@@ -5,16 +5,26 @@ import ClassCard from '../components/ClassCard.jsx';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
 import { culturalClasses, paataShaaleLevels } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
-import { getCurrentUser, isAdmin, readJson } from '../utils/storage.js';
+import { getCurrentUser, isAdmin } from '../utils/storage.js';
 import { apiReadRecords } from '../utils/api.js';
 
 const filters = ['All', 'Language', 'Music', 'Dance', 'Arts'];
+const fallbackClasses = [
+  ...paataShaaleLevels.map((item) => ({
+    ...item,
+    category: 'Language',
+    status: 'Online',
+    date: 'Sep 13, 2026 - Jun 20, 2027',
+    location: 'Virtual Google Classroom'
+  })),
+  ...culturalClasses
+];
 
 export default function Classes() {
   const [filter, setFilter] = useState('All');
   const [refreshKey, setRefreshKey] = useState(0);
   const [showAddClass, setShowAddClass] = useState(false);
-  const [adminClasses, setAdminClasses] = useState(() => readJson('kb-admin-classes', []));
+  const [dbClasses, setDbClasses] = useState([]);
   const { t } = useLanguage();
   const user = getCurrentUser();
 
@@ -22,30 +32,17 @@ export default function Classes() {
     let ignore = false;
     apiReadRecords('kb-admin-classes')
       .then((records) => {
-        if (!ignore) setAdminClasses(records);
+        if (!ignore) setDbClasses(records);
       })
       .catch(() => {
-        if (!ignore) setAdminClasses(readJson('kb-admin-classes', []));
+        if (!ignore) setDbClasses([]);
       });
     return () => {
       ignore = true;
     };
   }, [refreshKey]);
 
-  const allClasses = useMemo(
-    () => [
-      ...paataShaaleLevels.map((item) => ({
-        ...item,
-        category: 'Language',
-        status: 'Online',
-        date: 'Sep 13, 2026 - Jun 20, 2027',
-        location: 'Virtual Google Classroom'
-      })),
-      ...culturalClasses,
-      ...adminClasses
-    ],
-    [adminClasses]
-  );
+  const allClasses = useMemo(() => (dbClasses.length ? dbClasses : fallbackClasses), [dbClasses]);
 
   const visible = filter === 'All' ? allClasses : allClasses.filter((item) => item.category === filter);
 

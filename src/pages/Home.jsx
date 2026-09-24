@@ -4,7 +4,6 @@ import { BookOpen, HandHeart, Music2, UsersRound } from 'lucide-react';
 import PageHero from '../components/PageHero.jsx';
 import { events, heroStats } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
-import { readJson } from '../utils/storage.js';
 import { apiReadRecords } from '../utils/api.js';
 
 const cultureImages = [
@@ -47,23 +46,23 @@ export default function Home() {
     ['2026-27', t('classesOpen')],
     [t('seattleArea'), t('kannadigaFamilies')]
   ];
-  const [adminEvents, setAdminEvents] = useState(() => readJson('kb-admin-events', []));
+  const [dbEvents, setDbEvents] = useState([]);
 
   useEffect(() => {
     let ignore = false;
     apiReadRecords('kb-admin-events')
       .then((records) => {
-        if (!ignore) setAdminEvents(records);
+        if (!ignore) setDbEvents(records);
       })
       .catch(() => {
-        if (!ignore) setAdminEvents(readJson('kb-admin-events', []));
+        if (!ignore) setDbEvents([]);
       });
     return () => {
       ignore = true;
     };
   }, []);
 
-  const allEvents = [...events, ...adminEvents];
+  const allEvents = dbEvents.length ? dbEvents : events;
   const featureCards = [
     {
       icon: BookOpen,

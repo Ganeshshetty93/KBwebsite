@@ -52,6 +52,18 @@ export async function appendRecordAsync(key, payload) {
   }
 }
 
+export async function appendAdminRecordAsync(key, payload) {
+  const saved = await apiAppendRecord(key, payload);
+  if (!saved) {
+    throw new Error('Record was not saved to the database.');
+  }
+
+  const existing = readJson(key, []);
+  writeJson(key, [...existing, saved]);
+  window.dispatchEvent(new Event('kb-data-change'));
+  return saved;
+}
+
 export function getCurrentUser() {
   return readJson('kb-current-user', null);
 }

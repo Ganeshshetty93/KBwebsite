@@ -11,6 +11,14 @@ create table if not exists public.kb_users (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.kb_admins (
+  id uuid primary key default gen_random_uuid(),
+  email text unique not null,
+  name text not null default 'Admin',
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.kb_registrations (
   id uuid primary key default gen_random_uuid(),
   parent_name text,
@@ -80,6 +88,7 @@ create table if not exists public.kb_events (
 );
 
 alter table public.kb_users enable row level security;
+alter table public.kb_admins enable row level security;
 alter table public.kb_registrations enable row level security;
 alter table public.kb_logins enable row level security;
 alter table public.kb_donations enable row level security;
@@ -87,3 +96,21 @@ alter table public.kb_volunteers enable row level security;
 alter table public.kb_contacts enable row level security;
 alter table public.kb_classes enable row level security;
 alter table public.kb_events enable row level security;
+
+drop policy if exists "Public can read classes" on public.kb_classes;
+create policy "Public can read classes"
+on public.kb_classes
+for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "Public can read events" on public.kb_events;
+create policy "Public can read events"
+on public.kb_events
+for select
+to anon, authenticated
+using (true);
+
+insert into public.kb_admins (email, name, active)
+values ('test@gmail.com', 'Kannada Bharati Admin', true)
+on conflict (email) do update set active = excluded.active, name = excluded.name;

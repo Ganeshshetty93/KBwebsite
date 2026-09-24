@@ -4,31 +4,31 @@ import PageHero from '../components/PageHero.jsx';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
 import { events } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
-import { getCurrentUser, isAdmin, readJson } from '../utils/storage.js';
+import { getCurrentUser, isAdmin } from '../utils/storage.js';
 import { apiReadRecords } from '../utils/api.js';
 
 export default function Events() {
   const { t } = useLanguage();
   const [refreshKey, setRefreshKey] = useState(0);
   const [showAddEvent, setShowAddEvent] = useState(false);
-  const [adminEvents, setAdminEvents] = useState(() => readJson('kb-admin-events', []));
+  const [dbEvents, setDbEvents] = useState([]);
   const user = getCurrentUser();
 
   useEffect(() => {
     let ignore = false;
     apiReadRecords('kb-admin-events')
       .then((records) => {
-        if (!ignore) setAdminEvents(records);
+        if (!ignore) setDbEvents(records);
       })
       .catch(() => {
-        if (!ignore) setAdminEvents(readJson('kb-admin-events', []));
+        if (!ignore) setDbEvents([]);
       });
     return () => {
       ignore = true;
     };
   }, [refreshKey]);
 
-  const allEvents = [...events, ...adminEvents];
+  const allEvents = dbEvents.length ? dbEvents : events;
   const [featuredEvent, ...upcomingEvents] = allEvents;
   const uploadedPastPhotos = allEvents.filter((event) => event.photo).map((event) => ({
     title: event.title,
