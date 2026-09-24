@@ -1,16 +1,33 @@
 import { useState } from 'react';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { appendRecord } from '../utils/storage.js';
+import { cleanText, firstError, validateEmail, validateRequired } from '../utils/validation.js';
 
 export default function FormPanel({ type, fields, submitLabel = 'Submit', note }) {
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
   const { t } = useLanguage();
 
   function handleSubmit(event) {
     event.preventDefault();
+    setSaved(false);
+    setError('');
     const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const validationError = firstError(fields.map((field) => {
+      const value = payload[field.name];
+      if (field.required && field.type === 'email') return validateEmail(value);
+      if (field.required) return validateRequired(value, field.label);
+      if (field.type === 'email' && cleanText(value)) return validateEmail(value);
+      return '';
+    }));
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     const key = `kb-${type}-submissions`;
-    appendRecord(key, payload);
+    appendRecord(key, Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, cleanText(value)])));
     event.currentTarget.reset();
     setSaved(true);
   }
@@ -34,6 +51,7 @@ export default function FormPanel({ type, fields, submitLabel = 'Submit', note }
       ))}
       <button className="button primary" type="submit">{submitLabel}</button>
       {note && <p className="fine-print">{note}</p>}
+      {error && <p className="form-error">{error}</p>}
       {saved && <p className="success">{t('formSaved')}</p>}
     </form>
   );

@@ -9,7 +9,8 @@ const storageMap = {
   'kb-contact-submissions': { path: '/submissions/contact', normalize: normalizeContact },
   'kb-login-submissions': { path: '/submissions/login', normalize: normalizeLogin },
   'kb-admin-classes': { path: '/classes', normalize: normalizeClass },
-  'kb-admin-events': { path: '/events', normalize: normalizeEvent }
+  'kb-admin-events': { path: '/events', normalize: normalizeEvent },
+  'kb-admin-fundraisers': { path: '/fundraisers', normalize: normalizeFundraiser }
 };
 
 function getToken() {
@@ -59,7 +60,10 @@ function normalizeDonation(row) {
     ...normalizeBase(row),
     name: row.name,
     email: row.email,
-    amount: Number(row.amount || 0)
+    amount: Number(row.amount || 0),
+    causeId: row.cause_id || row.causeId,
+    cause: row.cause_title || row.cause || row.causeTitle,
+    paymentStatus: row.payment_status || row.paymentStatus || 'Pending'
   };
 }
 
@@ -118,6 +122,21 @@ export function normalizeEvent(row) {
   };
 }
 
+export function normalizeFundraiser(row) {
+  return {
+    ...normalizeBase(row),
+    title: row.title,
+    category: row.category,
+    beneficiary: row.beneficiary,
+    purpose: row.purpose,
+    goal: Number(row.goal || 0),
+    raised: Number(row.raised || 0),
+    deadline: row.deadline,
+    status: row.status || 'Active',
+    photo: row.photo
+  };
+}
+
 async function request(path, options = {}) {
   let response;
 
@@ -155,7 +174,7 @@ export async function apiAppendRecord(key, payload) {
   const config = storageMap[key];
   if (!config) return null;
 
-  if (key === 'kb-admin-classes' || key === 'kb-admin-events') {
+  if (key === 'kb-admin-classes' || key === 'kb-admin-events' || key === 'kb-admin-fundraisers') {
     await ensureAdminToken();
   }
 
@@ -179,7 +198,8 @@ export async function apiReadRecords(key) {
 
     const directReadTables = {
       'kb-admin-classes': 'kb_classes',
-      'kb-admin-events': 'kb_events'
+      'kb-admin-events': 'kb_events',
+      'kb-admin-fundraisers': 'kb_fundraisers'
     };
     const table = directReadTables[key];
     if (!table) throw error;
@@ -225,7 +245,8 @@ export async function apiAdminDashboard() {
     contacts: data.contacts.map(normalizeContact),
     logins: data.logins.map(normalizeLogin),
     classes: data.classes.map(normalizeClass),
-    events: data.events.map(normalizeEvent)
+    events: data.events.map(normalizeEvent),
+    fundraisers: (data.fundraisers || []).map(normalizeFundraiser)
   };
 }
 

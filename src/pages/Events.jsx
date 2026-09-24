@@ -7,6 +7,18 @@ import { useLanguage } from '../context/LanguageContext.jsx';
 import { getCurrentUser, isAdmin } from '../utils/storage.js';
 import { apiReadRecords } from '../utils/api.js';
 
+function getEventImage(event) {
+  if (event.photo) return event.photo;
+
+  const title = (event.title || '').toLowerCase();
+  if (title.includes('rajyotsava')) return '/assets/hero/events-hero.png';
+  if (title.includes('showcase')) return '/assets/feature/events-feature.png';
+  if (title.includes('class')) return '/assets/classes/kannada-language-class.png';
+  if (title.includes('music')) return '/assets/culture-feature/music-traditions-feature.png';
+  if (title.includes('dance')) return '/assets/culture-feature/classical-dance-feature.png';
+  return '/assets/feature/events-feature.png';
+}
+
 export default function Events() {
   const { t } = useLanguage();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -69,13 +81,7 @@ export default function Events() {
         {featuredEvent && (
           <article className="featured-event">
             <div className="featured-event-media">
-              {featuredEvent.photo ? (
-                <img src={featuredEvent.photo} alt={featuredEvent.title} />
-              ) : (
-                <div className="event-art">
-                  <span>ಕ</span>
-                </div>
-              )}
+              <img src={getEventImage(featuredEvent)} alt={featuredEvent.title} />
             </div>
             <div className="featured-event-copy">
               <span className="date-badge">{featuredEvent.month}</span>
@@ -89,13 +95,7 @@ export default function Events() {
         <div className="events-grid">
           {upcomingEvents.map((event) => (
             <article className="event-card" key={`${event.title}-${event.month}`}>
-              {event.photo ? (
-                <img className="event-card-photo" src={event.photo} alt={event.title} />
-              ) : (
-                <div className="event-card-pattern" aria-hidden="true">
-                  <span>{event.title.slice(0, 1)}</span>
-                </div>
-              )}
+              <img className="event-card-photo" src={getEventImage(event)} alt={event.title} />
               <div className="event-card-body">
                 <span className="date-badge">{event.month}</span>
                 <h3>{event.title}</h3>

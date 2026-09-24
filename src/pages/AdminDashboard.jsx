@@ -1,5 +1,5 @@
 import { Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import PageHero from '../components/PageHero.jsx';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
@@ -13,18 +13,61 @@ const fallbackPrograms = [
   ...culturalClasses
 ];
 
-function DataTable({ title, rows, columns, emptyText, action }) {
+function uniqueOptions(rows, key) {
+  return [...new Set(rows.map((row) => row[key]).filter(Boolean))].sort();
+}
+
+function DataTable({ title, rows, columns, emptyText, action, filters = [] }) {
+  const [query, setQuery] = useState('');
+  const [activeFilters, setActiveFilters] = useState({});
+  const visibleRows = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return rows.filter((row) => {
+      const matchesSearch = !normalizedQuery || Object.values(row)
+        .join(' ')
+        .toLowerCase()
+        .includes(normalizedQuery);
+      const matchesFilters = filters.every((filter) => {
+        const selected = activeFilters[filter.key] || 'All';
+        return selected === 'All' || String(row[filter.key] || '') === selected;
+      });
+
+      return matchesSearch && matchesFilters;
+    });
+  }, [activeFilters, filters, query, rows]);
+
   return (
     <section className="admin-panel">
       <div className="admin-panel-heading">
         <h2>{title}</h2>
         <div className="admin-panel-actions">
           {action}
-          <span>{rows.length}</span>
+          <span>{visibleRows.length}</span>
         </div>
+      </div>
+      <div className="admin-table-filters">
+        <label>
+          Search
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${title.toLowerCase()}`} />
+        </label>
+        {filters.map((filter) => (
+          <label key={filter.key}>
+            {filter.label}
+            <select
+              value={activeFilters[filter.key] || 'All'}
+              onChange={(event) => setActiveFilters((current) => ({ ...current, [filter.key]: event.target.value }))}
+            >
+              <option>All</option>
+              {filter.options.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </label>
+        ))}
       </div>
       {rows.length === 0 ? (
         <p className="fine-print">{emptyText}</p>
+      ) : visibleRows.length === 0 ? (
+        <p className="fine-print">No records match the selected filters.</p>
       ) : (
         <div className="table-scroll">
           <table>
@@ -34,7 +77,7 @@ function DataTable({ title, rows, columns, emptyText, action }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => (
+              {visibleRows.map((row, index) => (
                 <tr key={`${row.email || row.title || row.createdAt || index}-${index}`}>
                   {columns.map((column) => <td key={column.key}>{column.render ? column.render(row) : row[column.key] || '-'}</td>)}
                 </tr>
@@ -59,7 +102,8 @@ export default function AdminDashboard() {
     volunteers: readJson('kb-volunteer-submissions', []),
     contacts: readJson('kb-contact-submissions', []),
     classes: [],
-    events: []
+    events: [],
+    fundraisers: readJson('kb-admin-fundraisers', [])
   }));
   const [dataSource, setDataSource] = useState('local demo');
 
@@ -69,7 +113,10 @@ export default function AdminDashboard() {
     apiAdminDashboard()
       .then((records) => {
         if (!ignore) {
-          setDashboard(records);
+          setDashboard({
+            ...records,
+            fundraisers: records.fundraisers?.length ? records.fundraisers : readJson('kb-admin-fundraisers', [])
+          });
           setDataSource('Supabase');
         }
       })
@@ -82,7 +129,8 @@ export default function AdminDashboard() {
             volunteers: readJson('kb-volunteer-submissions', []),
             contacts: readJson('kb-contact-submissions', []),
             classes: [],
-            events: []
+            events: [],
+            fundraisers: readJson('kb-admin-fundraisers', [])
           });
           setDataSource('local demo');
         }
@@ -99,8 +147,19 @@ export default function AdminDashboard() {
   const { registrations, logins, donations, volunteers, contacts } = dashboard;
   const programs = dashboard.classes.length ? dashboard.classes : fallbackPrograms;
   const allEvents = dashboard.events.length ? dashboard.events : events;
+  const fundraisers = dashboard.fundraisers || [];
 
   const totalDonated = donations.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const registrationProgramOptions = uniqueOptions(registrations, 'program');
+  const donationCauseOptions = uniqueOptions(donations, 'cause');
+  const donationPaymentOptions = uniqueOptions(donations, 'paymentStatus');
+  const fundraiserCategoryOptions = uniqueOptions(fundraisers, 'category');
+  const fundraiserStatusOptions = uniqueOptions(fundraisers, 'status');
+  const classCategoryOptions = uniqueOptions(programs, 'category');
+  const eventMonthOptions = uniqueOptions(allEvents, 'month');
+  const volunteerInterestOptions = uniqueOptions(volunteers, 'interest');
+  const contactTopicOptions = uniqueOptions(contacts, 'topic');
+  const loginRoleOptions = uniqueOptions(logins, 'role');
 
   return (
     <>
@@ -131,12 +190,19 @@ export default function AdminDashboard() {
           <span>{t('eventDashboard')}</span>
           <strong>{allEvents.length}</strong>
         </article>
+        <article className="metric-card">
+          <span>Fund raising</span>
+          <strong>{fundraisers.length}</strong>
+        </article>
       </section>
       <section className="section admin-stack">
         <DataTable
           title={t('registrationDashboard')}
           rows={registrations}
           emptyText={t('noRecords')}
+          filters={[
+            { key: 'program', label: 'Program', options: registrationProgramOptions }
+          ]}
           columns={[
             { key: 'parentName', label: 'Name' },
             { key: 'studentName', label: 'Student' },
@@ -149,17 +215,50 @@ export default function AdminDashboard() {
           title={t('donationDashboard')}
           rows={donations}
           emptyText={t('noRecords')}
+          filters={[
+            { key: 'cause', label: 'Cause', options: donationCauseOptions },
+            { key: 'paymentStatus', label: 'Payment', options: donationPaymentOptions }
+          ]}
           columns={[
             { key: 'name', label: 'Name' },
             { key: 'email', label: 'Email' },
+            { key: 'cause', label: 'Cause' },
+            { key: 'paymentStatus', label: 'Payment' },
             { key: 'amount', label: 'Amount', render: (row) => `$${row.amount || 0}` },
             { key: 'createdAt', label: 'Date', render: (row) => row.createdAt ? new Date(row.createdAt).toLocaleString() : '-' }
+          ]}
+        />
+        <DataTable
+          title="Fund raising"
+          rows={fundraisers}
+          emptyText="No fundraising causes yet."
+          filters={[
+            { key: 'category', label: 'Type', options: fundraiserCategoryOptions },
+            { key: 'status', label: 'Status', options: fundraiserStatusOptions }
+          ]}
+          action={
+            <button className="admin-plus-button" type="button" aria-label="Add fundraising cause" onClick={() => setModalType('fundraiser')}>
+              <Plus size={18} />
+            </button>
+          }
+          columns={[
+            { key: 'title', label: 'Cause' },
+            { key: 'category', label: 'Type' },
+            { key: 'beneficiary', label: 'Beneficiary' },
+            { key: 'goal', label: 'Goal', render: (row) => `$${Number(row.goal || 0).toLocaleString()}` },
+            { key: 'raised', label: 'Raised', render: (row) => `$${Number(row.raised || 0).toLocaleString()}` },
+            { key: 'deadline', label: 'Deadline', render: (row) => row.deadline ? new Date(`${row.deadline}T00:00:00`).toLocaleDateString() : '-' },
+            { key: 'status', label: 'Status' },
+            { key: 'photo', label: 'Photo', render: (row) => row.photo ? <img className="table-thumb" src={row.photo} alt={row.title} /> : '-' }
           ]}
         />
         <DataTable
           title={t('classDashboard')}
           rows={programs}
           emptyText={t('noRecords')}
+          filters={[
+            { key: 'category', label: 'Type', options: classCategoryOptions }
+          ]}
           action={
             <button className="admin-plus-button" type="button" aria-label="Add class" onClick={() => setModalType('class')}>
               <Plus size={18} />
@@ -177,6 +276,9 @@ export default function AdminDashboard() {
           title={t('eventDashboard')}
           rows={allEvents}
           emptyText={t('noRecords')}
+          filters={[
+            { key: 'month', label: 'When', options: eventMonthOptions }
+          ]}
           action={
             <button className="admin-plus-button" type="button" aria-label="Add event" onClick={() => setModalType('event')}>
               <Plus size={18} />
@@ -193,6 +295,9 @@ export default function AdminDashboard() {
           title="Volunteers"
           rows={volunteers}
           emptyText={t('noRecords')}
+          filters={[
+            { key: 'interest', label: 'Interest', options: volunteerInterestOptions }
+          ]}
           columns={[
             { key: 'name', label: 'Name' },
             { key: 'email', label: 'Email' },
@@ -204,6 +309,9 @@ export default function AdminDashboard() {
           title="Contact messages"
           rows={contacts}
           emptyText={t('noRecords')}
+          filters={[
+            { key: 'topic', label: 'Topic', options: contactTopicOptions }
+          ]}
           columns={[
             { key: 'name', label: 'Name' },
             { key: 'email', label: 'Email' },
@@ -215,6 +323,9 @@ export default function AdminDashboard() {
           title="Login activity"
           rows={logins}
           emptyText={t('noRecords')}
+          filters={[
+            { key: 'role', label: 'Role', options: loginRoleOptions }
+          ]}
           columns={[
             { key: 'email', label: 'Email' },
             { key: 'role', label: 'Role' },
@@ -224,7 +335,12 @@ export default function AdminDashboard() {
       </section>
       {modalType && (
         <div className="popup-backdrop" role="presentation">
-          <div className="popup-panel" role="dialog" aria-modal="true" aria-label={modalType === 'class' ? 'Add class' : 'Add event'}>
+          <div
+            className="popup-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={modalType === 'fundraiser' ? 'Add fundraising cause' : modalType === 'class' ? 'Add class' : 'Add event'}
+          >
             <button className="popup-close" type="button" aria-label="Close popup" onClick={() => setModalType(null)}>
               <X size={20} />
             </button>

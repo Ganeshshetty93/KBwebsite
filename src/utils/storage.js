@@ -53,15 +53,26 @@ export async function appendRecordAsync(key, payload) {
 }
 
 export async function appendAdminRecordAsync(key, payload) {
-  const saved = await apiAppendRecord(key, payload);
-  if (!saved) {
-    throw new Error('Record was not saved to the database.');
-  }
+  try {
+    const saved = await apiAppendRecord(key, payload);
+    if (!saved) {
+      throw new Error('Record was not saved to the database.');
+    }
 
-  const existing = readJson(key, []);
-  writeJson(key, [...existing, saved]);
-  window.dispatchEvent(new Event('kb-data-change'));
-  return saved;
+    const existing = readJson(key, []);
+    writeJson(key, [...existing, saved]);
+    window.dispatchEvent(new Event('kb-data-change'));
+    return saved;
+  } catch (error) {
+    if (key !== 'kb-admin-fundraisers') {
+      throw error;
+    }
+
+    return saveLocalRecord(key, {
+      ...payload,
+      id: `local-fundraiser-${Date.now()}`
+    });
+  }
 }
 
 export function getCurrentUser() {

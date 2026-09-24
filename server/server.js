@@ -78,12 +78,27 @@ function requireAdmin(req, res, next) {
 
 async function insertRecord(table, payload) {
   const supabase = requireSupabase();
-  const { data, error } = await supabase
+  let normalizedPayload = normalizePayload(table, payload);
+  let result = await supabase
     .from(table)
-    .insert({ ...normalizePayload(table, payload), created_at: new Date().toISOString() })
+    .insert({ ...normalizedPayload, created_at: new Date().toISOString() })
     .select('*')
     .single();
 
+  if (result.error && table === 'kb_donations' && /cause_id|cause_title|payment_status/i.test(result.error.message || '')) {
+    normalizedPayload = {
+      name: payload.name,
+      email: payload.email,
+      amount: Number(payload.amount || 0)
+    };
+    result = await supabase
+      .from(table)
+      .insert({ ...normalizedPayload, created_at: new Date().toISOString() })
+      .select('*')
+      .single();
+  }
+
+  const { data, error } = result;
   if (error) throw error;
   return data;
 }
@@ -103,7 +118,10 @@ function normalizePayload(table, payload) {
     return {
       name: payload.name,
       email: payload.email,
-      amount: Number(payload.amount || 0)
+      amount: Number(payload.amount || 0),
+      cause_id: payload.causeId || payload.cause_id || null,
+      cause_title: payload.cause || payload.causeTitle || payload.cause_title || null,
+      payment_status: payload.paymentStatus || payload.payment_status || 'Pending'
     };
   }
 
@@ -135,6 +153,20 @@ function normalizePayload(table, payload) {
   return payload;
 }
 
+function normalizeFundraiserPayload(payload) {
+  return {
+    title: payload.title,
+    category: payload.category,
+    beneficiary: payload.beneficiary,
+    purpose: payload.purpose,
+    goal: Number(payload.goal || 0),
+    raised: Number(payload.raised || 0),
+    deadline: payload.deadline || null,
+    status: payload.status || 'Active',
+    photo: payload.photo || null
+  };
+}
+
 async function listTable(table) {
   const supabase = requireSupabase();
   const { data, error } = await supabase
@@ -144,6 +176,18 @@ async function listTable(table) {
 
   if (error) throw error;
   return data || [];
+}
+
+async function listOptionalTable(table) {
+  try {
+    return await listTable(table);
+  } catch (error) {
+    if (error.code === '42P01' || /does not exist/i.test(error.message || '')) {
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 app.get('/api/health', (req, res) => {
@@ -266,18 +310,27 @@ app.post('/api/events', authenticate, requireAdmin, asyncHandler(async (req, res
   res.status(201).json(await insertRecord('kb_events', req.body));
 }));
 
+app.get('/api/fundraisers', asyncHandler(async (req, res) => {
+  res.json(await listOptionalTable('kb_fundraisers'));
+}));
+
+app.post('/api/fundraisers', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  res.status(201).json(await insertRecord('kb_fundraisers', normalizeFundraiserPayload(req.body)));
+}));
+
 app.get('/api/admin/dashboard', authenticate, requireAdmin, asyncHandler(async (req, res) => {
-  const [registrations, donations, volunteers, contacts, logins, classes, events] = await Promise.all([
+  const [registrations, donations, volunteers, contacts, logins, classes, events, fundraisers] = await Promise.all([
     listTable('kb_registrations'),
     listTable('kb_donations'),
     listTable('kb_volunteers'),
     listTable('kb_contacts'),
     listTable('kb_logins'),
     listTable('kb_classes'),
-    listTable('kb_events')
+    listTable('kb_events'),
+    listOptionalTable('kb_fundraisers')
   ]);
 
-  res.json({ registrations, donations, volunteers, contacts, logins, classes, events });
+  res.json({ registrations, donations, volunteers, contacts, logins, classes, events, fundraisers });
 }));
 
 app.use((error, req, res, next) => {

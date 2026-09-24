@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Mail, ShieldCheck, UsersRound } from 'lucide-react';
 import { appendRecord, setCurrentUser } from '../utils/storage.js';
 import { apiRegister } from '../utils/api.js';
+import { cleanText, firstError, validateEmail, validatePassword, validatePhone, validateRequired } from '../utils/validation.js';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -16,6 +17,24 @@ export default function Register() {
     setError('');
 
     const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const firstName = cleanText(payload.firstName);
+    const lastName = cleanText(payload.lastName);
+    const email = cleanText(payload.email).toLowerCase();
+    const phone = cleanText(payload.phone);
+    const validationError = firstError([
+      validateRequired(firstName, 'First name'),
+      validateRequired(lastName, 'Last name'),
+      validateEmail(email),
+      validatePassword(payload.password),
+      validatePassword(payload.confirmPassword, 'Confirm password'),
+      validatePhone(phone)
+    ]);
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     if (payload.password !== payload.confirmPassword) {
       setError('Password and confirm password must match.');
       return;
@@ -27,12 +46,12 @@ export default function Register() {
     }
 
     const user = {
-      firstName: payload.firstName,
-      lastName: payload.lastName,
-      parentName: `${payload.firstName} ${payload.lastName}`.trim(),
+      firstName,
+      lastName,
+      parentName: `${firstName} ${lastName}`.trim(),
       studentName: '-',
-      email: payload.email.trim().toLowerCase(),
-      phone: payload.phone || '-',
+      email,
+      phone: phone || '-',
       program: selectedProgram,
       role: 'member'
     };
@@ -83,11 +102,11 @@ export default function Register() {
             <div className="form-two">
               <label>
                 <span className="field-title">First name <b>*</b></span>
-                <input name="firstName" type="text" autoComplete="given-name" required />
+                <input name="firstName" type="text" autoComplete="given-name" minLength="2" maxLength="40" required />
               </label>
               <label>
                 <span className="field-title">Last name <b>*</b></span>
-                <input name="lastName" type="text" autoComplete="family-name" required />
+                <input name="lastName" type="text" autoComplete="family-name" minLength="2" maxLength="40" required />
               </label>
             </div>
             <label>
@@ -106,7 +125,7 @@ export default function Register() {
             </div>
             <label>
               <span className="field-title">Phone number</span>
-              <input name="phone" type="tel" autoComplete="tel" />
+              <input name="phone" type="tel" autoComplete="tel" placeholder="425 555 0100" />
             </label>
 
             <label className="captcha-box">

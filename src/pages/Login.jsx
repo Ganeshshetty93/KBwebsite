@@ -1,10 +1,15 @@
 import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { CalendarDays, KeyRound, Mail, ShieldCheck, Sparkles, UsersRound } from 'lucide-react';
 import { appendRecord, setCurrentUser } from '../utils/storage.js';
 import { apiLogin } from '../utils/api.js';
+import { cleanText, firstError, validateEmail, validatePassword } from '../utils/validation.js';
+
+const googleLoginUrl = 'https://accounts.google.com/v3/signin/accountchooser?client_id=106887524289-okrehvsli5s49lml6dh74bnjmh37h7mr.apps.googleusercontent.com&redirect_uri=https%3A%2F%2Fkbharati.org%2Fsignin-google&response_type=code&scope=openid+profile+email&service=lso&flowName=GeneralOAuthFlow&app_domain=https%3A%2F%2Fkbharati.org';
 
 export default function Login() {
   const navigate = useNavigate();
+  const [error, setError] = useState('');
 
   async function loginWithEmail(email, password = '') {
     const normalized = email.trim().toLowerCase();
@@ -25,8 +30,24 @@ export default function Login() {
 
   function handleSubmit(event) {
     event.preventDefault();
+    setError('');
     const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
-    loginWithEmail(payload.email, payload.password);
+    const email = cleanText(payload.email).toLowerCase();
+    const validationError = firstError([
+      validateEmail(email),
+      validatePassword(payload.password)
+    ]);
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    loginWithEmail(email, payload.password);
+  }
+
+  function handleGoogleLogin() {
+    window.location.href = googleLoginUrl;
   }
 
   return (
@@ -53,7 +74,7 @@ export default function Login() {
           <div className="social-area">
           <p>Continuing with social login will automatically create an account.</p>
             <div className="social-row">
-              <button className="social-button google" type="button" onClick={() => loginWithEmail('google.member@example.com')}>
+              <button className="social-button google" type="button" onClick={handleGoogleLogin}>
                 <span>G</span>
                 Google
               </button>
@@ -89,6 +110,7 @@ export default function Login() {
             </div>
 
             <button className="blue-submit" type="submit">Log in</button>
+            {error && <p className="form-error">{error}</p>}
             <p className="fine-print admin-login-note">Admin demo: use test@gmail.com with any password.</p>
           </form>
 

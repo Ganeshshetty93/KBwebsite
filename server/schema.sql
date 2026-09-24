@@ -41,8 +41,16 @@ create table if not exists public.kb_donations (
   name text not null,
   email text not null,
   amount numeric not null default 0,
+  cause_id uuid,
+  cause_title text,
+  payment_status text not null default 'Pending',
   created_at timestamptz not null default now()
 );
+
+alter table public.kb_donations
+add column if not exists cause_id uuid,
+add column if not exists cause_title text,
+add column if not exists payment_status text not null default 'Pending';
 
 create table if not exists public.kb_volunteers (
   id uuid primary key default gen_random_uuid(),
@@ -87,6 +95,20 @@ create table if not exists public.kb_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.kb_fundraisers (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  category text,
+  beneficiary text,
+  purpose text,
+  goal numeric not null default 0,
+  raised numeric not null default 0,
+  deadline date,
+  status text not null default 'Active',
+  photo text,
+  created_at timestamptz not null default now()
+);
+
 alter table public.kb_users enable row level security;
 alter table public.kb_admins enable row level security;
 alter table public.kb_registrations enable row level security;
@@ -96,6 +118,7 @@ alter table public.kb_volunteers enable row level security;
 alter table public.kb_contacts enable row level security;
 alter table public.kb_classes enable row level security;
 alter table public.kb_events enable row level security;
+alter table public.kb_fundraisers enable row level security;
 
 drop policy if exists "Public can read classes" on public.kb_classes;
 create policy "Public can read classes"
@@ -107,6 +130,13 @@ using (true);
 drop policy if exists "Public can read events" on public.kb_events;
 create policy "Public can read events"
 on public.kb_events
+for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "Public can read fundraisers" on public.kb_fundraisers;
+create policy "Public can read fundraisers"
+on public.kb_fundraisers
 for select
 to anon, authenticated
 using (true);
