@@ -114,10 +114,28 @@ export function normalizeClass(row) {
 export function normalizeEvent(row) {
   return {
     ...normalizeBase(row),
+    eventId: row.event_id || row.eventId,
+    urlKey: row.url_key || row.urlKey,
+    eventType: row.event_type || row.eventType,
     month: row.month,
     title: row.title,
     body: row.body,
     location: row.location,
+    startOn: row.start_on || row.startOn,
+    endOn: row.end_on || row.endOn,
+    recurrence: row.recurrence,
+    capacity: Number(row.capacity || 0),
+    isAllDay: row.is_all_day ?? row.isAllDay,
+    isAgeRestricted: row.is_age_restricted ?? row.isAgeRestricted,
+    isPaymentRequired: row.is_payment_required ?? row.isPaymentRequired,
+    enableDefaulterFine: row.enable_defaulter_fine ?? row.enableDefaulterFine,
+    isOpenForRegistration: row.is_open_for_registration ?? row.isOpenForRegistration,
+    isAutoApproved: row.is_auto_approved ?? row.isAutoApproved,
+    enabled: row.enabled,
+    displaySeatNumbers: row.display_seat_numbers ?? row.displaySeatNumbers,
+    freeForVolunteers: row.free_for_volunteers ?? row.freeForVolunteers,
+    enableCheckIn: row.enable_check_in ?? row.enableCheckIn,
+    enableVolunteerDiscount: row.enable_volunteer_discount ?? row.enableVolunteerDiscount,
     photo: row.photo
   };
 }

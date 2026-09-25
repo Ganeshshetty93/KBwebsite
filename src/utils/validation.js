@@ -15,6 +15,21 @@ export function validateRequired(value, label) {
   return '';
 }
 
+export function validateUrl(value, label = 'URL') {
+  const url = cleanText(value);
+  if (!url) return `${label} is required.`;
+  if (url.startsWith('/')) return '';
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return '';
+  } catch {
+    return `${label} must be a valid URL or internal path.`;
+  }
+
+  return `${label} must start with http://, https://, or /.`;
+}
+
 export function validateEmail(value) {
   if (!cleanText(value)) return 'Email is required.';
   if (!isValidEmail(value)) return 'Enter a valid email address.';

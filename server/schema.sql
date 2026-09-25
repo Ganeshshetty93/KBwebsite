@@ -87,13 +87,50 @@ create table if not exists public.kb_classes (
 
 create table if not exists public.kb_events (
   id uuid primary key default gen_random_uuid(),
+  event_id text,
+  url_key text,
+  event_type text,
   month text not null,
   title text not null,
   body text,
   location text,
+  start_on timestamptz,
+  end_on timestamptz,
+  recurrence text,
+  capacity integer not null default 0,
+  is_all_day boolean not null default false,
+  is_age_restricted boolean not null default false,
+  is_payment_required boolean not null default false,
+  enable_defaulter_fine boolean not null default false,
+  is_open_for_registration boolean not null default false,
+  is_auto_approved boolean not null default false,
+  enabled boolean not null default true,
+  display_seat_numbers boolean not null default false,
+  free_for_volunteers boolean not null default false,
+  enable_check_in boolean not null default false,
+  enable_volunteer_discount boolean not null default false,
   photo text,
   created_at timestamptz not null default now()
 );
+
+alter table public.kb_events add column if not exists event_id text;
+alter table public.kb_events add column if not exists url_key text;
+alter table public.kb_events add column if not exists event_type text;
+alter table public.kb_events add column if not exists start_on timestamptz;
+alter table public.kb_events add column if not exists end_on timestamptz;
+alter table public.kb_events add column if not exists recurrence text;
+alter table public.kb_events add column if not exists capacity integer not null default 0;
+alter table public.kb_events add column if not exists is_all_day boolean not null default false;
+alter table public.kb_events add column if not exists is_age_restricted boolean not null default false;
+alter table public.kb_events add column if not exists is_payment_required boolean not null default false;
+alter table public.kb_events add column if not exists enable_defaulter_fine boolean not null default false;
+alter table public.kb_events add column if not exists is_open_for_registration boolean not null default false;
+alter table public.kb_events add column if not exists is_auto_approved boolean not null default false;
+alter table public.kb_events add column if not exists enabled boolean not null default true;
+alter table public.kb_events add column if not exists display_seat_numbers boolean not null default false;
+alter table public.kb_events add column if not exists free_for_volunteers boolean not null default false;
+alter table public.kb_events add column if not exists enable_check_in boolean not null default false;
+alter table public.kb_events add column if not exists enable_volunteer_discount boolean not null default false;
 
 create table if not exists public.kb_fundraisers (
   id uuid primary key default gen_random_uuid(),

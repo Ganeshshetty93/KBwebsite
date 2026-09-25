@@ -150,6 +150,34 @@ function normalizePayload(table, payload) {
     };
   }
 
+  if (table === 'kb_events') {
+    return {
+      event_id: payload.event_id || payload.eventId || null,
+      url_key: payload.url_key || payload.urlKey || null,
+      event_type: payload.event_type || payload.eventType || null,
+      month: payload.month,
+      title: payload.title,
+      body: payload.body,
+      location: payload.location,
+      start_on: payload.start_on || payload.startOn || null,
+      end_on: payload.end_on || payload.endOn || null,
+      recurrence: payload.recurrence || null,
+      capacity: Number(payload.capacity || 0),
+      is_all_day: Boolean(payload.is_all_day ?? payload.isAllDay),
+      is_age_restricted: Boolean(payload.is_age_restricted ?? payload.isAgeRestricted),
+      is_payment_required: Boolean(payload.is_payment_required ?? payload.isPaymentRequired),
+      enable_defaulter_fine: Boolean(payload.enable_defaulter_fine ?? payload.enableDefaulterFine),
+      is_open_for_registration: Boolean(payload.is_open_for_registration ?? payload.isOpenForRegistration),
+      is_auto_approved: Boolean(payload.is_auto_approved ?? payload.isAutoApproved),
+      enabled: Boolean(payload.enabled ?? true),
+      display_seat_numbers: Boolean(payload.display_seat_numbers ?? payload.displaySeatNumbers),
+      free_for_volunteers: Boolean(payload.free_for_volunteers ?? payload.freeForVolunteers),
+      enable_check_in: Boolean(payload.enable_check_in ?? payload.enableCheckIn),
+      enable_volunteer_discount: Boolean(payload.enable_volunteer_discount ?? payload.enableVolunteerDiscount),
+      photo: payload.photo || null
+    };
+  }
+
   return payload;
 }
 

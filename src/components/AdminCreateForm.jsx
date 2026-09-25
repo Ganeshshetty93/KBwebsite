@@ -28,12 +28,13 @@ function fileToDataUrl(file) {
 
 function formatDate(value) {
   if (!value) return '';
+  const dateValue = String(value).slice(0, 10);
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     timeZone: 'UTC'
-  }).format(new Date(`${value}T00:00:00Z`));
+  }).format(new Date(`${dateValue}T00:00:00Z`));
 }
 
 function formatTime(value) {
@@ -59,6 +60,7 @@ export default function AdminCreateForm({ type, onCreated }) {
   const [error, setError] = useState('');
   const isClass = type === 'class';
   const isFundraiser = type === 'fundraiser';
+  const isEvent = !isClass && !isFundraiser;
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -82,10 +84,14 @@ export default function AdminCreateForm({ type, onCreated }) {
     const endDate = formData.get('endDate');
     const startTime = formData.get('startTime');
     const endTime = formData.get('endTime');
+    const startOn = formData.get('startOn');
+    const endOn = formData.get('endOn');
     const title = cleanText(formData.get('title'));
     const description = cleanText(formData.get('description'));
     const location = cleanText(formData.get('location'));
     const beneficiary = cleanText(formData.get('beneficiary'));
+    const eventId = cleanText(formData.get('eventId'));
+    const urlKey = cleanText(formData.get('urlKey'));
 
     const validationError = firstError([
       validateRequired(title, isFundraiser ? 'Cause title' : isClass ? 'Class name' : 'Event title'),
@@ -98,7 +104,13 @@ export default function AdminCreateForm({ type, onCreated }) {
       isClass ? validateAmount(formData.get('fee'), 'Fee amount', { min: 0 }) : '',
       isClass ? validateRequired(formData.get('age'), 'Age group') : '',
       !isFundraiser ? validateRequired(location, 'Location') : '',
-      !isFundraiser && !isClass ? validateRequired(formData.get('eventDate'), 'Event date') : '',
+      isEvent ? validateRequired(urlKey, 'URL key') : '',
+      isEvent ? validateRequired(formData.get('eventType'), 'Event type') : '',
+      isEvent ? validateRequired(startOn, 'Start on') : '',
+      isEvent ? validateRequired(endOn, 'End on') : '',
+      isEvent ? validateRequired(formData.get('recurrence'), 'Recurrence') : '',
+      isEvent ? validateAmount(formData.get('capacity'), 'Capacity', { min: 1 }) : '',
+      isEvent ? validateDateOrder(startOn, endOn, 'Event end date cannot be before start date.') : '',
       isClass ? validateRequired(startDate, 'Start date') : '',
       isClass ? validateRequired(endDate, 'End date') : '',
       isClass ? validateRequired(startTime, 'Start time') : '',
@@ -157,10 +169,28 @@ export default function AdminCreateForm({ type, onCreated }) {
           photo
         }
       : {
-          month: formatDate(formData.get('eventDate')),
+          eventId,
+          urlKey,
+          eventType: formData.get('eventType'),
+          month: formatDate(startOn),
           title,
           body: description,
           location,
+          startOn,
+          endOn,
+          recurrence: formData.get('recurrence'),
+          capacity: Number(formData.get('capacity') || 0),
+          isAllDay: Boolean(formData.get('isAllDay')),
+          isAgeRestricted: Boolean(formData.get('isAgeRestricted')),
+          isPaymentRequired: Boolean(formData.get('isPaymentRequired')),
+          enableDefaulterFine: Boolean(formData.get('enableDefaulterFine')),
+          isOpenForRegistration: Boolean(formData.get('isOpenForRegistration')),
+          isAutoApproved: Boolean(formData.get('isAutoApproved')),
+          enabled: Boolean(formData.get('enabled')),
+          displaySeatNumbers: Boolean(formData.get('displaySeatNumbers')),
+          freeForVolunteers: Boolean(formData.get('freeForVolunteers')),
+          enableCheckIn: Boolean(formData.get('enableCheckIn')),
+          enableVolunteerDiscount: Boolean(formData.get('enableVolunteerDiscount')),
           photo
         };
 
@@ -184,7 +214,7 @@ export default function AdminCreateForm({ type, onCreated }) {
           ? 'Create a donation cause for education, health, emergency support, or community needs.'
           : isClass
           ? 'Use date and time pickers so class cards display consistently.'
-          : 'Use the event date picker so event cards and calendar entries stay consistent.'}
+          : 'Add the complete event setup so registration, check-in, and event cards stay consistent.'}
       </p>
       <div className="admin-form-grid">
         <label>
@@ -289,11 +319,53 @@ export default function AdminCreateForm({ type, onCreated }) {
             </label>
           </>
         )}
-        {!isClass && !isFundraiser && (
-          <label>
-            Event date
-            <input name="eventDate" type="date" required />
-          </label>
+        {isEvent && (
+          <>
+            <label>
+              Event image <small>(only jpg/jpeg/png files)</small>
+              <input name="photo" type="file" accept="image/png,image/jpeg" />
+            </label>
+            <label>
+              URL key
+              <input name="urlKey" required minLength="3" maxLength="80" placeholder="kb-ugadi-2027" />
+            </label>
+            <label>
+              Event ID
+              <input name="eventId" minLength="2" maxLength="30" placeholder="Optional" />
+            </label>
+            <label>
+              Event type
+              <select name="eventType" required defaultValue="">
+                <option value="" disabled>-- Please select --</option>
+                <option>Classroom</option>
+                <option>Workshop</option>
+                <option>Seminar</option>
+                <option>Cultural</option>
+              </select>
+            </label>
+            <label>
+              Start on
+              <input name="startOn" type="datetime-local" required />
+            </label>
+            <label>
+              End on
+              <input name="endOn" type="datetime-local" required />
+            </label>
+            <label>
+              Recurrence
+              <select name="recurrence" required defaultValue="OneTime">
+                <option>OneTime</option>
+                <option>Daily</option>
+                <option>Weekly</option>
+                <option>Monthly</option>
+                <option>Yearly</option>
+              </select>
+            </label>
+            <label>
+              Capacity
+              <input name="capacity" type="number" min="1" step="1" required />
+            </label>
+          </>
         )}
         {!isFundraiser && (
           <label>
@@ -301,11 +373,28 @@ export default function AdminCreateForm({ type, onCreated }) {
             <input name="location" required minLength="3" maxLength="120" placeholder="Bellevue / Online" />
           </label>
         )}
-        <label>
-          Photo upload
-          <input name="photo" type="file" accept="image/*" />
-        </label>
+        {!isEvent && (
+          <label>
+            Photo upload
+            <input name="photo" type="file" accept="image/*" />
+          </label>
+        )}
       </div>
+      {isEvent && (
+        <div className="admin-checkbox-grid">
+          <label className="admin-checkbox"><input name="isAllDay" type="checkbox" /> Is all day event</label>
+          <label className="admin-checkbox"><input name="isAgeRestricted" type="checkbox" /> Is age restricted</label>
+          <label className="admin-checkbox"><input name="isPaymentRequired" type="checkbox" /> Is payment required</label>
+          <label className="admin-checkbox"><input name="enableDefaulterFine" type="checkbox" /> Enable defaulter fine</label>
+          <label className="admin-checkbox"><input name="isOpenForRegistration" type="checkbox" /> Is open for registration</label>
+          <label className="admin-checkbox"><input name="isAutoApproved" type="checkbox" /> Is auto approved</label>
+          <label className="admin-checkbox"><input name="enabled" type="checkbox" defaultChecked /> Enabled</label>
+          <label className="admin-checkbox"><input name="displaySeatNumbers" type="checkbox" /> Display Seat Numbers</label>
+          <label className="admin-checkbox"><input name="freeForVolunteers" type="checkbox" /> Free for Volunteers</label>
+          <label className="admin-checkbox"><input name="enableCheckIn" type="checkbox" /> Enable for Check-in</label>
+          <label className="admin-checkbox"><input name="enableVolunteerDiscount" type="checkbox" /> Enable Volunteer discount</label>
+        </div>
+      )}
       <label>
         {isFundraiser ? 'Cause details' : 'Description'}
         <textarea

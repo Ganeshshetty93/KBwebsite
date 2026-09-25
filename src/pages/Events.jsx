@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Images, Plus, X } from 'lucide-react';
+import { Images } from 'lucide-react';
 import PageHero from '../components/PageHero.jsx';
-import AdminCreateForm from '../components/AdminCreateForm.jsx';
 import { events } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
-import { getCurrentUser, isAdmin } from '../utils/storage.js';
 import { apiReadRecords } from '../utils/api.js';
 
 function getEventImage(event) {
@@ -21,10 +19,7 @@ function getEventImage(event) {
 
 export default function Events() {
   const { t } = useLanguage();
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [showAddEvent, setShowAddEvent] = useState(false);
   const [dbEvents, setDbEvents] = useState([]);
-  const user = getCurrentUser();
 
   useEffect(() => {
     let ignore = false;
@@ -38,7 +33,7 @@ export default function Events() {
     return () => {
       ignore = true;
     };
-  }, [refreshKey]);
+  }, []);
 
   const allEvents = dbEvents.length ? dbEvents : events;
   const [featuredEvent, ...upcomingEvents] = allEvents;
@@ -71,11 +66,6 @@ export default function Events() {
             <h2>{t('calendarTitle')}</h2>
             <p className="events-intro">Celebrate culture, learning, and community through Kannada Bharati gatherings across the Seattle area.</p>
           </div>
-          {isAdmin(user) && (
-            <button className="button primary add-section-button" type="button" onClick={() => setShowAddEvent(true)}>
-              <Plus size={18} /> + Add Event
-            </button>
-          )}
         </div>
 
         {featuredEvent && (
@@ -138,22 +128,6 @@ export default function Events() {
           )}
         </section>
       </section>
-      {showAddEvent && (
-        <div className="popup-backdrop" role="presentation">
-          <div className="popup-panel" role="dialog" aria-modal="true" aria-label="Add event">
-            <button className="popup-close" type="button" aria-label="Close add event popup" onClick={() => setShowAddEvent(false)}>
-              <X size={20} />
-            </button>
-            <AdminCreateForm
-              type="event"
-              onCreated={() => {
-                setRefreshKey((key) => key + 1);
-                setShowAddEvent(false);
-              }}
-            />
-          </div>
-        </div>
-      )}
     </>
   );
 }

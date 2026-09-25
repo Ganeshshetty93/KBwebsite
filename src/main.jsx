@@ -15,7 +15,8 @@ import Volunteer from './pages/Volunteer.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Contact from './pages/Contact.jsx';
-import AdminDashboard from './pages/AdminDashboard.jsx';
+import AdminShell from './components/AdminShell.jsx';
+import AdminSectionPage from './pages/AdminSectionPage.jsx';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -33,7 +34,18 @@ createRoot(document.getElementById('root')).render(
             <Route path="login" element={<Login />} />
             <Route path="register" element={<Register />} />
             <Route path="contact" element={<Contact />} />
-            <Route path="admin" element={<AdminDashboard />} />
+            <Route path="admin" element={<AdminShell />}>
+              <Route index element={<AdminSectionPage view="dashboard" />} />
+              <Route path="profile" element={<AdminSectionPage view="profile" />} />
+              <Route path="register-member" element={<AdminSectionPage view="register-member" />} />
+              <Route path="expense" element={<AdminSectionPage view="expense" />} />
+              <Route path="users" element={<AdminSectionPage view="users" />} />
+              <Route path="events" element={<AdminSectionPage view="events" />} />
+              <Route path="announcements" element={<AdminSectionPage view="announcements" />} />
+              <Route path="fundraising" element={<AdminSectionPage view="fundraising" />} />
+              <Route path="registrations" element={<AdminSectionPage view="registrations" />} />
+              <Route path="student-view" element={<AdminSectionPage view="student-view" />} />
+            </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
