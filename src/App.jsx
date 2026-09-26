@@ -1,8 +1,8 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Gauge, Globe2, HeartHandshake, LogIn, LogOut, Menu, X } from 'lucide-react';
+import { Gauge, Globe2, HeartHandshake, LogIn, LogOut, Menu, UserCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
-import { getCurrentUser, isAdmin, setCurrentUser } from './utils/storage.js';
+import { getCurrentUser, isAdmin, readJson, setCurrentUser } from './utils/storage.js';
 import PageLoader from './components/PageLoader.jsx';
 
 const nav = [
@@ -17,7 +17,13 @@ const nav = [
 
 export default function App() {
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUser] = useState(() => getCurrentUser());
+  const [memberProfile, setMemberProfile] = useState(() => {
+    const current = getCurrentUser();
+    return current?.email ? readJson(`kb-member-profile-${current.email.toLowerCase()}`, {}) : {};
+  });
+  const [announcements, setAnnouncements] = useState(() => readJson('kb-announcement-submissions', []));
   const [routeLoading, setRouteLoading] = useState(true);
   const { t, toggleLanguage } = useLanguage();
   const navigate = useNavigate();
@@ -25,7 +31,9 @@ export default function App() {
 
   useEffect(() => {
     function syncUser() {
-      setUser(getCurrentUser());
+      const current = getCurrentUser();
+      setUser(current);
+      setMemberProfile(current?.email ? readJson(`kb-member-profile-${current.email.toLowerCase()}`, {}) : {});
     }
 
     window.addEventListener('kb-auth-change', syncUser);
@@ -37,7 +45,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    function syncData() {
+      setAnnouncements(readJson('kb-announcement-submissions', []));
+      const current = getCurrentUser();
+      setMemberProfile(current?.email ? readJson(`kb-member-profile-${current.email.toLowerCase()}`, {}) : {});
+    }
+
+    window.addEventListener('kb-data-change', syncData);
+    window.addEventListener('storage', syncData);
+    return () => {
+      window.removeEventListener('kb-data-change', syncData);
+      window.removeEventListener('storage', syncData);
+    };
+  }, []);
+
+  useEffect(() => {
     setRouteLoading(true);
+    setProfileOpen(false);
     const timer = window.setTimeout(() => setRouteLoading(false), 520);
     return () => window.clearTimeout(timer);
   }, [location.pathname]);
@@ -45,11 +69,22 @@ export default function App() {
   function handleLogout() {
     setCurrentUser(null);
     setOpen(false);
+    setProfileOpen(false);
     navigate('/');
   }
 
+  const today = new Date().toISOString().slice(0, 10);
+  const activeAnnouncements = announcements.filter((item) => {
+    const enabled = item.enabled === true || item.enabled === 'Yes' || item.enabled === 'yes';
+    const starts = !item.startOn || item.startOn <= today;
+    const ends = !item.endOn || item.endOn >= today;
+    return enabled && starts && ends;
+  });
+
+  const isAdminRoute = location.pathname.startsWith('/admin');
+
   return (
-    <div className="site-shell">
+    <div className={isAdminRoute ? 'site-shell is-admin-route' : 'site-shell'}>
       <PageLoader active={routeLoading} />
       <header className="site-header">
         <Link className="brand" to="/" onClick={() => setOpen(false)}>
@@ -85,9 +120,27 @@ export default function App() {
             <Globe2 size={17} /> {t('langToggle')}
           </button>
           {user ? (
-            <button className="nav-tool" type="button" onClick={handleLogout}>
-              <LogOut size={17} /> {t('navLogout')}
-            </button>
+            <div className="nav-profile-menu">
+              <button
+                className="nav-profile-button"
+                type="button"
+                aria-label="Open profile menu"
+                aria-expanded={profileOpen}
+                onClick={() => setProfileOpen((value) => !value)}
+              >
+                {memberProfile.photo ? <img src={memberProfile.photo} alt="" /> : <UserCircle size={24} />}
+              </button>
+              {profileOpen && (
+                <div className="nav-profile-dropdown">
+                  <Link to="/profile" onClick={() => { setOpen(false); setProfileOpen(false); }}>
+                    <UserCircle size={17} /> Profile
+                  </Link>
+                  <button type="button" onClick={handleLogout}>
+                    <LogOut size={17} /> {t('navLogout')}
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <NavLink className="nav-login" to="/login" onClick={() => setOpen(false)}>
               <LogIn size={17} /> {t('navLogin')}
@@ -95,6 +148,17 @@ export default function App() {
           )}
         </nav>
       </header>
+
+      {activeAnnouncements.length > 0 && (
+        <section className="announcement-strip" aria-label="Kannada Bharati announcements">
+          {activeAnnouncements.slice(0, 2).map((item, index) => (
+            <article key={`${item.text}-${index}`}>
+              <strong>{item.text}</strong>
+              {item.ctaUrl && <Link to={item.ctaUrl}>{item.ctaText || 'Learn more'}</Link>}
+            </article>
+          ))}
+        </section>
+      )}
 
       <main>
         <Outlet />

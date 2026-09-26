@@ -12,6 +12,9 @@ const fallbackPrograms = [
   ...culturalClasses
 ];
 
+const defaultEventTypes = ['Classroom', 'Workshop', 'Seminar', 'Cultural'];
+const defaultRecurrences = ['OneTime', 'Daily', 'Weekly', 'Monthly', 'Yearly'];
+
 const seedAnnouncements = [
   {
     text: 'Kannada Bharati Paata Shaale registrations are open',
@@ -219,6 +222,34 @@ function getRegistrationSummary(rows) {
   }, { adults: 0, kids: 0, youngKids: 0 });
 }
 
+function getRegistrationKey(row, index = 0) {
+  return row.id || `${row.email || 'registration'}-${row.program || 'program'}-${row.createdAt || index}`;
+}
+
+function getMoneyAmount(row = {}) {
+  if (row.amount !== undefined) return Number(row.amount || 0);
+  const fee = row.fee ?? row.registrationFee ?? row.price ?? row.donationAmount;
+  if (typeof fee === 'number') return fee;
+  const parsed = Number(String(fee || '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getCheckinCounts(row = {}) {
+  const adults = Number(row.adults ?? row.adultCount ?? 1);
+  const kids = Number(row.kids ?? row.kidCount ?? 0);
+  const youngKids = Number(row.youngKids ?? row.youngKidCount ?? 0);
+  const total = Number(row.total ?? row.totalMembers ?? row.seats ?? adults + kids + youngKids);
+  return { adults, kids, youngKids, total };
+}
+
+function memberProfileKey(email) {
+  return `kb-member-profile-${String(email || 'guest').toLowerCase()}`;
+}
+
+function memberChildrenKey(email) {
+  return `kb-member-children-${String(email || 'guest').toLowerCase()}`;
+}
+
 function EventDetailModal({ item, onClose }) {
   const feeText = getFeeText(item);
   const detailRows = [
@@ -280,6 +311,77 @@ function EventDetailModal({ item, onClose }) {
   );
 }
 
+function RegistrationDetailModal({ row, onClose }) {
+  const profile = readJson(memberProfileKey(row.email), {});
+  const children = readJson(memberChildrenKey(row.email), []);
+  const profileRows = [
+    ['Registered name', row.parentName || '-'],
+    ['Email', row.email || '-'],
+    ['Phone', profile.phone || row.phone || '-'],
+    ['Program', row.program || '-'],
+    ['Status', row.status || 'Submitted'],
+    ['First name', profile.firstName || '-'],
+    ['Last name', profile.lastName || '-'],
+    ['Date of birth', profile.birthDate || '-'],
+    ['Gender', profile.gender || '-'],
+    ['Company', profile.company || '-'],
+    ['Address line1', profile.address1 || '-'],
+    ['Address line2', profile.address2 || '-'],
+    ['City', profile.city || '-'],
+    ['State', profile.state || '-'],
+    ['Zip code', profile.zipCode || '-'],
+    ['Spouse first name', profile.spouseFirstName || '-'],
+    ['Spouse last name', profile.spouseLastName || '-'],
+    ['Spouse date of birth', profile.spouseBirthDate || '-']
+  ];
+
+  return (
+    <div className="popup-backdrop" role="presentation">
+      <div className="popup-panel detail-popup registration-detail-popup" role="dialog" aria-modal="true" aria-label={`${row.parentName || row.email} registration details`}>
+        <button className="popup-close" type="button" aria-label="Close popup" onClick={onClose}>
+          <X size={20} />
+        </button>
+        <div className="registration-detail-heading">
+          <div className="member-avatar">
+            {profile.photo ? <img src={profile.photo} alt="" /> : <UsersRound size={34} />}
+          </div>
+          <div>
+            <span>Registration profile</span>
+            <h2>{profile.firstName || row.parentName || row.email}</h2>
+            <p>{profile.description || 'Member profile and registration details are shown below.'}</p>
+          </div>
+        </div>
+        <div className="detail-popup-grid">
+          {profileRows.map(([label, value]) => (
+            <article key={label}>
+              <span>{label}</span>
+              <strong>{value || '-'}</strong>
+            </article>
+          ))}
+        </div>
+        <section className="registration-children-panel">
+          <h3>Children info</h3>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>First name</th><th>Last name</th><th>Gender</th><th>Date of birth</th></tr></thead>
+              <tbody>
+                {children.length ? children.map((child) => (
+                  <tr key={child.id || `${child.firstName}-${child.birthDate}`}>
+                    <td>{child.firstName}</td>
+                    <td>{child.lastName}</td>
+                    <td>{child.gender}</td>
+                    <td>{child.birthDate}</td>
+                  </tr>
+                )) : <tr><td colSpan="4">No children added in profile.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function useAdminData() {
   const [dashboard, setDashboard] = useState(() => ({
     registrations: readJson('kb-registration-submissions', []),
@@ -335,8 +437,15 @@ export default function AdminSectionPage({ view }) {
   const [checkinApplied, setCheckinApplied] = useState(false);
   const [checkinError, setCheckinError] = useState('');
   const [detailRecord, setDetailRecord] = useState(null);
+  const [registrationDetail, setRegistrationDetail] = useState(null);
+  const [checkedInIds, setCheckedInIds] = useState(() => readJson('kb-checkin-records', []));
+  const [eventTypes, setEventTypes] = useState(() => readJson('kb-event-types', defaultEventTypes));
+  const [recurrences, setRecurrences] = useState(() => readJson('kb-recurrence-options', defaultRecurrences));
+  const [settingsError, setSettingsError] = useState('');
   const registrations = dashboard.registrations || [];
   const donations = dashboard.donations || [];
+  const volunteers = dashboard.volunteers || [];
+  const contacts = dashboard.contacts || [];
   const expenses = dashboard.expenses || [];
   const programs = dashboard.classes?.length ? dashboard.classes : fallbackPrograms;
   const allEvents = dashboard.events?.length ? dashboard.events : events;
@@ -463,6 +572,13 @@ export default function AdminSectionPage({ view }) {
     setCheckinApplied(true);
   }
 
+  function markCheckedIn(row, index) {
+    const key = getRegistrationKey(row, index);
+    const next = checkedInIds.includes(key) ? checkedInIds : [...checkedInIds, key];
+    writeJson('kb-checkin-records', next);
+    setCheckedInIds(next);
+  }
+
   function handleExpenseSubmit(event) {
     event.preventDefault();
     setExpenseError('');
@@ -530,6 +646,33 @@ export default function AdminSectionPage({ view }) {
     form.reset();
     setAnnouncementSaved(true);
     setModalType(null);
+  }
+
+  function saveEventSettings(key, setter, values) {
+    writeJson(key, values);
+    setter(values);
+    window.dispatchEvent(new Event('kb-data-change'));
+  }
+
+  function handleSettingSubmit(event, key, values, setter, label) {
+    event.preventDefault();
+    setSettingsError('');
+    const form = event.currentTarget;
+    const value = cleanText(new FormData(form).get('value'));
+    if (!value) {
+      setSettingsError(`${label} is required.`);
+      return;
+    }
+    if (values.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      setSettingsError(`${label} already exists.`);
+      return;
+    }
+    saveEventSettings(key, setter, [...values, value].sort());
+    form.reset();
+  }
+
+  function removeSetting(key, values, setter, value) {
+    saveEventSettings(key, setter, values.filter((item) => item !== value));
   }
 
   if (view === 'profile') {
@@ -698,6 +841,48 @@ export default function AdminSectionPage({ view }) {
     );
   }
 
+  if (view === 'event-settings') {
+    return (
+      <>
+        <PageHeader area="Event Settings" title="Manage event dropdowns" />
+        {settingsError && <p className="form-error admin-floating-message">{settingsError}</p>}
+        <div className="event-settings-grid">
+          <section className="admin-page-panel">
+            <div className="admin-page-panel-heading"><h2>Event types</h2><span>{eventTypes.length}</span></div>
+            <form className="settings-inline-form" onSubmit={(event) => handleSettingSubmit(event, 'kb-event-types', eventTypes, setEventTypes, 'Event type')}>
+              <label>New event type<input name="value" placeholder="Competition" /></label>
+              <button className="button primary" type="submit">Add</button>
+            </form>
+            <div className="settings-list">
+              {eventTypes.map((item) => (
+                <article key={item}>
+                  <strong>{item}</strong>
+                  <button type="button" onClick={() => removeSetting('kb-event-types', eventTypes, setEventTypes, item)}>Remove</button>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="admin-page-panel">
+            <div className="admin-page-panel-heading"><h2>Recurrence options</h2><span>{recurrences.length}</span></div>
+            <form className="settings-inline-form" onSubmit={(event) => handleSettingSubmit(event, 'kb-recurrence-options', recurrences, setRecurrences, 'Recurrence')}>
+              <label>New recurrence<input name="value" placeholder="BiWeekly" /></label>
+              <button className="button primary" type="submit">Add</button>
+            </form>
+            <div className="settings-list">
+              {recurrences.map((item) => (
+                <article key={item}>
+                  <strong>{item}</strong>
+                  <button type="button" onClick={() => removeSetting('kb-recurrence-options', recurrences, setRecurrences, item)}>Remove</button>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      </>
+    );
+  }
+
   if (view === 'announcements') {
     return (
       <>
@@ -776,7 +961,84 @@ export default function AdminSectionPage({ view }) {
     );
   }
 
-  if (view === 'registrations') {
+  if (view === 'donations') {
+    const totalDonations = donations.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const paypalOpened = donations.filter((item) => item.paymentStatus === 'PayPal opened').length;
+    return (
+      <>
+        <PageHeader area="Donations" title="Donation payment details" />
+        <section className="admin-dashboard-hero-grid">
+          <article><HandCoins size={24} /><span>Total donated</span><strong>${totalDonations.toLocaleString()}</strong></article>
+          <article><ReceiptText size={24} /><span>Donation records</span><strong>{donations.length}</strong></article>
+          <article><UsersRound size={24} /><span>PayPal opened</span><strong>{paypalOpened}</strong></article>
+          <article><CalendarDays size={24} /><span>Causes</span><strong>{uniqueOptions(donations, 'cause').length}</strong></article>
+        </section>
+        <AdminTable
+          title="Donation details"
+          rows={donations}
+          emptyText="No donation records yet."
+          filters={[
+            { key: 'cause', label: 'Cause', options: uniqueOptions(donations, 'cause') },
+            { key: 'paymentStatus', label: 'Payment status', options: uniqueOptions(donations, 'paymentStatus') }
+          ]}
+          columns={[
+            { key: 'createdAt', label: 'Created on' },
+            { key: 'name', label: 'Name' },
+            { key: 'email', label: 'Email' },
+            { key: 'cause', label: 'Donation cause' },
+            { key: 'amount', label: 'Amount', render: (row) => `$${Number(row.amount || 0).toLocaleString()}` },
+            { key: 'paymentStatus', label: 'Payment status' },
+            { key: 'causeId', label: 'Cause ID' }
+          ]}
+        />
+      </>
+    );
+  }
+
+  if (view === 'messages') {
+    return (
+      <>
+        <PageHeader area="Messages" title="Contact messages" />
+        <AdminTable
+          title="Contact messages"
+          rows={contacts}
+          emptyText="No contact messages yet."
+          filters={[{ key: 'topic', label: 'Topic', options: uniqueOptions(contacts, 'topic') }]}
+          columns={[
+            { key: 'createdAt', label: 'Created on' },
+            { key: 'name', label: 'Name' },
+            { key: 'email', label: 'Email' },
+            { key: 'topic', label: 'Topic' },
+            { key: 'message', label: 'Message' }
+          ]}
+        />
+      </>
+    );
+  }
+
+  if (view === 'volunteer-interest') {
+    return (
+      <>
+        <PageHeader area="Volunteer Interest" title="Volunteer submissions" />
+        <AdminTable
+          title="Volunteer submissions"
+          rows={volunteers}
+          emptyText="No volunteer interest records yet."
+          filters={[{ key: 'interest', label: 'Interest', options: uniqueOptions(volunteers, 'interest') }]}
+          columns={[
+            { key: 'createdAt', label: 'Created on' },
+            { key: 'name', label: 'Name' },
+            { key: 'email', label: 'Email' },
+            { key: 'interest', label: 'Volunteer interest' },
+            { key: 'message', label: 'Message' }
+          ]}
+        />
+      </>
+    );
+  }
+
+  if (view === 'checkin') {
+    const checkinAmountTotal = checkinRows.reduce((sum, row) => sum + getMoneyAmount(row), 0);
     return (
       <>
         <PageHeader root="Reception" area="CheckInNew" title="Event check-in" action={<span className="received-count">Recieved {checkinRows.length} registration(s)</span>} />
@@ -794,26 +1056,63 @@ export default function AdminSectionPage({ view }) {
             <button className="button primary" type="submit">Go</button>
           </form>
           <div className="checkin-summary-table" aria-label="Registration summary">
-            <span>Registrations</span><span>Adults (13 yrs and above)</span><span>Kids (6-12 yrs)</span><span>Kids (5 yrs and below)</span><span>Total Members</span>
-            <strong>{checkinRows.length}</strong><strong>{checkinSummary.adults}</strong><strong>{checkinSummary.kids}</strong><strong>{checkinSummary.youngKids}</strong><strong>{checkinRows.length}</strong>
+            <span>Registrations</span><span>Adults (13 yrs and above)</span><span>Kids (6-12 yrs)</span><span>Kids (5 yrs and below)</span><span>Total Members</span><span>Amount</span>
+            <strong>{checkinRows.length}</strong><strong>{checkinSummary.adults}</strong><strong>{checkinSummary.kids}</strong><strong>{checkinSummary.youngKids}</strong><strong>{checkinRows.reduce((sum, row) => sum + getCheckinCounts(row).total, 0)}</strong><strong>${checkinAmountTotal.toLocaleString()}</strong>
           </div>
         </section>
         {checkinError && <p className="form-error">{checkinError}</p>}
         <AdminTable
-          title="Registrations"
+          title="Event check-in details"
           rows={checkinRows}
           filters={[{ key: 'program', label: 'Events', options: uniqueOptions(checkinRows, 'program') }]}
           columns={[
-            { key: 'eventId', label: 'Event ID', render: (row, index) => row.eventId || makeEventId(row.program, index) },
-            { key: 'createdAt', label: 'Registered on' },
+            { key: 'serial', label: 'Sl no.', render: (_row, index) => index + 1 },
+            {
+              key: 'action',
+              label: 'Action',
+              render: (row, index) => {
+                const checked = checkedInIds.includes(getRegistrationKey(row, index));
+                return checked ? <span className="confirmed-badge">Checked</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Checkin</button>;
+              }
+            },
             { key: 'parentName', label: 'Registered Name' },
             { key: 'email', label: 'Registered by' },
-            { key: 'studentName', label: 'Family Member' },
-            { key: 'phone', label: 'Phone Number' },
-            { key: 'program', label: 'Program' },
-            { key: 'status', label: 'Status', render: () => 'Submitted' }
+            { key: 'seats', label: 'Seats', render: (row) => getCheckinCounts(row).total },
+            { key: 'adults', label: 'Adults (13 yrs and above)', render: (row) => getCheckinCounts(row).adults },
+            { key: 'kids', label: 'Kids (6-12 yrs)', render: (row) => getCheckinCounts(row).kids },
+            { key: 'youngKids', label: 'Kids (5 yrs and below)', render: (row) => getCheckinCounts(row).youngKids },
+            { key: 'total', label: 'Total', render: (row) => getCheckinCounts(row).total },
+            { key: 'amount', label: 'Amount', render: (row) => `$${getMoneyAmount(row).toLocaleString()}` },
+            { key: 'createdAt', label: 'Registered on' },
+            { key: 'eventId', label: 'Event ID', render: (row, index) => row.eventId || makeEventId(row.program, index) },
+            { key: 'phone', label: 'Phone Number' }
           ]}
         />
+      </>
+    );
+  }
+
+  if (view === 'registrations') {
+    return (
+      <>
+        <PageHeader area="Registration" title="Registered user details" />
+        <AdminTable
+          title="Registered users"
+          rows={registrations}
+          emptyText="No registered users yet."
+          filters={[{ key: 'program', label: 'Program', options: uniqueOptions(registrations, 'program') }]}
+          columns={[
+            { key: 'createdAt', label: 'Registered on' },
+            { key: 'parentName', label: 'Registered name' },
+            { key: 'email', label: 'Email' },
+            { key: 'phone', label: 'Phone number' },
+            { key: 'studentName', label: 'Family member' },
+            { key: 'program', label: 'Program' },
+            { key: 'status', label: 'Status', render: (row) => row.status || 'Submitted' },
+            { key: 'details', label: 'Details', render: (row) => <button className="mini-action-link secondary" type="button" onClick={() => setRegistrationDetail(row)}>View details</button> }
+          ]}
+        />
+        {registrationDetail && <RegistrationDetailModal row={registrationDetail} onClose={() => setRegistrationDetail(null)} />}
       </>
     );
   }

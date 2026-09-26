@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { appendAdminRecordAsync } from '../utils/storage.js';
+import { useEffect, useState } from 'react';
+import { appendAdminRecordAsync, readJson } from '../utils/storage.js';
 import {
   cleanText,
   firstError,
@@ -11,6 +11,8 @@ import {
 } from '../utils/validation.js';
 
 const weekDays = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+const defaultEventTypes = ['Classroom', 'Workshop', 'Seminar', 'Cultural'];
+const defaultRecurrences = ['OneTime', 'Daily', 'Weekly', 'Monthly', 'Yearly'];
 
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -58,9 +60,25 @@ export default function AdminCreateForm({ type, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [eventTypes, setEventTypes] = useState(() => readJson('kb-event-types', defaultEventTypes));
+  const [recurrences, setRecurrences] = useState(() => readJson('kb-recurrence-options', defaultRecurrences));
   const isClass = type === 'class';
   const isFundraiser = type === 'fundraiser';
   const isEvent = !isClass && !isFundraiser;
+
+  useEffect(() => {
+    function syncSettings() {
+      setEventTypes(readJson('kb-event-types', defaultEventTypes));
+      setRecurrences(readJson('kb-recurrence-options', defaultRecurrences));
+    }
+
+    window.addEventListener('kb-data-change', syncSettings);
+    window.addEventListener('storage', syncSettings);
+    return () => {
+      window.removeEventListener('kb-data-change', syncSettings);
+      window.removeEventListener('storage', syncSettings);
+    };
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -337,10 +355,7 @@ export default function AdminCreateForm({ type, onCreated }) {
               Event type
               <select name="eventType" required defaultValue="">
                 <option value="" disabled>-- Please select --</option>
-                <option>Classroom</option>
-                <option>Workshop</option>
-                <option>Seminar</option>
-                <option>Cultural</option>
+                {eventTypes.map((option) => <option key={option}>{option}</option>)}
               </select>
             </label>
             <label>
@@ -354,11 +369,7 @@ export default function AdminCreateForm({ type, onCreated }) {
             <label>
               Recurrence
               <select name="recurrence" required defaultValue="OneTime">
-                <option>OneTime</option>
-                <option>Daily</option>
-                <option>Weekly</option>
-                <option>Monthly</option>
-                <option>Yearly</option>
+                {recurrences.map((option) => <option key={option}>{option}</option>)}
               </select>
             </label>
             <label>

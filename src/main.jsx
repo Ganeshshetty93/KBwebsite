@@ -14,6 +14,7 @@ import Donate from './pages/Donate.jsx';
 import Volunteer from './pages/Volunteer.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
+import Profile from './pages/Profile.jsx';
 import Contact from './pages/Contact.jsx';
 import AdminShell from './components/AdminShell.jsx';
 import AdminSectionPage from './pages/AdminSectionPage.jsx';
@@ -33,6 +34,7 @@ createRoot(document.getElementById('root')).render(
             <Route path="volunteer" element={<Volunteer />} />
             <Route path="login" element={<Login />} />
             <Route path="register" element={<Register />} />
+            <Route path="profile" element={<Profile />} />
             <Route path="contact" element={<Contact />} />
             <Route path="admin" element={<AdminShell />}>
               <Route index element={<AdminSectionPage view="dashboard" />} />
@@ -41,8 +43,13 @@ createRoot(document.getElementById('root')).render(
               <Route path="expense" element={<AdminSectionPage view="expense" />} />
               <Route path="users" element={<AdminSectionPage view="users" />} />
               <Route path="events" element={<AdminSectionPage view="events" />} />
+              <Route path="event-settings" element={<AdminSectionPage view="event-settings" />} />
               <Route path="announcements" element={<AdminSectionPage view="announcements" />} />
               <Route path="fundraising" element={<AdminSectionPage view="fundraising" />} />
+              <Route path="donations" element={<AdminSectionPage view="donations" />} />
+              <Route path="messages" element={<AdminSectionPage view="messages" />} />
+              <Route path="volunteer-interest" element={<AdminSectionPage view="volunteer-interest" />} />
+              <Route path="checkin" element={<AdminSectionPage view="checkin" />} />
               <Route path="registrations" element={<AdminSectionPage view="registrations" />} />
               <Route path="student-view" element={<AdminSectionPage view="student-view" />} />
             </Route>

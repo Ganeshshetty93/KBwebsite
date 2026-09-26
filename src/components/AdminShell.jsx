@@ -19,7 +19,7 @@ const groups = [
   {
     title: 'Reception',
     icon: ClipboardCheck,
-    links: [{ label: 'CheckInNew', to: '/admin/registrations' }]
+    links: [{ label: 'CheckInNew', to: '/admin/checkin' }]
   },
   {
     title: 'Volunteer',
@@ -32,8 +32,12 @@ const groups = [
     links: [
       { label: 'User', to: '/admin/users' },
       { label: 'Event', to: '/admin/events' },
+      { label: 'Event Settings', to: '/admin/event-settings' },
       { label: 'Announcement', to: '/admin/announcements' },
       { label: 'Fund Raising', to: '/admin/fundraising' },
+      { label: 'Donations', to: '/admin/donations' },
+      { label: 'Messages', to: '/admin/messages' },
+      { label: 'Volunteer Interest', to: '/admin/volunteer-interest' },
       { label: 'Registration', to: '/admin/registrations' },
       { label: 'Student View', to: '/admin/student-view' }
     ]
