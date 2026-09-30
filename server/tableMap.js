@@ -3,7 +3,10 @@ export const submissionTables = {
   donation: 'kb_donations',
   volunteer: 'kb_volunteers',
   contact: 'kb_contacts',
-  login: 'kb_logins'
+  login: 'kb_logins',
+  announcement: 'kb_announcements',
+  expense: 'kb_expenses',
+  checkin: 'kb_checkins'
 };
 
 export const storageKeyToResource = {
@@ -13,7 +16,9 @@ export const storageKeyToResource = {
   'kb-contact-submissions': 'contact',
   'kb-login-submissions': 'login',
   'kb-admin-classes': 'class',
-  'kb-admin-events': 'event'
+  'kb-admin-events': 'event',
+  'kb-announcement-submissions': 'announcement',
+  'kb-expense-submissions': 'expense'
 };
 
 export const resourceToStorageKey = Object.fromEntries(
