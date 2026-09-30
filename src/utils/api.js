@@ -1,6 +1,7 @@
 import { supabase } from './supabase.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || 'ganeshshetty93@gmail.com').toLowerCase();
 
 const storageMap = {
   'kb-registration-submissions': { path: '/submissions/registration', normalize: normalizeRegistration },
@@ -10,7 +11,9 @@ const storageMap = {
   'kb-login-submissions': { path: '/submissions/login', normalize: normalizeLogin },
   'kb-admin-classes': { path: '/classes', normalize: normalizeClass },
   'kb-admin-events': { path: '/events', normalize: normalizeEvent },
-  'kb-admin-fundraisers': { path: '/fundraisers', normalize: normalizeFundraiser }
+  'kb-admin-fundraisers': { path: '/fundraisers', normalize: normalizeFundraiser },
+  'kb-announcement-submissions': { path: '/submissions/announcement', normalize: normalizeAnnouncement },
+  'kb-expense-submissions': { path: '/submissions/expense', normalize: normalizeExpense }
 };
 
 function getToken() {
@@ -51,7 +54,27 @@ function normalizeRegistration(row) {
     studentName: row.student_name || row.studentName || '-',
     email: row.email,
     phone: row.phone || '-',
-    program: row.program
+    program: row.program,
+    familyMember: row.family_member || row.familyMember || '',
+    paid: Boolean(row.paid),
+    emailStatus: row.email_status || row.emailStatus || '',
+    birthYear: row.birth_year || row.birthYear || '',
+    status: row.status || 'Submitted',
+    eventId: row.event_id || row.eventId || '',
+    fee: row.fee || '',
+    amount: Number(row.amount || 0),
+    seats: Number(row.seats || row.total_members || 1),
+    adults: Number(row.adults || 1),
+    kids: Number(row.kids || 0),
+    youngKids: Number(row.young_kids || row.youngKids || 0),
+    totalMembers: Number(row.total_members || row.totalMembers || row.seats || 1),
+    registrationType: row.registration_type || row.registrationType || 'member',
+    rsvp: row.rsvp || null,
+    priceMenu: row.price_menu || row.priceMenu || null,
+    paymentReceived: row.payment_received ?? row.paymentReceived ?? false,
+    checkedIn: row.checked_in ?? row.checkedIn ?? false,
+    checkedInAt: row.checked_in_at || row.checkedInAt || '',
+    enabled: row.enabled ?? true
   };
 }
 
@@ -92,6 +115,28 @@ function normalizeLogin(row) {
     ...normalizeBase(row),
     email: row.email,
     role: row.role
+  };
+}
+
+function normalizeUser(row) {
+  const name = row.name || row.email || '-';
+  const parts = String(name).trim().split(/\s+/);
+  const roles = Array.isArray(row.roles) ? row.roles : String(row.roles || row.role || 'member').split(',').map((role) => role.trim()).filter(Boolean);
+  return {
+    ...normalizeBase(row),
+    email: row.email,
+    name,
+    firstName: row.first_name || row.firstName || parts[0] || '-',
+    lastName: row.last_name || row.lastName || parts.slice(1).join(' ') || '-',
+    phone: row.phone || '-',
+    role: row.role || roles[0] || 'member',
+    roles,
+    enabled: row.enabled ?? true,
+    emailConfirmed: row.email_confirmed ?? row.emailConfirmed ?? false,
+    twoFactorEnabled: row.two_factor_enabled ?? row.twoFactorEnabled ?? false,
+    isVolunteeringDefaulter: row.is_volunteering_defaulter ?? row.isVolunteeringDefaulter ?? false,
+    defaulterNotes: row.defaulter_notes || row.defaulterNotes || '',
+    updatedAt: row.updated_at || row.updatedAt || row.created_at || row.createdAt
   };
 }
 
@@ -136,7 +181,44 @@ export function normalizeEvent(row) {
     freeForVolunteers: row.free_for_volunteers ?? row.freeForVolunteers,
     enableCheckIn: row.enable_check_in ?? row.enableCheckIn,
     enableVolunteerDiscount: row.enable_volunteer_discount ?? row.enableVolunteerDiscount,
+    volunteerDiscountPercentage: Number(row.volunteer_discount_percentage || row.volunteerDiscountPercentage || 0),
+    defaulterFineAmount: Number(row.defaulter_fine_amount || row.defaulterFineAmount || 0),
+    rsvp: row.rsvp || null,
+    priceMenu: row.price_menu || row.priceMenu || null,
     photo: row.photo
+  };
+}
+
+function normalizeProfile(row = {}) {
+  return {
+    id: row.id,
+    email: row.email,
+    firstName: row.first_name || row.firstName || '',
+    lastName: row.last_name || row.lastName || '',
+    birthDate: row.birth_date || row.birthDate || '',
+    phone: row.phone || '',
+    gender: row.gender || '',
+    company: row.company || '',
+    description: row.description || '',
+    address1: row.address1 || '',
+    address2: row.address2 || '',
+    city: row.city || '',
+    state: row.state || '',
+    zipCode: row.zip_code || row.zipCode || '',
+    spouseFirstName: row.spouse_first_name || row.spouseFirstName || '',
+    spouseLastName: row.spouse_last_name || row.spouseLastName || '',
+    spouseBirthDate: row.spouse_birth_date || row.spouseBirthDate || '',
+    photo: row.photo || ''
+  };
+}
+
+function normalizeChild(row = {}) {
+  return {
+    id: row.id,
+    firstName: row.first_name || row.firstName || '',
+    lastName: row.last_name || row.lastName || '',
+    gender: row.gender || '',
+    birthDate: row.birth_date || row.birthDate || ''
   };
 }
 
@@ -146,12 +228,44 @@ export function normalizeFundraiser(row) {
     title: row.title,
     category: row.category,
     beneficiary: row.beneficiary,
-    purpose: row.purpose,
-    goal: Number(row.goal || 0),
-    raised: Number(row.raised || 0),
-    deadline: row.deadline,
+    purpose: row.purpose || row.details,
+    details: row.details || row.purpose,
+    goal: Number(row.goal || row.goal_amount || 0),
+    goalAmount: Number(row.goal_amount || row.goal || 0),
+    raised: Number(row.raised || row.raised_amount || 0),
+    raisedAmount: Number(row.raised_amount || row.raised || 0),
+    deadline: row.deadline || row.needed_by,
+    neededBy: row.needed_by || row.deadline,
     status: row.status || 'Active',
+    enabled: row.enabled ?? true,
     photo: row.photo
+  };
+}
+
+function normalizeAnnouncement(row) {
+  return {
+    ...normalizeBase(row),
+    text: row.text,
+    ctaText: row.cta_text || row.ctaText || '',
+    ctaUrl: row.cta_url || row.ctaUrl || '',
+    startOn: row.start_on || row.startOn || '',
+    endOn: row.end_on || row.endOn || '',
+    enabled: row.enabled ?? true
+  };
+}
+
+function normalizeExpense(row) {
+  return {
+    ...normalizeBase(row),
+    title: row.title,
+    category: row.category || '',
+    amount: Number(row.amount || 0),
+    expenseDate: row.expense_date || row.expenseDate || row.date || '',
+    description: row.description || '',
+    status: row.status || 'Submitted',
+    submittedBy: row.submitted_by || row.submittedBy || '',
+    approvedBy: row.approved_by || row.approvedBy || '',
+    approvedAt: row.approved_at || row.approvedAt || ''
   };
 }
 
@@ -183,7 +297,7 @@ async function ensureAdminToken() {
   if (getToken()) return;
 
   const user = getCurrentLocalUser();
-  if (user?.email?.toLowerCase() !== 'test@gmail.com') return;
+  if (user?.email?.toLowerCase() !== ADMIN_EMAIL) return;
 
   await apiLogin({ email: user.email, password: '' });
 }
@@ -217,7 +331,9 @@ export async function apiReadRecords(key) {
     const directReadTables = {
       'kb-admin-classes': 'kb_classes',
       'kb-admin-events': 'kb_events',
-      'kb-admin-fundraisers': 'kb_fundraisers'
+      'kb-admin-fundraisers': 'kb_fundraisers',
+      'kb-announcement-submissions': 'kb_announcements',
+      'kb-expense-submissions': 'kb_expenses'
     };
     const table = directReadTables[key];
     if (!table) throw error;
@@ -230,6 +346,131 @@ export async function apiReadRecords(key) {
     if (supabaseError) throw supabaseError;
     return (data || []).map(config.normalize);
   }
+}
+
+export async function apiUpdateSubmission(type, id, payload) {
+  await ensureAdminToken();
+  const data = await request(`/submissions/${type}/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+
+  if (type === 'registration') return normalizeRegistration(data);
+  if (type === 'announcement') return normalizeAnnouncement(data);
+  return data;
+}
+
+export async function apiDeleteSubmission(type, id) {
+  await ensureAdminToken();
+  return request(`/submissions/${type}/${id}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function apiUpdateUser(id, payload) {
+  await ensureAdminToken();
+  return normalizeUser(await request(`/admin/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  }));
+}
+
+export async function apiRegistrationAction(id, action) {
+  await ensureAdminToken();
+  return normalizeRegistration(await request(`/registrations/${id}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action })
+  }));
+}
+
+export async function apiExpenseAction(id, action) {
+  await ensureAdminToken();
+  return normalizeExpense(await request(`/expenses/${id}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action })
+  }));
+}
+
+export async function apiFindUserByEmail(email) {
+  await ensureAdminToken();
+  const data = await request(`/admin/users/find?email=${encodeURIComponent(email)}`);
+  return {
+    user: data.user ? normalizeUser(data.user) : null,
+    profile: data.profile ? normalizeProfile(data.profile) : null,
+    children: (data.children || []).map(normalizeChild),
+    registrations: (data.registrations || []).map(normalizeRegistration)
+  };
+}
+
+export async function apiReadReceptionRegistrations(eventId = '', includeDeletedItems = false) {
+  await ensureAdminToken();
+  const params = new URLSearchParams();
+  if (eventId) params.set('eventId', eventId);
+  if (includeDeletedItems) params.set('includeDeletedItems', 'true');
+  const data = await request(`/reception/registrations${params.toString() ? `?${params}` : ''}`);
+  return data.map(normalizeRegistration);
+}
+
+export async function apiReceptionCheckin(payload) {
+  await ensureAdminToken();
+  return request('/reception/checkin', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiReadSeats(eventId = '') {
+  await ensureAdminToken();
+  const data = await request(`/eventmgmt/seats${eventId ? `?eventId=${encodeURIComponent(eventId)}` : ''}`);
+  return {
+    seats: data.seats || [],
+    registrations: (data.registrations || []).map(normalizeRegistration)
+  };
+}
+
+export async function apiCreateSeat(payload) {
+  await ensureAdminToken();
+  return request('/eventmgmt/seats', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiUpdateSeat(id, payload) {
+  await ensureAdminToken();
+  return request(`/eventmgmt/seats/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiSendOutboxEmail(id) {
+  await ensureAdminToken();
+  return request(`/email-outbox/${encodeURIComponent(id)}/send`, {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+}
+
+export async function apiCreateFlowPayment(kind, payload) {
+  return request(`/payments/${encodeURIComponent(kind)}/create`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiCompleteFlowPayment(kind, payload) {
+  return request(`/payments/${encodeURIComponent(kind)}/complete`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiCancelFlowPayment(kind, payload) {
+  return request(`/payments/${encodeURIComponent(kind)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function apiRegister(payload) {
@@ -252,11 +493,121 @@ export async function apiLogin(payload) {
   return data.user;
 }
 
+export async function apiGoogleLogin(payload) {
+  const data = await request('/auth/google', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
+export async function apiForgotPassword(email) {
+  return request('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email })
+  });
+}
+
+export async function apiResetPassword(payload) {
+  const data = await request('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
+export async function apiConfirmEmail(token) {
+  const data = await request('/auth/confirm-email', {
+    method: 'POST',
+    body: JSON.stringify({ token })
+  });
+
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
+export async function apiSetTwoFactor(enabled) {
+  const data = await request('/auth/two-factor', {
+    method: 'POST',
+    body: JSON.stringify({ enabled })
+  });
+
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
+export async function apiReadProfile() {
+  const data = await request('/profile');
+  return {
+    profile: data.profile ? normalizeProfile(data.profile) : {},
+    children: (data.children || []).map(normalizeChild)
+  };
+}
+
+export async function apiSaveProfile(payload) {
+  return normalizeProfile(await request('/profile', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }));
+}
+
+export async function apiAddProfileChild(payload) {
+  return normalizeChild(await request('/profile/children', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }));
+}
+
+export async function apiDeleteProfileChild(id) {
+  return request(`/profile/children/${encodeURIComponent(id)}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function apiUploadFile(payload) {
+  await ensureAdminToken();
+  return request('/uploads', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiReadSiteSetting(key) {
+  return request(`/settings/${encodeURIComponent(key)}`);
+}
+
+export async function apiSaveSiteSetting(key, payload) {
+  await ensureAdminToken();
+  return request(`/settings/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiCreatePayPalOrder(payload) {
+  return request('/payments/paypal/orders', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiCapturePayPalOrder(orderId, payload) {
+  return request(`/payments/paypal/orders/${encodeURIComponent(orderId)}/capture`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function apiAdminDashboard() {
   await ensureAdminToken();
   const data = await request('/admin/dashboard');
 
   return {
+    users: (data.users || []).map(normalizeUser),
     registrations: data.registrations.map(normalizeRegistration),
     donations: data.donations.map(normalizeDonation),
     volunteers: data.volunteers.map(normalizeVolunteer),
@@ -264,7 +615,12 @@ export async function apiAdminDashboard() {
     logins: data.logins.map(normalizeLogin),
     classes: data.classes.map(normalizeClass),
     events: data.events.map(normalizeEvent),
-    fundraisers: (data.fundraisers || []).map(normalizeFundraiser)
+    fundraisers: (data.fundraisers || []).map(normalizeFundraiser),
+    announcements: (data.announcements || []).map(normalizeAnnouncement),
+    expenses: (data.expenses || []).map(normalizeExpense),
+    checkins: data.checkins || [],
+    emailOutbox: data.emailOutbox || [],
+    defaulterHistory: data.defaulterHistory || []
   };
 }
 

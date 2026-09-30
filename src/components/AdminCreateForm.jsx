@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { appendAdminRecordAsync, readJson } from '../utils/storage.js';
+import { apiUploadFile } from '../utils/api.js';
 import {
   cleanText,
   firstError,
@@ -96,7 +97,21 @@ export default function AdminCreateForm({ type, onCreated }) {
       return;
     }
 
-    const photo = await fileToDataUrl(photoFile);
+    const photoDataUrl = await fileToDataUrl(photoFile);
+    let photo = photoDataUrl;
+    if (photoDataUrl) {
+      try {
+        const upload = await apiUploadFile({
+          dataUrl: photoDataUrl,
+          fileName: photoFile.name,
+          container: 'assets',
+          directory: isFundraiser ? 'fundraising' : isClass ? 'classes' : 'events'
+        });
+        photo = upload.url || photoDataUrl;
+      } catch {
+        photo = photoDataUrl;
+      }
+    }
     const key = isFundraiser ? 'kb-admin-fundraisers' : isClass ? 'kb-admin-classes' : 'kb-admin-events';
     const startDate = formData.get('startDate');
     const endDate = formData.get('endDate');

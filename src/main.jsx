@@ -16,6 +16,10 @@ import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Profile from './pages/Profile.jsx';
 import Contact from './pages/Contact.jsx';
+import Calendar from './pages/Calendar.jsx';
+import Privacy from './pages/Privacy.jsx';
+import SportsDayRules from './pages/SportsDayRules.jsx';
+import WebRequirements from './pages/WebRequirements.jsx';
 import AdminShell from './components/AdminShell.jsx';
 import AdminSectionPage from './pages/AdminSectionPage.jsx';
 
@@ -36,6 +40,15 @@ createRoot(document.getElementById('root')).render(
             <Route path="register" element={<Register />} />
             <Route path="profile" element={<Profile />} />
             <Route path="contact" element={<Contact />} />
+            <Route path="calendar" element={<Calendar />} />
+            <Route path="privacy" element={<Privacy />} />
+            <Route path="privacypolicy" element={<Privacy />} />
+            <Route path="terms" element={<Privacy />} />
+            <Route path="termsofuse" element={<Privacy />} />
+            <Route path="sportsdayrules" element={<SportsDayRules />} />
+            <Route path="sports-rules" element={<SportsDayRules />} />
+            <Route path="webrequirements" element={<WebRequirements />} />
+            <Route path="web-requirements" element={<WebRequirements />} />
             <Route path="admin" element={<AdminShell />}>
               <Route index element={<AdminSectionPage view="dashboard" />} />
               <Route path="profile" element={<AdminSectionPage view="profile" />} />
@@ -50,6 +63,12 @@ createRoot(document.getElementById('root')).render(
               <Route path="messages" element={<AdminSectionPage view="messages" />} />
               <Route path="volunteer-interest" element={<AdminSectionPage view="volunteer-interest" />} />
               <Route path="checkin" element={<AdminSectionPage view="checkin" />} />
+              <Route path="guest-checkin" element={<AdminSectionPage view="guest-checkin" />} />
+              <Route path="seats" element={<AdminSectionPage view="seats" />} />
+              <Route path="teacher" element={<AdminSectionPage view="teacher" />} />
+              <Route path="treasurer" element={<AdminSectionPage view="treasurer" />} />
+              <Route path="user-search" element={<AdminSectionPage view="user-search" />} />
+              <Route path="email-outbox" element={<AdminSectionPage view="email-outbox" />} />
               <Route path="registrations" element={<AdminSectionPage view="registrations" />} />
               <Route path="student-view" element={<AdminSectionPage view="student-view" />} />
             </Route>

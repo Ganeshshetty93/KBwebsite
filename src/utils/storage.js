@@ -1,5 +1,7 @@
 import { apiAppendRecord, clearApiSession } from './api.js';
 
+export const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || 'ganeshshetty93@gmail.com').toLowerCase();
+
 export function readJson(key, fallback = []) {
   try {
     return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback));
@@ -90,5 +92,20 @@ export function setCurrentUser(user) {
 }
 
 export function isAdmin(user) {
-  return user?.email?.toLowerCase() === 'test@gmail.com';
+  return user?.email?.toLowerCase() === ADMIN_EMAIL || hasAnyRole(user, ['admin', 'superadmin']);
+}
+
+export function userRoles(user) {
+  const roles = Array.isArray(user?.roles) ? user.roles : String(user?.role || 'member').split(',');
+  return [...new Set(roles.map((role) => String(role || '').trim().toLowerCase()).filter(Boolean))];
+}
+
+export function hasAnyRole(user, roles = []) {
+  const normalized = roles.map((role) => String(role).toLowerCase());
+  const current = userRoles(user);
+  return current.some((role) => normalized.includes(role));
+}
+
+export function canUseAdminArea(user) {
+  return isAdmin(user) || hasAnyRole(user, ['receptionist', 'teacher', 'volunteer', 'treasurer']);
 }

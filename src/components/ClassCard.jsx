@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CalendarDays, Clock, MapPin, UserRound, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { appendRecord } from '../utils/storage.js';
+import { appendRecord, getCurrentUser, readJson } from '../utils/storage.js';
 import { cleanText, firstError, validateEmail, validatePhone, validateRequired } from '../utils/validation.js';
 
 function getClassImage(item) {
@@ -25,14 +25,73 @@ function getFeeText(item) {
   return String(value);
 }
 
+function fullName(...parts) {
+  return parts.map((part) => String(part || '').trim()).filter(Boolean).join(' ');
+}
+
+function getBirthYear(value) {
+  if (!value) return '';
+  const year = new Date(value).getFullYear();
+  return Number.isFinite(year) ? String(year) : '';
+}
+
+function buildMemberOptions(user) {
+  if (!user?.email) return [];
+
+  const email = String(user.email).toLowerCase();
+  const profile = readJson(`kb-member-profile-${email}`, {});
+  const children = readJson(`kb-member-children-${email}`, []);
+  const selfName = fullName(profile.firstName, profile.lastName)
+    || fullName(user.firstName, user.lastName)
+    || user.name
+    || user.email;
+  const spouseName = fullName(profile.spouseFirstName, profile.spouseLastName);
+  const members = [{
+    value: `self:${selfName}`,
+    label: `${selfName} (self)`,
+    name: selfName,
+    relation: 'Self',
+    birthYear: getBirthYear(profile.birthDate || user.birthDate)
+  }];
+
+  if (spouseName) {
+    members.push({
+      value: `spouse:${spouseName}`,
+      label: `${spouseName} (spouse)`,
+      name: spouseName,
+      relation: 'Spouse',
+      birthYear: getBirthYear(profile.spouseBirthDate)
+    });
+  }
+
+  children.forEach((child, index) => {
+    const childName = fullName(child.firstName || child.childFirstName, child.lastName || child.childLastName) || `Child ${index + 1}`;
+    members.push({
+      value: `child-${index}:${childName}`,
+      label: `${childName} (child)`,
+      name: childName,
+      relation: 'Child',
+      birthYear: getBirthYear(child.birthDate || child.childBirthDate)
+    });
+  });
+
+  return members;
+}
+
 export default function ClassCard({ item }) {
   const [showDetails, setShowDetails] = useState(false);
+  const [showMemberRegister, setShowMemberRegister] = useState(false);
+  const [selectedMember, setSelectedMember] = useState('');
+  const [memberSaved, setMemberSaved] = useState(false);
+  const [memberError, setMemberError] = useState('');
   const [showGuestForm, setShowGuestForm] = useState(false);
   const [guestError, setGuestError] = useState('');
   const [guestSaved, setGuestSaved] = useState(false);
   const classImage = getClassImage(item);
   const registerUrl = `/register?program=${encodeURIComponent(item.title)}`;
   const feeText = getFeeText(item);
+  const user = getCurrentUser();
+  const memberOptions = buildMemberOptions(user);
 
   function handleGuestSubmit(event) {
     event.preventDefault();
@@ -68,6 +127,38 @@ export default function ClassCard({ item }) {
 
     event.currentTarget.reset();
     setGuestSaved(true);
+  }
+
+  function handleMemberSubmit(event) {
+    event.preventDefault();
+    setMemberSaved(false);
+    setMemberError('');
+
+    const member = memberOptions.find((option) => option.value === selectedMember);
+    if (!user) {
+      setMemberError('Please login before registering for this class.');
+      return;
+    }
+    if (!member) {
+      setMemberError('Please select the member to register.');
+      return;
+    }
+
+    appendRecord('kb-registration-submissions', {
+      parentName: user.name || user.email,
+      studentName: member.name,
+      familyMember: member.relation,
+      birthYear: member.birthYear,
+      email: user.email,
+      phone: user.phone || '-',
+      program: item.title,
+      status: 'Submitted',
+      fee: feeText,
+      seats: 1,
+      totalMembers: 1
+    });
+
+    setMemberSaved(true);
   }
 
   return (
@@ -128,11 +219,39 @@ export default function ClassCard({ item }) {
               </ol>
             </section>
             <div className="class-detail-actions">
-              <Link className="button primary" to={registerUrl}>Register</Link>
+              <button className="button primary" type="button" onClick={() => {
+                setShowMemberRegister((value) => !value);
+                setSelectedMember(memberOptions[0]?.value || '');
+                setMemberError('');
+                setMemberSaved(false);
+              }}>
+                Register
+              </button>
               <button className="button primary" type="button" onClick={() => { setShowGuestForm((value) => !value); setGuestError(''); }}>
                 Register as Guest
               </button>
             </div>
+            {showMemberRegister && (
+              <form className="guest-registration-form member-registration-form" onSubmit={handleMemberSubmit}>
+                <div className="notice-box">
+                  Need to add a new person? Update it in your <Link to="/profile">account</Link>.
+                </div>
+                <label>
+                  Please select the member(s) to register <b>*</b>
+                  <select value={selectedMember} onChange={(event) => setSelectedMember(event.target.value)} required>
+                    <option value="">-- Please select --</option>
+                    {memberOptions.map((member) => (
+                      <option key={member.value} value={member.value}>{member.label}</option>
+                    ))}
+                  </select>
+                </label>
+                {!user && <p className="fine-print">Please <Link to="/login">login</Link> or <Link to={registerUrl}>create an account</Link> before registering.</p>}
+                {user && memberOptions.length === 1 && <p className="fine-print">Only self is available right now. Add spouse or children in your account profile to show them here.</p>}
+                {memberError && <p className="form-error">{memberError}</p>}
+                {memberSaved && <p className="success">Registration submitted. Please wait for approved email confirmation.</p>}
+                <button className="blue-submit" type="submit" disabled={!user}>Register</button>
+              </form>
+            )}
             {showGuestForm && (
               <form className="guest-registration-form" onSubmit={handleGuestSubmit}>
                 <h3>Guest Registration</h3>

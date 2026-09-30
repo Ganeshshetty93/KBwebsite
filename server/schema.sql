@@ -6,10 +6,30 @@ create table if not exists public.kb_users (
   name text not null,
   phone text,
   role text not null default 'member',
+  roles text[] not null default array['member'],
   password_hash text,
+  enabled boolean not null default true,
+  email_confirmed boolean not null default false,
+  email_confirmation_token text,
+  password_reset_token text,
+  password_reset_expires_at timestamptz,
+  two_factor_enabled boolean not null default false,
+  is_volunteering_defaulter boolean not null default false,
+  defaulter_notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.kb_users add column if not exists roles text[] not null default array['member'];
+alter table public.kb_users add column if not exists enabled boolean not null default true;
+alter table public.kb_users add column if not exists email_confirmed boolean not null default false;
+alter table public.kb_users add column if not exists email_confirmation_token text;
+alter table public.kb_users add column if not exists password_reset_token text;
+alter table public.kb_users add column if not exists password_reset_expires_at timestamptz;
+alter table public.kb_users add column if not exists two_factor_enabled boolean not null default false;
+alter table public.kb_users add column if not exists is_volunteering_defaulter boolean not null default false;
+alter table public.kb_users add column if not exists defaulter_notes text;
+alter table public.kb_users add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists public.kb_admins (
   id uuid primary key default gen_random_uuid(),
@@ -39,6 +59,13 @@ create table if not exists public.kb_registrations (
   kids integer not null default 0,
   young_kids integer not null default 0,
   total_members integer not null default 1,
+  registration_type text not null default 'member',
+  rsvp jsonb,
+  price_menu jsonb,
+  payment_received boolean not null default false,
+  checked_in boolean not null default false,
+  checked_in_at timestamptz,
+  enabled boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -55,6 +82,13 @@ alter table public.kb_registrations add column if not exists adults integer not 
 alter table public.kb_registrations add column if not exists kids integer not null default 0;
 alter table public.kb_registrations add column if not exists young_kids integer not null default 0;
 alter table public.kb_registrations add column if not exists total_members integer not null default 1;
+alter table public.kb_registrations add column if not exists registration_type text not null default 'member';
+alter table public.kb_registrations add column if not exists rsvp jsonb;
+alter table public.kb_registrations add column if not exists price_menu jsonb;
+alter table public.kb_registrations add column if not exists payment_received boolean not null default false;
+alter table public.kb_registrations add column if not exists checked_in boolean not null default false;
+alter table public.kb_registrations add column if not exists checked_in_at timestamptz;
+alter table public.kb_registrations add column if not exists enabled boolean not null default true;
 
 create table if not exists public.kb_logins (
   id uuid primary key default gen_random_uuid(),
@@ -71,13 +105,21 @@ create table if not exists public.kb_donations (
   cause_id uuid,
   cause_title text,
   payment_status text not null default 'Pending',
+  paypal_order_id text,
+  paypal_capture_id text,
+  payment_payload jsonb,
+  updated_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
 
 alter table public.kb_donations
 add column if not exists cause_id uuid,
 add column if not exists cause_title text,
-add column if not exists payment_status text not null default 'Pending';
+add column if not exists payment_status text not null default 'Pending',
+add column if not exists paypal_order_id text,
+add column if not exists paypal_capture_id text,
+add column if not exists payment_payload jsonb,
+add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists public.kb_volunteers (
   id uuid primary key default gen_random_uuid(),
@@ -136,6 +178,10 @@ create table if not exists public.kb_events (
   free_for_volunteers boolean not null default false,
   enable_check_in boolean not null default false,
   enable_volunteer_discount boolean not null default false,
+  volunteer_discount_percentage numeric not null default 0,
+  defaulter_fine_amount numeric not null default 0,
+  rsvp jsonb,
+  price_menu jsonb,
   photo text,
   created_at timestamptz not null default now()
 );
@@ -158,6 +204,10 @@ alter table public.kb_events add column if not exists display_seat_numbers boole
 alter table public.kb_events add column if not exists free_for_volunteers boolean not null default false;
 alter table public.kb_events add column if not exists enable_check_in boolean not null default false;
 alter table public.kb_events add column if not exists enable_volunteer_discount boolean not null default false;
+alter table public.kb_events add column if not exists volunteer_discount_percentage numeric not null default 0;
+alter table public.kb_events add column if not exists defaulter_fine_amount numeric not null default 0;
+alter table public.kb_events add column if not exists rsvp jsonb;
+alter table public.kb_events add column if not exists price_menu jsonb;
 
 create table if not exists public.kb_fundraisers (
   id uuid primary key default gen_random_uuid(),
@@ -204,8 +254,13 @@ create table if not exists public.kb_expenses (
   description text,
   status text not null default 'Submitted',
   submitted_by text,
+  approved_by text,
+  approved_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table public.kb_expenses add column if not exists approved_by text;
+alter table public.kb_expenses add column if not exists approved_at timestamptz;
 
 create table if not exists public.kb_event_types (
   id uuid primary key default gen_random_uuid(),
@@ -219,6 +274,12 @@ create table if not exists public.kb_recurrence_options (
   name text unique not null,
   active boolean not null default true,
   created_at timestamptz not null default now()
+);
+
+create table if not exists public.kb_site_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.kb_member_profiles (
@@ -265,6 +326,58 @@ create table if not exists public.kb_checkins (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.kb_seats (
+  id uuid primary key default gen_random_uuid(),
+  event_id text not null,
+  seat_number text not null,
+  registration_id uuid,
+  assigned_to text,
+  status text not null default 'Available',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(event_id, seat_number)
+);
+
+create table if not exists public.kb_phone_verifications (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  phone text not null,
+  code text not null,
+  expires_at timestamptz not null,
+  verified boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.kb_external_logins (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  provider text not null,
+  provider_key text,
+  display_name text,
+  created_at timestamptz not null default now(),
+  unique(email, provider)
+);
+
+create table if not exists public.kb_email_outbox (
+  id uuid primary key default gen_random_uuid(),
+  to_email text not null,
+  subject text not null,
+  template text,
+  payload jsonb,
+  status text not null default 'Stored',
+  created_at timestamptz not null default now(),
+  sent_at timestamptz
+);
+
+create table if not exists public.kb_defaulter_history (
+  id uuid primary key default gen_random_uuid(),
+  user_email text not null,
+  is_defaulter boolean not null default false,
+  notes text,
+  set_by text,
+  created_at timestamptz not null default now()
+);
+
 insert into public.kb_event_types (name)
 values ('Classroom'), ('Workshop'), ('Seminar'), ('Cultural')
 on conflict (name) do nothing;
@@ -287,9 +400,15 @@ alter table public.kb_announcements enable row level security;
 alter table public.kb_expenses enable row level security;
 alter table public.kb_event_types enable row level security;
 alter table public.kb_recurrence_options enable row level security;
+alter table public.kb_site_settings enable row level security;
 alter table public.kb_member_profiles enable row level security;
 alter table public.kb_member_children enable row level security;
 alter table public.kb_checkins enable row level security;
+alter table public.kb_seats enable row level security;
+alter table public.kb_phone_verifications enable row level security;
+alter table public.kb_external_logins enable row level security;
+alter table public.kb_email_outbox enable row level security;
+alter table public.kb_defaulter_history enable row level security;
 
 drop policy if exists "Public can read classes" on public.kb_classes;
 create policy "Public can read classes"
@@ -333,6 +452,13 @@ for select
 to anon, authenticated
 using (true);
 
+drop policy if exists "Public can read site settings" on public.kb_site_settings;
+create policy "Public can read site settings"
+on public.kb_site_settings
+for select
+to anon, authenticated
+using (true);
+
 insert into public.kb_admins (email, name, active)
-values ('test@gmail.com', 'Kannada Bharati Admin', true)
+values ('ganeshshetty93@gmail.com', 'Kannada Bharati Admin', true)
 on conflict (email) do update set active = excluded.active, name = excluded.name;

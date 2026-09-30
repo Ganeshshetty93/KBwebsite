@@ -16,6 +16,8 @@ npm install
 cp .env.example .env
 ```
 
+Add `AZURE_STORAGE_CONNECTION_STRING` when profile, class, event, and fundraising images should upload to Azure Blob Storage. Without it, the app keeps the existing inline image fallback for local testing.
+
 3. In Supabase SQL Editor, run:
 
 ```sql
@@ -33,7 +35,7 @@ Backend: `http://localhost:4000/api`
 
 ## Admin
 
-Use `test@gmail.com` as the admin email. Admin can view dashboard data and add classes/events with photo uploads.
+Use `ganeshshetty93@gmail.com` as the admin email. Admin can view dashboard data and add classes/events with photo uploads.
 
 ## Backend Features
 
@@ -44,4 +46,5 @@ Use `test@gmail.com` as the admin email. Admin can view dashboard data and add c
 - Contact messages
 - Admin-created classes
 - Admin-created events
+- Azure Blob Storage image upload when configured
 - Supabase-backed persistence with local demo fallback

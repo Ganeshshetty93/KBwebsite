@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Camera, Plus, Trash2 } from 'lucide-react';
 import { getCurrentUser, readJson, writeJson } from '../utils/storage.js';
+import { apiAddProfileChild, apiDeleteProfileChild, apiReadProfile, apiSaveProfile, apiUploadFile } from '../utils/api.js';
 import { cleanText, firstError, validateDateOrder, validateImageFile, validatePhone, validateRequired } from '../utils/validation.js';
 
 function profileKey(email) {
@@ -35,6 +36,21 @@ export default function Profile() {
   const [saved, setSaved] = useState(false);
   const [childError, setChildError] = useState('');
 
+  useEffect(() => {
+    apiReadProfile()
+      .then((records) => {
+        if (records.profile && Object.keys(records.profile).length) {
+          writeJson(profileKey(user.email), records.profile);
+          setProfile(records.profile);
+        }
+        if (records.children) {
+          writeJson(childrenKey(user.email), records.children);
+          setChildren(records.children);
+        }
+      })
+      .catch(() => {});
+  }, [user.email]);
+
   async function handleProfileSubmit(event) {
     event.preventDefault();
     setError('');
@@ -60,7 +76,22 @@ export default function Profile() {
       return;
     }
 
-    const photo = await fileToDataUrl(photoFile);
+    const photoDataUrl = await fileToDataUrl(photoFile);
+    let photo = photoDataUrl || profile.photo || '';
+    if (photoDataUrl) {
+      try {
+        const upload = await apiUploadFile({
+          dataUrl: photoDataUrl,
+          fileName: photoFile.name,
+          container: 'users',
+          directory: user.email
+        });
+        photo = upload.url || photoDataUrl;
+      } catch {
+        photo = photoDataUrl;
+      }
+    }
+
     const nextProfile = {
       ...profile,
       firstName: cleanText(payload.firstName),
@@ -78,12 +109,19 @@ export default function Profile() {
       spouseFirstName: cleanText(payload.spouseFirstName),
       spouseLastName: cleanText(payload.spouseLastName),
       spouseBirthDate: payload.spouseBirthDate,
-      photo: photo || profile.photo || '',
+      photo,
       updatedAt: new Date().toISOString()
     };
 
-    writeJson(profileKey(user.email), nextProfile);
-    setProfile(nextProfile);
+    let savedProfile = nextProfile;
+    try {
+      savedProfile = await apiSaveProfile(nextProfile);
+    } catch {
+      savedProfile = nextProfile;
+    }
+
+    writeJson(profileKey(user.email), savedProfile);
+    setProfile(savedProfile);
     setSaved(true);
     window.dispatchEvent(new Event('kb-data-change'));
   }
@@ -105,16 +143,22 @@ export default function Profile() {
       return;
     }
 
-    const nextChildren = [
-      ...children,
-      {
-        id: `child-${Date.now()}`,
-        firstName: cleanText(payload.firstName),
-        lastName: cleanText(payload.lastName),
-        gender: payload.gender,
-        birthDate: payload.birthDate
-      }
-    ];
+    let child = {
+      id: `child-${Date.now()}`,
+      firstName: cleanText(payload.firstName),
+      lastName: cleanText(payload.lastName),
+      gender: payload.gender,
+      birthDate: payload.birthDate
+    };
+    apiAddProfileChild(child)
+      .then((savedChild) => {
+        const next = [...children, savedChild];
+        writeJson(childrenKey(user.email), next);
+        setChildren(next);
+        window.dispatchEvent(new Event('kb-data-change'));
+      })
+      .catch(() => {});
+    const nextChildren = [...children, child];
     writeJson(childrenKey(user.email), nextChildren);
     setChildren(nextChildren);
     form.reset();
@@ -125,6 +169,7 @@ export default function Profile() {
     const nextChildren = children.filter((child) => child.id !== id);
     writeJson(childrenKey(user.email), nextChildren);
     setChildren(nextChildren);
+    apiDeleteProfileChild(id).catch(() => {});
     window.dispatchEvent(new Event('kb-data-change'));
   }
 

@@ -1,15 +1,53 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CalendarDays, KeyRound, Mail, ShieldCheck, Sparkles, UsersRound } from 'lucide-react';
 import { appendRecord, setCurrentUser } from '../utils/storage.js';
-import { apiLogin } from '../utils/api.js';
+import { apiConfirmEmail, apiForgotPassword, apiGoogleLogin, apiLogin, apiResetPassword } from '../utils/api.js';
 import { cleanText, firstError, validateEmail, validatePassword } from '../utils/validation.js';
 
-const googleLoginUrl = 'https://accounts.google.com/v3/signin/accountchooser?client_id=106887524289-okrehvsli5s49lml6dh74bnjmh37h7mr.apps.googleusercontent.com&redirect_uri=https%3A%2F%2Fkbharati.org%2Fsignin-google&response_type=code&scope=openid+profile+email&service=lso&flowName=GeneralOAuthFlow&app_domain=https%3A%2F%2Fkbharati.org';
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || 'ganeshshetty93@gmail.com').toLowerCase();
+
+function loadGoogleIdentityScript() {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const googleTokenClientRef = useRef(null);
+  const resetToken = searchParams.get('resetToken');
+  const confirmToken = searchParams.get('confirmToken');
+
+  useEffect(() => {
+    if (!confirmToken) return;
+    apiConfirmEmail(confirmToken)
+      .then((user) => {
+        setCurrentUser(user);
+        setNotice('Email confirmed. You are signed in.');
+      })
+      .catch((confirmError) => setError(confirmError.message || 'Email confirmation failed.'));
+  }, [confirmToken]);
 
   async function loginWithEmail(email, password = '') {
     const normalized = email.trim().toLowerCase();
@@ -19,8 +57,8 @@ export default function Login() {
     } catch {
       user = {
         email: normalized,
-        name: normalized === 'test@gmail.com' ? 'Admin' : normalized.split('@')[0],
-        role: normalized === 'test@gmail.com' ? 'admin' : 'member'
+        name: normalized === adminEmail ? 'Admin' : normalized.split('@')[0],
+        role: normalized === adminEmail ? 'admin' : 'member'
       };
       appendRecord('kb-login-submissions', user);
     }
@@ -31,6 +69,7 @@ export default function Login() {
   function handleSubmit(event) {
     event.preventDefault();
     setError('');
+    setNotice('');
     const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
     const email = cleanText(payload.email).toLowerCase();
     const validationError = firstError([
@@ -43,11 +82,70 @@ export default function Login() {
       return;
     }
 
+    if (resetToken) {
+      apiResetPassword({ token: resetToken, password: payload.password })
+        .then((user) => {
+          setCurrentUser(user);
+          navigate(user.role === 'admin' ? '/admin' : '/classes');
+        })
+        .catch((resetError) => setError(resetError.message || 'Password reset failed.'));
+      return;
+    }
+
     loginWithEmail(email, payload.password);
   }
 
-  function handleGoogleLogin() {
-    window.location.href = googleLoginUrl;
+  async function handleForgotPassword(event) {
+    event.preventDefault();
+    setError('');
+    setNotice('');
+    const email = cleanText(new FormData(event.currentTarget.form).get('email')).toLowerCase();
+    const validationError = validateEmail(email);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    try {
+      await apiForgotPassword(email);
+      setNotice('Password reset instructions were queued for that email.');
+    } catch (forgotError) {
+      setError(forgotError.message || 'Could not start password reset.');
+    }
+  }
+
+  async function handleGoogleLogin() {
+    setError('');
+
+    if (!googleClientId) {
+      setError('Google login is not configured.');
+      return;
+    }
+
+    try {
+      await loadGoogleIdentityScript();
+      googleTokenClientRef.current ||= window.google.accounts.oauth2.initTokenClient({
+        client_id: googleClientId,
+        scope: 'openid email profile',
+        callback: async (response) => {
+          if (response.error) {
+            setError(response.error_description || 'Google login failed.');
+            return;
+          }
+
+          try {
+            const user = await apiGoogleLogin({ accessToken: response.access_token });
+            setCurrentUser(user);
+            navigate(user.role === 'admin' ? '/admin' : '/classes');
+          } catch (googleError) {
+            setError(googleError.message || 'Google login failed.');
+          }
+        }
+      });
+      googleTokenClientRef.current.requestAccessToken();
+    } catch {
+      setError('Google login could not be started.');
+    }
   }
 
   return (
@@ -61,14 +159,14 @@ export default function Login() {
           <div className="register-benefits">
             <span><UsersRound size={18} /> Member activity access</span>
             <span><CalendarDays size={18} /> Events and class updates</span>
-            <span><ShieldCheck size={18} /> Admin dashboard for test@gmail.com</span>
+            <span><ShieldCheck size={18} /> Admin dashboard for {adminEmail}</span>
           </div>
         </aside>
 
         <div className="login-panel">
           <div className="login-card-heading">
             <span><Sparkles size={18} /> Continue securely</span>
-            <h2>Log in to your account</h2>
+            <h2>{resetToken ? 'Reset your password' : 'Log in to your account'}</h2>
           </div>
 
           <div className="social-area">
@@ -106,12 +204,13 @@ export default function Login() {
                 <input name="remember" type="checkbox" />
                 Remember me
               </label>
-              <Link to="/contact">Forgot password?</Link>
+              <button className="text-link-button" type="button" onClick={handleForgotPassword}>Forgot password?</button>
             </div>
 
-            <button className="blue-submit" type="submit">Log in</button>
+            <button className="blue-submit" type="submit">{resetToken ? 'Reset password' : 'Log in'}</button>
             {error && <p className="form-error">{error}</p>}
-            <p className="fine-print admin-login-note">Admin demo: use test@gmail.com with any password.</p>
+            {notice && <p className="success">{notice}</p>}
+            <p className="fine-print admin-login-note">Admin demo: use {adminEmail} with any password.</p>
           </form>
 
           <div className="login-footer-links">

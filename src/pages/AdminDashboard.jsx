@@ -137,6 +137,7 @@ export default function AdminDashboard() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [modalType, setModalType] = useState(null);
   const [dashboard, setDashboard] = useState(() => ({
+    users: [],
     registrations: readJson('kb-registration-submissions', []),
     logins: readJson('kb-login-submissions', []),
     donations: readJson('kb-donation-submissions', []),
@@ -157,8 +158,10 @@ export default function AdminDashboard() {
     apiAdminDashboard()
       .then((records) => {
         if (!ignore) {
+          const localRegistrations = readJson('kb-registration-submissions', []);
           setDashboard({
             ...records,
+            registrations: records.registrations?.length ? records.registrations : localRegistrations,
             expenses: readJson('kb-expense-submissions', []),
             fundraisers: records.fundraisers?.length ? records.fundraisers : readJson('kb-admin-fundraisers', [])
           });
@@ -169,6 +172,7 @@ export default function AdminDashboard() {
         if (!ignore) {
           setDashboard({
             registrations: readJson('kb-registration-submissions', []),
+            users: [],
             logins: readJson('kb-login-submissions', []),
             donations: readJson('kb-donation-submissions', []),
             volunteers: readJson('kb-volunteer-submissions', []),

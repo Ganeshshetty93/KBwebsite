@@ -3,6 +3,7 @@ import { Gauge, Globe2, HeartHandshake, LogIn, LogOut, Menu, UserCircle, X } fro
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
 import { getCurrentUser, isAdmin, readJson, setCurrentUser } from './utils/storage.js';
+import { apiReadRecords } from './utils/api.js';
 import PageLoader from './components/PageLoader.jsx';
 
 const nav = [
@@ -45,6 +46,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let ignore = false;
+    apiReadRecords('kb-announcement-submissions')
+      .then((records) => {
+        if (!ignore && records.length) {
+          setAnnouncements(records);
+        }
+      })
+      .catch(() => {});
+
     function syncData() {
       setAnnouncements(readJson('kb-announcement-submissions', []));
       const current = getCurrentUser();
@@ -54,6 +64,7 @@ export default function App() {
     window.addEventListener('kb-data-change', syncData);
     window.addEventListener('storage', syncData);
     return () => {
+      ignore = true;
       window.removeEventListener('kb-data-change', syncData);
       window.removeEventListener('storage', syncData);
     };
@@ -168,12 +179,24 @@ export default function App() {
         <div>
           <strong>ಕನ್ನಡ ಭಾರತಿ</strong>
           <p>{t('footerLine')}</p>
+          <div className="footer-social">
+            <span>Connect with Kannada Bharati</span>
+            <div>
+              <a href="https://www.facebook.com/KannadaBharati" target="_blank" rel="noreferrer" aria-label="Kannada Bharati Facebook">f</a>
+              <a href="https://www.youtube.com" target="_blank" rel="noreferrer" aria-label="Kannada Bharati YouTube">▶</a>
+              <a href="https://www.linkedin.com" target="_blank" rel="noreferrer" aria-label="Kannada Bharati LinkedIn">in</a>
+            </div>
+          </div>
         </div>
         <div className="footer-actions">
           <Link className="footer-link" to="/volunteer">
             <HeartHandshake size={18} /> {t('navVolunteer')}
           </Link>
           <Link className="footer-link" to="/donate">{t('navDonate')}</Link>
+          <Link className="footer-link" to="/calendar">Calendar</Link>
+          <Link className="footer-link" to="/sportsdayrules">Sports Rules</Link>
+          <Link className="footer-link" to="/webrequirements">Web Requirements</Link>
+          <Link className="footer-link" to="/privacy">Privacy</Link>
           {isAdmin(user) && <Link className="footer-link" to="/admin">{t('navDashboard')}</Link>}
           <Link className="footer-link" to="/login">{t('memberLogin')}</Link>
         </div>
