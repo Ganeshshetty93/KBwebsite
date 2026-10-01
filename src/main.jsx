@@ -38,7 +38,7 @@ createRoot(document.getElementById('root')).render(
             <Route path="volunteer" element={<Volunteer />} />
             <Route path="login" element={<Login />} />
             <Route path="register" element={<Register />} />
-            <Route path="profile" element={<Profile />} />
+            <Route path="profile" element={<Navigate to="/admin/profile" replace />} />
             <Route path="contact" element={<Contact />} />
             <Route path="calendar" element={<Calendar />} />
             <Route path="privacy" element={<Privacy />} />
@@ -51,7 +51,7 @@ createRoot(document.getElementById('root')).render(
             <Route path="web-requirements" element={<WebRequirements />} />
             <Route path="admin" element={<AdminShell />}>
               <Route index element={<AdminSectionPage view="dashboard" />} />
-              <Route path="profile" element={<AdminSectionPage view="profile" />} />
+              <Route path="profile" element={<Profile />} />
               <Route path="register-member" element={<AdminSectionPage view="register-member" />} />
               <Route path="expense" element={<AdminSectionPage view="expense" />} />
               <Route path="users" element={<AdminSectionPage view="users" />} />
@@ -69,6 +69,7 @@ createRoot(document.getElementById('root')).render(
               <Route path="treasurer" element={<AdminSectionPage view="treasurer" />} />
               <Route path="user-search" element={<AdminSectionPage view="user-search" />} />
               <Route path="email-outbox" element={<AdminSectionPage view="email-outbox" />} />
+              <Route path="developer" element={<AdminSectionPage view="developer" />} />
               <Route path="registrations" element={<AdminSectionPage view="registrations" />} />
               <Route path="student-view" element={<AdminSectionPage view="student-view" />} />
             </Route>

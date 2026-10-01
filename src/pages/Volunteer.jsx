@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import PageHero from '../components/PageHero.jsx';
 import FormPanel from '../components/FormPanel.jsx';
 import { volunteerAreas } from '../data/siteData.js';
@@ -8,8 +9,15 @@ import { apiReadSiteSetting } from '../utils/api.js';
 
 const defaultVolunteerGoogleForm = {
   enabled: false,
-  url: ''
+  url: 'https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true'
 };
+
+function normalizeGoogleForm(setting = defaultVolunteerGoogleForm) {
+  return {
+    enabled: setting.enabled === true || setting.enabled === 'true' || setting.enabled === 'Yes' || setting.enabled === 1,
+    url: String(setting.url || defaultVolunteerGoogleForm.url).trim()
+  };
+}
 
 function googleFormEmbedUrl(url) {
   if (!url) return '';
@@ -19,7 +27,8 @@ function googleFormEmbedUrl(url) {
 
 export default function Volunteer() {
   const { t } = useLanguage();
-  const [googleForm, setGoogleForm] = useState(() => readJson('kb-volunteer-google-form', defaultVolunteerGoogleForm));
+  const [googleForm, setGoogleForm] = useState(() => normalizeGoogleForm(readJson('kb-volunteer-google-form', defaultVolunteerGoogleForm)));
+  const [showGoogleForm, setShowGoogleForm] = useState(false);
   const isGoogleFormEnabled = Boolean(googleForm.enabled && googleForm.url);
   const embedUrl = googleFormEmbedUrl(googleForm.url);
 
@@ -27,12 +36,14 @@ export default function Volunteer() {
     let ignore = false;
     apiReadSiteSetting('volunteer-google-form')
       .then((setting) => {
-        if (!ignore) setGoogleForm(setting || defaultVolunteerGoogleForm);
+        if (ignore) return;
+        const normalized = normalizeGoogleForm(setting || defaultVolunteerGoogleForm);
+        setGoogleForm(normalized);
       })
       .catch(() => {});
 
     function syncSettings() {
-      setGoogleForm(readJson('kb-volunteer-google-form', defaultVolunteerGoogleForm));
+      setGoogleForm(normalizeGoogleForm(readJson('kb-volunteer-google-form', defaultVolunteerGoogleForm)));
     }
 
     window.addEventListener('kb-data-change', syncSettings);
@@ -63,7 +74,7 @@ export default function Volunteer() {
             <h3>Google Form registration</h3>
             <p>Admins can enable a Google Form for formal volunteer registration. When it is not enabled, the registration action remains unavailable.</p>
             {isGoogleFormEnabled ? (
-              <a className="button primary" href={googleForm.url} target="_blank" rel="noreferrer">Open Google Form</a>
+              <button className="button primary" type="button" onClick={() => setShowGoogleForm(true)}>Open Google Form</button>
             ) : (
               <button className="button primary" type="button" disabled>Google Form Disabled</button>
             )}
@@ -80,27 +91,28 @@ export default function Volunteer() {
           ]}
         />
       </section>
-      <section className="section volunteer-google-section">
-        <div className="section-heading">
-          <p className="eyebrow">Registration</p>
-          <h2>Volunteer Registration</h2>
+      {showGoogleForm && isGoogleFormEnabled && (
+        <div className="popup-backdrop volunteer-form-backdrop" role="presentation" onClick={() => setShowGoogleForm(false)}>
+          <div
+            className="popup-panel volunteer-form-popup"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Volunteer Google Form registration"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button className="popup-close" type="button" aria-label="Close Google Form" onClick={() => setShowGoogleForm(false)}>
+              <X size={20} />
+            </button>
+            <div className="google-form-frame-wrap">
+              <iframe
+                title="Kannada Bharati volunteer Google Form"
+                src={embedUrl}
+                loading="lazy"
+              />
+            </div>
+          </div>
         </div>
-        {isGoogleFormEnabled ? (
-          <div className="google-form-frame-wrap">
-            <iframe
-              title="Kannada Bharati volunteer Google Form"
-              src={embedUrl}
-              loading="lazy"
-            />
-          </div>
-        ) : (
-          <div className="google-form-disabled">
-            <h3>Google Form registration is currently disabled.</h3>
-            <p>Please use the volunteer interest form above or check back after registration is opened.</p>
-            <button className="button primary" type="button" disabled>Google Form Disabled</button>
-          </div>
-        )}
-      </section>
+      )}
     </>
   );
 }

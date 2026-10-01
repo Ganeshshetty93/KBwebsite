@@ -1,8 +1,25 @@
 import { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
-import { Camera, Plus, Trash2 } from 'lucide-react';
+import { Navigate, useSearchParams } from 'react-router-dom';
+import { Camera, CheckCircle2, ReceiptText, Plus, Trash2, X } from 'lucide-react';
 import { getCurrentUser, readJson, writeJson } from '../utils/storage.js';
-import { apiAddProfileChild, apiDeleteProfileChild, apiReadProfile, apiSaveProfile, apiUploadFile } from '../utils/api.js';
+import {
+  apiAddProfileChild,
+  apiAdminDashboard,
+  apiChangePassword,
+  apiCompleteFlowPayment,
+  apiConfirmPhoneVerification,
+  apiCreateFlowPayment,
+  apiDeleteProfileChild,
+  apiLinkExternalLogin,
+  apiReadExternalLogins,
+  apiReadProfile,
+  apiRemoveExternalLogin,
+  apiSaveProfile,
+  apiSetPassword,
+  apiSetTwoFactor,
+  apiStartPhoneVerification,
+  apiUploadFile
+} from '../utils/api.js';
 import { cleanText, firstError, validateDateOrder, validateImageFile, validatePhone, validateRequired } from '../utils/validation.js';
 
 function profileKey(email) {
@@ -26,8 +43,13 @@ function fileToDataUrl(file) {
   });
 }
 
+function scrollToProfileSection(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 export default function Profile() {
   const user = getCurrentUser();
+  const [searchParams] = useSearchParams();
   if (!user) return <Navigate to="/login" replace />;
 
   const [profile, setProfile] = useState(() => readJson(profileKey(user.email), {}));
@@ -35,6 +57,15 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [childError, setChildError] = useState('');
+  const [accountMessage, setAccountMessage] = useState('');
+  const [accountError, setAccountError] = useState('');
+  const [externalLogins, setExternalLogins] = useState([]);
+  const [phoneVerification, setPhoneVerification] = useState({ phone: '', code: '', sent: false, devCode: '' });
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(Boolean(user.twoFactorEnabled));
+  const [registrations, setRegistrations] = useState([]);
+  const [selectedRegistration, setSelectedRegistration] = useState(null);
+  const [paymentMessage, setPaymentMessage] = useState('');
+  const [paymentError, setPaymentError] = useState('');
 
   useEffect(() => {
     apiReadProfile()
@@ -49,7 +80,177 @@ export default function Profile() {
         }
       })
       .catch(() => {});
+    apiReadExternalLogins()
+      .then((records) => setExternalLogins(records.logins || []))
+      .catch(() => setExternalLogins([
+        { provider: 'Local password', connected: false },
+        { provider: 'Google', connected: Boolean(user.emailConfirmed) }
+      ]));
+    apiAdminDashboard()
+      .then((records) => setRegistrations(records.registrations || []))
+      .catch(() => setRegistrations(readJson('kb-registration-submissions', []).filter((row) => String(row.email || '').toLowerCase() === String(user.email || '').toLowerCase())));
   }, [user.email]);
+
+  useEffect(() => {
+    const token = searchParams.get('token');
+    const registrationId = searchParams.get('registrationId');
+    const kind = searchParams.get('kind') || 'event';
+    const payment = searchParams.get('payment');
+    if (payment === 'cancel') {
+      setPaymentError('Payment was cancelled.');
+      return;
+    }
+    if (!token || !registrationId || payment !== 'complete') return;
+    let ignore = false;
+    setPaymentMessage('Confirming payment...');
+    apiCompleteFlowPayment(kind, { token, registrationId })
+      .then((result) => {
+        if (ignore) return;
+        setPaymentMessage('Payment confirmed.');
+        setRegistrations((current) => current.map((row) => (row.id === registrationId ? result.registration : row)));
+        if (result.registration) setSelectedRegistration(result.registration);
+      })
+      .catch((error) => {
+        if (!ignore) setPaymentError(error.message || 'Payment could not be confirmed.');
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [searchParams]);
+
+  async function handlePasswordSubmit(event) {
+    event.preventDefault();
+    setAccountError('');
+    setAccountMessage('');
+    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    if (String(payload.newPassword || payload.password || '').length < 6) {
+      setAccountError('Password must be at least 6 characters.');
+      return;
+    }
+    if ((payload.newPassword || payload.password) !== payload.confirmPassword) {
+      setAccountError('Password confirmation does not match.');
+      return;
+    }
+
+    try {
+      if (payload.currentPassword) {
+        await apiChangePassword(payload);
+        setAccountMessage('Password changed.');
+      } else {
+        await apiSetPassword({ password: payload.password || payload.newPassword });
+        setAccountMessage('Password created.');
+      }
+      event.currentTarget.reset();
+    } catch (error) {
+      setAccountError(error.message || 'Password could not be updated.');
+    }
+  }
+
+  async function handlePhoneStart(event) {
+    event.preventDefault();
+    setAccountError('');
+    setAccountMessage('');
+    const phone = cleanText(new FormData(event.currentTarget).get('phone'));
+    const phoneError = validatePhone(phone);
+    if (phoneError) {
+      setAccountError(phoneError);
+      return;
+    }
+    try {
+      const result = await apiStartPhoneVerification(phone);
+      setPhoneVerification({ phone, code: '', sent: true, devCode: result.devCode || '' });
+      setAccountMessage(result.devCode ? `Verification code generated: ${result.devCode}` : 'Verification code sent.');
+    } catch (error) {
+      setAccountError(error.message || 'Could not start phone verification.');
+    }
+  }
+
+  async function handlePhoneConfirm(event) {
+    event.preventDefault();
+    setAccountError('');
+    setAccountMessage('');
+    const code = cleanText(new FormData(event.currentTarget).get('code'));
+    try {
+      await apiConfirmPhoneVerification({ phone: phoneVerification.phone, code });
+      setProfile((current) => ({ ...current, phone: phoneVerification.phone }));
+      setPhoneVerification({ phone: '', code: '', sent: false, devCode: '' });
+      setAccountMessage('Phone number verified.');
+    } catch (error) {
+      setAccountError(error.message || 'Phone verification failed.');
+    }
+  }
+
+  async function handleTwoFactorChange(event) {
+    const enabled = event.currentTarget.checked;
+    setTwoFactorEnabled(enabled);
+    setAccountError('');
+    try {
+      await apiSetTwoFactor(enabled);
+      setAccountMessage(enabled ? 'Two-factor authentication enabled.' : 'Two-factor authentication disabled.');
+    } catch (error) {
+      setTwoFactorEnabled(!enabled);
+      setAccountError(error.message || 'Two-factor setting could not be updated.');
+    }
+  }
+
+  async function startRegistrationPayment(row) {
+    setPaymentError('');
+    setPaymentMessage('');
+    const amount = Number(row.amount || String(row.fee || '').replace(/[^\d.]/g, '') || 0);
+    if (!amount || amount <= 0) {
+      setPaymentError('This registration does not have a payment amount.');
+      return;
+    }
+    const kind = row.registrationType === 'class' ? 'class' : row.registrationType === 'guest' ? 'guest-event' : 'event';
+    try {
+      const returnUrl = `${window.location.origin}/admin/profile?payment=complete&kind=${encodeURIComponent(kind)}&registrationId=${encodeURIComponent(row.id || '')}`;
+      const cancelUrl = `${window.location.origin}/admin/profile?payment=cancel&registrationId=${encodeURIComponent(row.id || '')}`;
+      const payment = await apiCreateFlowPayment(kind, {
+        registrationId: row.id,
+        email: row.email || user.email,
+        name: row.parentName || user.name || user.email,
+        familyMember: row.familyMember || row.studentName,
+        program: row.program,
+        amount,
+        description: `${row.program} registration`,
+        returnUrl,
+        cancelUrl
+      });
+      if (payment.approvalUrl) window.location.href = payment.approvalUrl;
+      else setPaymentError('PayPal approval link was not returned.');
+    } catch (error) {
+      setPaymentError(error.message || 'Payment could not be started.');
+    }
+  }
+
+  async function refreshExternalLogins() {
+    try {
+      const records = await apiReadExternalLogins();
+      setExternalLogins(records.logins || []);
+    } catch {
+      setExternalLogins([
+        { provider: 'Local password', connected: false },
+        { provider: 'Google', connected: Boolean(user.emailConfirmed) }
+      ]);
+    }
+  }
+
+  async function handleExternalLoginAction(provider, connected) {
+    setAccountError('');
+    setAccountMessage('');
+    try {
+      if (connected) {
+        await apiRemoveExternalLogin(provider);
+        setAccountMessage(`${provider} login removed.`);
+      } else {
+        await apiLinkExternalLogin(provider);
+        setAccountMessage(`${provider} login connected.`);
+      }
+      await refreshExternalLogins();
+    } catch (error) {
+      setAccountError(error.message || `${provider} login could not be updated.`);
+    }
+  }
 
   async function handleProfileSubmit(event) {
     event.preventDefault();
@@ -183,15 +384,19 @@ export default function Profile() {
           <h1>Manage your account</h1>
           <p>{user.email}</p>
           <div className="member-account-lines">
-            <span><strong>Password</strong><em>Create</em></span>
-            <span><strong>External logins</strong><em>Manage</em></span>
+            <button type="button" onClick={() => scrollToProfileSection('account-password')}><strong>Password</strong><em>Create</em></button>
+            <button type="button" onClick={() => scrollToProfileSection('external-logins')}><strong>External logins</strong><em>Manage</em></button>
+            <button type="button" onClick={() => scrollToProfileSection('two-factor') }><strong>Two-factor</strong><em>{twoFactorEnabled ? 'Enabled' : 'Disabled'}</em></button>
           </div>
         </aside>
 
         <section className="member-profile-content">
-          <form className="member-profile-form" onSubmit={handleProfileSubmit}>
-            <h2>Profile information</h2>
-            <p className="profile-helper">Update your member details. Required fields are marked with *.</p>
+          <form id="profile-information" className="member-profile-form" onSubmit={handleProfileSubmit}>
+            <div className="profile-section-heading">
+              <span>Account</span>
+              <h2>Profile information</h2>
+              <p>Update member, spouse, address, and profile image details.</p>
+            </div>
             <label className="profile-photo-field">
               Profile picture <small>(jpg/jpeg/png)</small>
               <input name="profilePhoto" type="file" accept="image/png,image/jpeg" />
@@ -233,8 +438,100 @@ export default function Profile() {
             <button className="button primary" type="submit">Save Profile</button>
           </form>
 
+          <section className="member-profile-form account-security-panel">
+            <div className="profile-section-heading">
+              <span>Security</span>
+              <h2>Account security</h2>
+              <p>Manage password, connected logins, phone verification, and two-factor authentication.</p>
+            </div>
+            {accountError && <p className="form-error">{accountError}</p>}
+            {accountMessage && <p className="success">{accountMessage}</p>}
+            <form id="account-password" className="account-security-grid" onSubmit={handlePasswordSubmit}>
+              <label>Current password <input name="currentPassword" type="password" placeholder="Leave blank to create password" /></label>
+              <label>New password <input name="newPassword" type="password" minLength="6" required /></label>
+              <label>Confirm password <input name="confirmPassword" type="password" minLength="6" required /></label>
+              <button className="button primary" type="submit">Save Password</button>
+            </form>
+            <div id="external-logins" className="account-login-list">
+              <h3>External logins</h3>
+              <div className="external-login-grid">
+                {externalLogins.map((login) => (
+                  <article key={login.provider}>
+                    <strong>{login.provider}</strong>
+                    <span>
+                      <em className={login.connected ? 'is-connected' : ''}>{login.connected ? 'Connected' : 'Not connected'}</em>
+                      {login.provider !== 'Local password' && (
+                        <button className="mini-action-link secondary" type="button" onClick={() => handleExternalLoginAction(login.provider, login.connected)}>
+                          {login.connected ? 'Remove' : 'Connect'}
+                        </button>
+                      )}
+                    </span>
+                  </article>
+                ))}
+              </div>
+            </div>
+            <form className="account-security-grid" onSubmit={handlePhoneStart}>
+              <label>Phone number <input name="phone" type="tel" defaultValue={profile.phone || user.phone || ''} required /></label>
+              <button className="button secondary-dark" type="submit">Send Verification Code</button>
+            </form>
+            {phoneVerification.sent && (
+              <form className="account-security-grid" onSubmit={handlePhoneConfirm}>
+                <label>Verification code <input name="code" defaultValue={phoneVerification.devCode} required /></label>
+                <button className="button primary" type="submit">Verify Phone</button>
+              </form>
+            )}
+            <label id="two-factor" className="security-toggle">
+              <span>
+                <strong>Two-factor authentication</strong>
+                <small>Add an extra verification step during login.</small>
+              </span>
+              <input type="checkbox" checked={twoFactorEnabled} onChange={handleTwoFactorChange} />
+              <em>{twoFactorEnabled ? 'Enabled' : 'Disabled'}</em>
+            </label>
+          </section>
+
           <section className="member-profile-form">
-            <h2>Children info</h2>
+            <div className="profile-section-heading">
+              <span>Payments</span>
+              <h2>My class and event registrations</h2>
+              <p>Review registered members, status, amount, and payment confirmation.</p>
+            </div>
+            {paymentError && <p className="form-error">{paymentError}</p>}
+            {paymentMessage && <p className="success">{paymentMessage}</p>}
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>Registered on</th><th>Program</th><th>Member</th><th>Status</th><th>Amount</th><th>Paid</th><th>Action</th></tr></thead>
+                <tbody>
+                  {registrations.length ? registrations.map((row) => {
+                    const paid = row.paid || row.paymentReceived;
+                    return (
+                      <tr key={row.id || `${row.program}-${row.createdAt}`}>
+                        <td>{row.createdAt || row.created_at || '-'}</td>
+                        <td>{row.program || '-'}</td>
+                        <td>{row.familyMember || row.studentName || '-'}</td>
+                        <td>{row.status || 'Submitted'}</td>
+                        <td>${Number(row.amount || 0).toLocaleString()}</td>
+                        <td>{paid ? 'Paid' : 'Pending'}</td>
+                        <td>
+                          <div className="admin-row-actions">
+                            <button className="mini-action-link secondary" type="button" onClick={() => setSelectedRegistration(row)}>Details</button>
+                            {paid ? <span className="confirmed-badge">Confirmed</span> : <button className="mini-action-link success" type="button" onClick={() => startRegistrationPayment(row)}>Pay now</button>}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }) : <tr><td colSpan="7">No class or event registrations yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="member-profile-form">
+            <div className="profile-section-heading">
+              <span>Family</span>
+              <h2>Children info</h2>
+              <p>Add children here so class registration can show them in the member dropdown.</p>
+            </div>
             <form className="child-inline-form" onSubmit={handleChildSubmit}>
               <input name="firstName" placeholder="First name" />
               <input name="lastName" placeholder="Last name" />
@@ -264,6 +561,34 @@ export default function Profile() {
           </section>
         </section>
       </section>
+      {selectedRegistration && (
+        <div className="popup-backdrop" role="presentation">
+          <div className="popup-panel payment-detail-popup" role="dialog" aria-modal="true" aria-label="Registration payment details">
+            <button className="popup-close" type="button" aria-label="Close payment details" onClick={() => setSelectedRegistration(null)}><X size={20} /></button>
+            <div className="payment-detail-heading">
+              <span>{selectedRegistration.registrationType || 'Registration'}</span>
+              <h2>{selectedRegistration.program || 'Registration details'}</h2>
+              <p>{selectedRegistration.familyMember || selectedRegistration.studentName || user.email}</p>
+            </div>
+            <section className="payment-confirmation-grid">
+              <article><ReceiptText size={22} /><span>Status</span><strong>{selectedRegistration.status || 'Submitted'}</strong></article>
+              <article><CheckCircle2 size={22} /><span>Payment</span><strong>{selectedRegistration.paid || selectedRegistration.paymentReceived ? 'Paid' : 'Pending'}</strong></article>
+              <article><ReceiptText size={22} /><span>Amount</span><strong>${Number(selectedRegistration.amount || 0).toFixed(2)}</strong></article>
+            </section>
+            <div className="payment-detail-list">
+              <span><strong>Registered by</strong>{selectedRegistration.email || user.email}</span>
+              <span><strong>Registered on</strong>{selectedRegistration.createdAt || selectedRegistration.created_at || '-'}</span>
+              <span><strong>Family member</strong>{selectedRegistration.familyMember || selectedRegistration.studentName || '-'}</span>
+              <span><strong>Total members</strong>{selectedRegistration.totalMembers || selectedRegistration.seats || 1}</span>
+              <span><strong>RSVP</strong>{typeof selectedRegistration.rsvp === 'string' ? selectedRegistration.rsvp || '-' : selectedRegistration.rsvp?.question || '-'}</span>
+              <span><strong>Price option</strong>{selectedRegistration.priceSelection || '-'}</span>
+            </div>
+            {!(selectedRegistration.paid || selectedRegistration.paymentReceived) && (
+              <button className="button primary" type="button" onClick={() => startRegistrationPayment(selectedRegistration)}>Pay now</button>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

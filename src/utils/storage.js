@@ -107,5 +107,5 @@ export function hasAnyRole(user, roles = []) {
 }
 
 export function canUseAdminArea(user) {
-  return isAdmin(user) || hasAnyRole(user, ['receptionist', 'teacher', 'volunteer', 'treasurer']);
+  return Boolean(user);
 }

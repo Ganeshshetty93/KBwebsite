@@ -3,14 +3,18 @@ import { useSearchParams } from 'react-router-dom';
 import { CalendarDays, HandCoins, Megaphone, Plus, ReceiptText, UsersRound, X } from 'lucide-react';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
 import { culturalClasses, events, paataShaaleLevels } from '../data/siteData.js';
-import { appendRecord, getCurrentUser, readJson, writeJson } from '../utils/storage.js';
+import { appendRecord, getCurrentUser, isAdmin, readJson, writeJson } from '../utils/storage.js';
 import {
   apiAdminDashboard,
+  apiAppendRecord,
   apiCreateSeat,
   apiDeleteSubmission,
   apiExpenseAction,
   apiFindUserByEmail,
+  apiLookupUserPhone,
   apiReceptionCheckin,
+  apiReadSeats,
+  apiReadSiteSetting,
   apiRegistrationAction,
   apiSaveSiteSetting,
   apiSendOutboxEmail,
@@ -26,13 +30,22 @@ const fallbackPrograms = [
 
 const defaultEventTypes = ['Classroom', 'Workshop', 'Seminar', 'Cultural'];
 const defaultRecurrences = ['OneTime', 'Daily', 'Weekly', 'Monthly', 'Yearly'];
+const referenceVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true';
 const defaultVolunteerGoogleForm = {
   enabled: false,
-  url: ''
+  url: referenceVolunteerGoogleFormUrl
 };
+
+function normalizeVolunteerGoogleForm(setting = defaultVolunteerGoogleForm) {
+  return {
+    enabled: setting.enabled === true || setting.enabled === 'true' || setting.enabled === 'Yes' || setting.enabled === 1,
+    url: cleanText(setting.url) || referenceVolunteerGoogleFormUrl
+  };
+}
 
 const seedAnnouncements = [
   {
+    localId: 'seed-paata-registration',
     text: 'Kannada Bharati Paata Shaale registrations are open',
     ctaText: 'Register today',
     ctaUrl: '/kannada-shaale',
@@ -41,6 +54,7 @@ const seedAnnouncements = [
     enabled: 'Yes'
   },
   {
+    localId: 'seed-rajyotsava-volunteer',
     text: 'Kannada Rajyotsava volunteer signup',
     ctaText: 'Join in',
     ctaUrl: '/volunteer',
@@ -258,6 +272,34 @@ function getCheckinCounts(row = {}) {
   return { adults, kids, youngKids, total };
 }
 
+function statusCount(rows = [], matcher) {
+  return rows.filter((row) => matcher(String(row.status || '').toLowerCase(), row)).length;
+}
+
+function isPaidRegistration(row = {}) {
+  return row.paid === true || row.paymentReceived === true || row.paymentReceived === 'true' || String(row.paid || '').toLowerCase() === 'paid';
+}
+
+function summarizeBy(rows = [], key, limit = 4) {
+  return Object.values(rows.reduce((groups, row) => {
+    const label = row[key] || 'Unassigned';
+    groups[label] ||= { label, count: 0, amount: 0, rows: [] };
+    groups[label].count += 1;
+    groups[label].amount += getMoneyAmount(row);
+    groups[label].rows.push(row);
+    return groups;
+  }, {})).sort((a, b) => b.count - a.count).slice(0, limit);
+}
+
+function getExpenseStatus(rows = []) {
+  return {
+    submitted: statusCount(rows, (status) => status.includes('submitted')),
+    approved: statusCount(rows, (status) => status.includes('approved')),
+    paid: statusCount(rows, (status) => status.includes('paid')),
+    rejected: statusCount(rows, (status) => status.includes('rejected'))
+  };
+}
+
 function memberProfileKey(email) {
   return `kb-member-profile-${String(email || 'guest').toLowerCase()}`;
 }
@@ -268,6 +310,24 @@ function memberChildrenKey(email) {
 
 function isEnabledValue(value) {
   return value === true || value === 'Yes' || value === 'yes' || value === 'true' || value === 1;
+}
+
+function makeLocalAnnouncementId(row = {}, index = 0) {
+  return `local-announcement-${row.createdAt || Date.now()}-${index}-${String(row.text || 'announcement').replace(/\W+/g, '-').slice(0, 36)}`;
+}
+
+function withAnnouncementKeys(rows = []) {
+  let changed = false;
+  const keyed = rows.map((row, index) => {
+    if (row.id || row.localId || row.local_id) return row;
+    changed = true;
+    return { ...row, localId: makeLocalAnnouncementId(row, index) };
+  });
+  return { rows: keyed, changed };
+}
+
+function getAnnouncementKey(row = {}) {
+  return row.id || row.localId || row.local_id || '';
 }
 
 function EventDetailModal({ item, onClose }) {
@@ -425,6 +485,8 @@ function RegistrationDetailModal({ row, onClose }) {
 }
 
 function useAdminData() {
+  const initialAnnouncements = withAnnouncementKeys(readJson('kb-announcement-submissions', seedAnnouncements));
+  if (initialAnnouncements.changed) writeJson('kb-announcement-submissions', initialAnnouncements.rows);
   const [dashboard, setDashboard] = useState(() => ({
     users: [],
     registrations: readJson('kb-registration-submissions', []),
@@ -432,7 +494,7 @@ function useAdminData() {
     volunteers: readJson('kb-volunteer-submissions', []),
     contacts: readJson('kb-contact-submissions', []),
     expenses: readJson('kb-expense-submissions', []),
-    announcements: readJson('kb-announcement-submissions', seedAnnouncements),
+    announcements: initialAnnouncements.rows,
     classes: [],
     events: [],
     fundraisers: readJson('kb-admin-fundraisers', []),
@@ -446,12 +508,17 @@ function useAdminData() {
       .then((records) => {
         if (!ignore) {
           const localRegistrations = readJson('kb-registration-submissions', []);
+          const localAnnouncements = withAnnouncementKeys(readJson('kb-announcement-submissions', seedAnnouncements));
+          if (localAnnouncements.changed) writeJson('kb-announcement-submissions', localAnnouncements.rows);
+          const dashboardAnnouncements = records.announcements?.length
+            ? records.announcements
+            : localAnnouncements.rows;
           setDashboard((current) => ({
             ...current,
             ...records,
             registrations: records.registrations?.length ? records.registrations : localRegistrations,
             expenses: readJson('kb-expense-submissions', []),
-            announcements: readJson('kb-announcement-submissions', seedAnnouncements),
+            announcements: dashboardAnnouncements,
             fundraisers: records.fundraisers?.length ? records.fundraisers : readJson('kb-admin-fundraisers', [])
           }));
         }
@@ -482,6 +549,7 @@ export default function AdminSectionPage({ view }) {
   const [checkinEventId, setCheckinEventId] = useState('');
   const [checkinApplied, setCheckinApplied] = useState(false);
   const [checkinError, setCheckinError] = useState('');
+  const [phoneLookup, setPhoneLookup] = useState({ email: '', phone: '', error: '' });
   const [detailRecord, setDetailRecord] = useState(null);
   const [registrationDetail, setRegistrationDetail] = useState(null);
   const [checkedInIds, setCheckedInIds] = useState(() => readJson('kb-checkin-records', []));
@@ -493,6 +561,7 @@ export default function AdminSectionPage({ view }) {
   const [userSearchResult, setUserSearchResult] = useState(null);
   const [userSearchError, setUserSearchError] = useState('');
   const [seatError, setSeatError] = useState('');
+  const [seatRecords, setSeatRecords] = useState([]);
   const registrations = dashboard.registrations || [];
   const users = dashboard.users || [];
   const donations = dashboard.donations || [];
@@ -504,8 +573,8 @@ export default function AdminSectionPage({ view }) {
   const announcements = dashboard.announcements || [];
   const fundraisers = dashboard.fundraisers || [];
   const emailOutbox = dashboard.emailOutbox || [];
-  const profile = readJson('kb-member-profile', {});
-  const profileChildren = readJson('kb-member-children', []);
+  const profile = readJson(memberProfileKey(user.email), {});
+  const profileChildren = readJson(memberChildrenKey(user.email), []);
   const eventOptions = [...new Map([
     ...allEvents.map((item) => [item.title, item]),
     ...programs.map((item) => [item.title, item]),
@@ -545,10 +614,49 @@ export default function AdminSectionPage({ view }) {
   })).values()];
   const requestedProgram = cleanText(searchParams.get('program'));
   const selectedProgram = [...programs, ...allEvents].find((item) => item.title === requestedProgram) || programs[0] || allEvents[0] || {};
+  const currentUserEmail = String(user.email || '').toLowerCase();
+  const userRegistrations = registrations.filter((item) => String(item.email || '').toLowerCase() === currentUserEmail);
+  const userClassRegistrations = userRegistrations.filter((item) => (
+    item.registrationType === 'class'
+    || programs.some((program) => program.title === item.program)
+    || /class|paata|shaale|guitar|dance|music|kannada/i.test(item.program || '')
+  ));
+  const userEventRegistrations = userRegistrations.filter((item) => !userClassRegistrations.includes(item));
   const memberOptions = [
     `${profile.firstName || user.firstName || user.name || user.email} ${profile.lastName || ''}`.trim(),
-    ...profileChildren.map((child) => `${child.childFirstName} ${child.childLastName}`.trim()).filter(Boolean)
+    ...profileChildren.map((child) => `${child.firstName || child.childFirstName} ${child.lastName || child.childLastName || ''}`.trim()).filter(Boolean)
   ].filter(Boolean);
+  const volunteerGoogleFormSaved = normalizeVolunteerGoogleForm(volunteerGoogleForm);
+  const volunteerGoogleFormReady = Boolean(volunteerGoogleFormSaved.enabled && volunteerGoogleFormSaved.url);
+  const volunteerGoogleFormStatus = volunteerGoogleFormReady
+    ? 'Enabled'
+    : volunteerGoogleFormSaved.enabled
+      ? 'Needs URL'
+      : 'Disabled';
+
+  useEffect(() => {
+    if (view !== 'seats') return;
+    apiReadSeats(expectedEventId)
+      .then((records) => setSeatRecords(records.seats || []))
+      .catch(() => setSeatRecords([]));
+  }, [expectedEventId, view]);
+
+  useEffect(() => {
+    if (view !== 'event-settings') return;
+    let ignore = false;
+    apiReadSiteSetting('volunteer-google-form')
+      .then((setting) => {
+        if (ignore) return;
+        const normalized = normalizeVolunteerGoogleForm(setting || defaultVolunteerGoogleForm);
+        setVolunteerGoogleForm(normalized);
+        writeJson('kb-volunteer-google-form', normalized);
+        window.dispatchEvent(new Event('kb-data-change'));
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, [view]);
 
   function sameRegistration(item, target) {
     if (item.id && target.id) return item.id === target.id;
@@ -661,6 +769,22 @@ export default function AdminSectionPage({ view }) {
     }
   }
 
+  async function handlePhoneLookup(event) {
+    event.preventDefault();
+    const email = cleanText(new FormData(event.currentTarget).get('email')).toLowerCase();
+    setPhoneLookup({ email, phone: '', error: '' });
+    if (!email) {
+      setPhoneLookup({ email, phone: '', error: 'Email is required.' });
+      return;
+    }
+    try {
+      const result = await apiLookupUserPhone(email);
+      setPhoneLookup({ email, phone: result.phone || '-', error: '' });
+    } catch (error) {
+      setPhoneLookup({ email, phone: '', error: error.message || 'Could not find phone number.' });
+    }
+  }
+
   function handleGuestRegistrationSubmit(event) {
     event.preventDefault();
     const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
@@ -703,6 +827,8 @@ export default function AdminSectionPage({ view }) {
         registrationId: payload.registrationId || null,
         assignedTo: payload.assignedTo || null
       });
+      const records = await apiReadSeats(eventId);
+      setSeatRecords(records.seats || []);
       event.currentTarget.reset();
       refresh();
     } catch (error) {
@@ -763,7 +889,7 @@ export default function AdminSectionPage({ view }) {
       updatedAt: new Date().toISOString()
     };
 
-    writeJson('kb-member-profile', savedProfile);
+    writeJson(memberProfileKey(user.email), savedProfile);
     setProfileSaved(true);
   }
 
@@ -774,7 +900,7 @@ export default function AdminSectionPage({ view }) {
       childGender: 'Prefer not to say',
       childBirthDate: ''
     };
-    writeJson('kb-member-children', [...profileChildren, nextChild]);
+    writeJson(memberChildrenKey(user.email), [...profileChildren, nextChild]);
     setProfileSaved(true);
   }
 
@@ -821,12 +947,19 @@ export default function AdminSectionPage({ view }) {
     setCheckinApplied(true);
   }
 
-  function markCheckedIn(row, index) {
+  async function markCheckedIn(row, index) {
     const key = getRegistrationKey(row, index);
     const next = checkedInIds.includes(key) ? checkedInIds : [...checkedInIds, key];
     writeJson('kb-checkin-records', next);
     setCheckedInIds(next);
-    runRegistrationAction(row, 'checkin', { checkedIn: true, checkedInAt: new Date().toISOString() });
+    await runRegistrationAction(row, 'checkin', { checkedIn: true, checkedInAt: new Date().toISOString() });
+    if (row.id) {
+      apiReceptionCheckin({
+        registrationId: row.id,
+        registrationKey: key,
+        eventId: row.eventId || expectedEventId
+      }).catch(() => {});
+    }
   }
 
   function handleExpenseSubmit(event) {
@@ -860,7 +993,7 @@ export default function AdminSectionPage({ view }) {
     setExpenseSaved(true);
   }
 
-  function handleAnnouncementSubmit(event) {
+  async function handleAnnouncementSubmit(event) {
     event.preventDefault();
     setAnnouncementError('');
     setAnnouncementSaved(false);
@@ -884,15 +1017,33 @@ export default function AdminSectionPage({ view }) {
       setAnnouncementError(error);
       return;
     }
-    const record = appendRecord('kb-announcement-submissions', {
+    const recordPayload = {
       text,
       ctaText,
       ctaUrl,
       startOn: payload.startOn,
       endOn: payload.endOn,
-      enabled: payload.enabled ? 'Yes' : 'No'
-    });
-    setDashboard((current) => ({ ...current, announcements: [...(current.announcements || []), record] }));
+      enabled: Boolean(payload.enabled)
+    };
+
+    try {
+      const saved = await apiAppendRecord('kb-announcement-submissions', recordPayload);
+      const nextAnnouncements = [...announcements, saved || recordPayload];
+      writeJson('kb-announcement-submissions', nextAnnouncements);
+      setDashboard((current) => ({ ...current, announcements: nextAnnouncements }));
+      window.dispatchEvent(new Event('kb-data-change'));
+    } catch {
+      const localRecord = {
+        ...recordPayload,
+        localId: makeLocalAnnouncementId(recordPayload, announcements.length),
+        createdAt: new Date().toISOString()
+      };
+      const nextAnnouncements = [...announcements, localRecord];
+      writeJson('kb-announcement-submissions', nextAnnouncements);
+      setDashboard((current) => ({ ...current, announcements: nextAnnouncements }));
+      window.dispatchEvent(new Event('kb-data-change'));
+    }
+
     form.reset();
     setAnnouncementSaved(true);
     setModalType(null);
@@ -900,9 +1051,10 @@ export default function AdminSectionPage({ view }) {
 
   async function toggleAnnouncement(row) {
     const enabled = !isEnabledValue(row.enabled);
+    const rowKey = getAnnouncementKey(row);
     const nextRow = { ...row, enabled };
     const nextAnnouncements = announcements.map((item) => (
-      (item.id && row.id && item.id === row.id) || item.createdAt === row.createdAt
+      getAnnouncementKey(item) === rowKey
         ? nextRow
         : item
     ));
@@ -955,10 +1107,9 @@ export default function AdminSectionPage({ view }) {
     event.preventDefault();
     setSettingsError('');
     setSettingsSaved(false);
-    const form = event.currentTarget;
-    const payload = Object.fromEntries(new FormData(form).entries());
-    const enabled = Boolean(payload.enabled);
-    const url = cleanText(payload.url);
+    const draft = normalizeVolunteerGoogleForm(volunteerGoogleForm);
+    const enabled = Boolean(draft.enabled);
+    const url = cleanText(draft.url);
     const error = enabled ? validateUrl(url, 'Google Form URL') : '';
     if (error) {
       setSettingsError(error);
@@ -970,13 +1121,21 @@ export default function AdminSectionPage({ view }) {
     setVolunteerGoogleForm(nextSettings);
     try {
       const saved = await apiSaveSiteSetting('volunteer-google-form', nextSettings);
-      writeJson('kb-volunteer-google-form', saved);
-      setVolunteerGoogleForm(saved);
-    } catch {
-      // Keep local settings visible when the optional SQL table has not been applied yet.
+      const normalized = normalizeVolunteerGoogleForm(saved || nextSettings);
+      writeJson('kb-volunteer-google-form', normalized);
+      setVolunteerGoogleForm(normalized);
+    } catch (error) {
+      setSettingsError(error.message || 'Could not save Google Form settings.');
+      return;
     }
     setSettingsSaved(true);
     window.dispatchEvent(new Event('kb-data-change'));
+  }
+
+  function updateVolunteerGoogleFormDraft(patch) {
+    setSettingsSaved(false);
+    setSettingsError('');
+    setVolunteerGoogleForm((current) => ({ ...current, ...patch }));
   }
 
   if (view === 'profile') {
@@ -1038,7 +1197,7 @@ export default function AdminSectionPage({ view }) {
               <thead><tr><th>First name</th><th>Last name</th><th>Gender</th><th>Date of birth</th></tr></thead>
               <tbody>
                 {profileChildren.length ? profileChildren.map((child, index) => (
-                  <tr key={`${child.childFirstName}-${index}`}><td>{child.childFirstName}</td><td>{child.childLastName}</td><td>{child.childGender}</td><td>{child.childBirthDate || '-'}</td></tr>
+                  <tr key={`${child.firstName || child.childFirstName}-${index}`}><td>{child.firstName || child.childFirstName}</td><td>{child.lastName || child.childLastName}</td><td>{child.gender || child.childGender}</td><td>{child.birthDate || child.childBirthDate || '-'}</td></tr>
                 )) : <tr><td colSpan="4">No children added yet.</td></tr>}
               </tbody>
             </table>
@@ -1184,29 +1343,49 @@ export default function AdminSectionPage({ view }) {
             </div>
           </section>
 
-          <section className="admin-page-panel">
-            <div className="admin-page-panel-heading"><h2>Volunteer Google Form</h2><span>{volunteerGoogleForm.enabled ? 'Enabled' : 'Disabled'}</span></div>
-            <form className="settings-inline-form google-form-settings" onSubmit={handleVolunteerGoogleFormSubmit}>
-              <label className="admin-checkbox">
-                <input name="enabled" type="checkbox" defaultChecked={Boolean(volunteerGoogleForm.enabled)} />
-                Allow Google Form registration
+          <section className="admin-page-panel google-form-settings-panel">
+            <div className="admin-page-panel-heading google-form-heading">
+              <h2>Volunteer Google Form</h2>
+              <p>Control whether the public Volunteer page opens the Google Form registration.</p>
+              <span className={volunteerGoogleFormReady ? 'status-pill is-live' : volunteerGoogleFormSaved.enabled ? 'status-pill is-warning' : 'status-pill'}>
+                {volunteerGoogleFormStatus}
+              </span>
+            </div>
+            <form className="google-form-settings" onSubmit={handleVolunteerGoogleFormSubmit}>
+              <label className="google-form-toggle">
+                <span>
+                  <strong>Allow Google Form registration</strong>
+                  <small>{volunteerGoogleForm.enabled ? 'Visitors can open the form from the Volunteer page.' : 'Visitors will see the disabled message.'}</small>
+                </span>
+                <input
+                  name="enabled"
+                  type="checkbox"
+                  checked={Boolean(volunteerGoogleForm.enabled)}
+                  onChange={(event) => updateVolunteerGoogleFormDraft({ enabled: event.target.checked })}
+                />
               </label>
-              <label>
+              <label className="google-form-url-field">
                 Google Form URL
                 <input
                   name="url"
                   type="url"
-                  defaultValue={volunteerGoogleForm.url || ''}
-                  placeholder="https://docs.google.com/forms/d/e/.../viewform"
+                  value={volunteerGoogleForm.url || ''}
+                  onChange={(event) => updateVolunteerGoogleFormDraft({ url: event.target.value })}
+                  placeholder={referenceVolunteerGoogleFormUrl}
                 />
               </label>
               <button className="button primary" type="submit">Save</button>
             </form>
-            <div className="settings-list">
-              <article>
-                <strong>{volunteerGoogleForm.enabled ? 'Google form registration is enabled.' : 'Google form registration is disabled.'}</strong>
-                <span>{volunteerGoogleForm.url ? 'URL saved' : 'No URL saved'}</span>
-              </article>
+            <div className="google-form-preview">
+              <strong>
+                {volunteerGoogleFormReady
+                  ? 'Google form registration is enabled on the Volunteer page.'
+                  : volunteerGoogleFormSaved.enabled
+                    ? 'Save a valid Google Form URL to enable public registration.'
+                    : 'Google form registration is disabled.'}
+              </strong>
+              <span>{volunteerGoogleFormSaved.url ? 'URL ready for Volunteer page' : 'No URL saved'}</span>
+              {volunteerGoogleFormSaved.url && <a href={volunteerGoogleFormSaved.url} target="_blank" rel="noreferrer">Open form</a>}
             </div>
           </section>
         </div>
@@ -1385,9 +1564,32 @@ export default function AdminSectionPage({ view }) {
 
   if (view === 'checkin') {
     const checkinAmountTotal = checkinRows.reduce((sum, row) => sum + getMoneyAmount(row), 0);
+    const checkedInCount = checkinRows.filter((row, index) => checkedInIds.includes(getRegistrationKey(row, index)) || row.checkedIn).length;
+    const pendingCheckinCount = Math.max(0, checkinRows.length - checkedInCount);
+    const paidCheckinCount = checkinRows.filter(isPaidRegistration).length;
+    const submittedCheckinCount = statusCount(checkinRows, (status) => status.includes('submitted'));
+    const topCheckinPrograms = summarizeBy(checkinRows, 'program', 3);
     return (
       <>
         <PageHeader root="Reception" area="CheckInNew" title="Event check-in" action={<span className="received-count">Recieved {checkinRows.length} registration(s)</span>} />
+        <section className="workflow-hero reception-hero">
+          <div>
+            <p className="eyebrow">Reception desk</p>
+            <h2>{selectedCheckinEvent.title || 'Select an event'}</h2>
+            <p>Track arrivals, phone lookups, payments, and member counts from one check-in workspace.</p>
+          </div>
+          <div className="workflow-action-list">
+            <article><strong>{pendingCheckinCount}</strong><span>Waiting to check in</span></article>
+            <article><strong>{checkedInCount}</strong><span>Checked in</span></article>
+            <article><strong>{paidCheckinCount}</strong><span>Paid registrations</span></article>
+          </div>
+        </section>
+        <section className="admin-dashboard-hero-grid">
+          <article><UsersRound size={24} /><span>Total registrations</span><strong>{checkinRows.length}</strong></article>
+          <article><CalendarDays size={24} /><span>Submitted</span><strong>{submittedCheckinCount}</strong></article>
+          <article><ReceiptText size={24} /><span>Total members</span><strong>{checkinRows.reduce((sum, row) => sum + getCheckinCounts(row).total, 0)}</strong></article>
+          <article><HandCoins size={24} /><span>Amount</span><strong>${checkinAmountTotal.toLocaleString()}</strong></article>
+        </section>
         <section className="checkin-control-panel">
           <form className="checkin-filter-form" onSubmit={handleCheckinSubmit}>
             <label>Events:
@@ -1405,7 +1607,27 @@ export default function AdminSectionPage({ view }) {
             <span>Registrations</span><span>Adults (13 yrs and above)</span><span>Kids (6-12 yrs)</span><span>Kids (5 yrs and below)</span><span>Total Members</span><span>Amount</span>
             <strong>{checkinRows.length}</strong><strong>{checkinSummary.adults}</strong><strong>{checkinSummary.kids}</strong><strong>{checkinSummary.youngKids}</strong><strong>{checkinRows.reduce((sum, row) => sum + getCheckinCounts(row).total, 0)}</strong><strong>${checkinAmountTotal.toLocaleString()}</strong>
           </div>
+          <form className="checkin-filter-form phone-lookup-form" onSubmit={handlePhoneLookup}>
+            <label>Phone lookup:
+              <input name="email" type="email" placeholder="member@example.com" />
+            </label>
+            <button className="button secondary-dark" type="submit">Find Phone</button>
+            {phoneLookup.phone && <strong>{phoneLookup.email}: {phoneLookup.phone}</strong>}
+            {phoneLookup.error && <span className="form-error inline-error">{phoneLookup.error}</span>}
+          </form>
         </section>
+        {topCheckinPrograms.length > 0 && (
+          <section className="insight-grid">
+            {topCheckinPrograms.map((program) => (
+              <article key={program.label}>
+                <span>Program load</span>
+                <strong>{program.label}</strong>
+                <div className="progress-track"><span style={{ width: `${Math.min(100, (program.count / Math.max(1, checkinRows.length)) * 100)}%` }} /></div>
+                <p>{program.count} registration(s), ${program.amount.toLocaleString()}</p>
+              </article>
+            ))}
+          </section>
+        )}
         {checkinError && <p className="form-error">{checkinError}</p>}
         <AdminTable
           title="Event check-in details"
@@ -1490,9 +1712,31 @@ export default function AdminSectionPage({ view }) {
   }
 
   if (view === 'guest-checkin') {
+    const guestRows = registrations.filter((row) => row.registrationType === 'guest' || row.email?.includes('guest'));
+    const guestCheckedIn = guestRows.filter((row, index) => checkedInIds.includes(getRegistrationKey(row, index)) || row.checkedIn).length;
+    const guestMembers = guestRows.reduce((sum, row) => sum + getCheckinCounts(row).total, 0);
+    const guestAmount = guestRows.reduce((sum, row) => sum + getMoneyAmount(row), 0);
     return (
       <>
         <PageHeader root="Reception" area="Guest Check-in" title="Guest registration and check-in" />
+        <section className="workflow-hero reception-hero">
+          <div>
+            <p className="eyebrow">Guest desk</p>
+            <h2>Fast intake for walk-ins and invited guests</h2>
+            <p>Create a guest registration, assign the event, and check them in from the same screen.</p>
+          </div>
+          <div className="workflow-action-list">
+            <article><strong>{guestRows.length}</strong><span>Guest records</span></article>
+            <article><strong>{guestMembers}</strong><span>Total guests</span></article>
+            <article><strong>{guestCheckedIn}</strong><span>Checked in</span></article>
+          </div>
+        </section>
+        <section className="admin-dashboard-hero-grid">
+          <article><UsersRound size={24} /><span>Guests</span><strong>{guestRows.length}</strong></article>
+          <article><CalendarDays size={24} /><span>Members</span><strong>{guestMembers}</strong></article>
+          <article><ReceiptText size={24} /><span>Pending</span><strong>{Math.max(0, guestRows.length - guestCheckedIn)}</strong></article>
+          <article><HandCoins size={24} /><span>Amount</span><strong>${guestAmount.toLocaleString()}</strong></article>
+        </section>
         <form className="admin-create-form" onSubmit={handleGuestRegistrationSubmit}>
           <h2>Register guest</h2>
           <div className="admin-form-grid">
@@ -1511,7 +1755,7 @@ export default function AdminSectionPage({ view }) {
         </form>
         <AdminTable
           title="Guest registrations"
-          rows={registrations.filter((row) => row.registrationType === 'guest' || row.email?.includes('guest'))}
+          rows={guestRows}
           emptyText="No guest registrations yet."
           columns={[
             { key: 'createdAt', label: 'Registered on' },
@@ -1532,16 +1776,85 @@ export default function AdminSectionPage({ view }) {
   }
 
   if (view === 'seats') {
-    const seatRows = registrations
+    const inferredSeatRows = registrations
       .filter((row) => row.seats || row.totalMembers)
       .map((row) => ({
-        ...row,
-        seatLabel: row.seatNumber || row.seats || '-',
-        assignedTo: row.familyMember || row.studentName || row.parentName || '-'
+        eventId: row.eventId,
+        program: row.program,
+        seatNumber: row.seatNumber || row.seats || '-',
+        assignedTo: row.familyMember || row.studentName || row.parentName || '-',
+        email: row.email,
+        status: row.checkedIn ? 'Checked in' : row.status || 'Registered'
       }));
+    const seatRows = seatRecords.length ? seatRecords.map((seat) => ({
+      eventId: seat.event_id || seat.eventId,
+      program: registrations.find((row) => row.id === seat.registration_id)?.program || '-',
+      seatNumber: seat.seat_number || seat.seatNumber,
+      assignedTo: seat.assigned_to || seat.assignedTo || '-',
+      email: registrations.find((row) => row.id === seat.registration_id)?.email || '-',
+      status: seat.status || 'Available'
+    })) : inferredSeatRows;
+    const assignedSeats = seatRows.filter((seat) => seat.assignedTo && seat.assignedTo !== '-').length;
+    const checkedInSeats = seatRows.filter((seat) => /checked/i.test(seat.status || '')).length;
+    const availableSeats = Math.max(0, seatRows.length - assignedSeats);
+    const occupancyRate = seatRows.length ? Math.round((assignedSeats / seatRows.length) * 100) : 0;
+    const seatPrograms = summarizeBy(seatRows, 'program', 4);
     return (
       <>
         <PageHeader root="Reception" area="Seats" title="Seat management" />
+        <section className="workflow-hero seat-hero">
+          <div>
+            <p className="eyebrow">Seat operations</p>
+            <h2>{occupancyRate}% occupied</h2>
+            <p>Monitor assigned, available, and checked-in seats for the selected event. Use the map for quick visual scanning.</p>
+          </div>
+          <div className="seat-occupancy-ring" aria-label={`${occupancyRate}% occupied`}>
+            <span style={{ '--seat-progress': `${occupancyRate}%` }} />
+            <strong>{occupancyRate}%</strong>
+          </div>
+        </section>
+        <section className="admin-dashboard-hero-grid">
+          <article><UsersRound size={24} /><span>Total seats</span><strong>{seatRows.length}</strong></article>
+          <article><CalendarDays size={24} /><span>Assigned</span><strong>{assignedSeats}</strong></article>
+          <article><ReceiptText size={24} /><span>Available</span><strong>{availableSeats}</strong></article>
+          <article><Megaphone size={24} /><span>Checked in</span><strong>{checkedInSeats}</strong></article>
+        </section>
+        <section className="seat-analytics-grid">
+          <article className="seat-map-card">
+            <div className="panel-mini-heading">
+              <span>Seat map</span>
+              <strong>{seatRows.length || 0} seats</strong>
+            </div>
+            <div className="seat-map">
+              {(seatRows.length ? seatRows : Array.from({ length: 24 }, (_, index) => ({ seatNumber: index + 1, status: 'Available', assignedTo: '-' }))).slice(0, 80).map((seat, index) => {
+                const occupied = seat.assignedTo && seat.assignedTo !== '-';
+                const checked = /checked/i.test(seat.status || '');
+                return (
+                  <span
+                    key={`${seat.seatNumber || index}-${index}`}
+                    className={checked ? 'seat-dot is-checked' : occupied ? 'seat-dot is-assigned' : 'seat-dot'}
+                    title={`${seat.seatNumber || index + 1}: ${seat.status || 'Available'}`}
+                  >
+                    {seat.seatNumber || index + 1}
+                  </span>
+                );
+              })}
+            </div>
+          </article>
+          <article className="seat-program-card">
+            <div className="panel-mini-heading">
+              <span>Program distribution</span>
+              <strong>{seatPrograms.length}</strong>
+            </div>
+            {seatPrograms.length ? seatPrograms.map((program) => (
+              <div className="program-progress-row" key={program.label}>
+                <strong>{program.label}</strong>
+                <div className="progress-track"><span style={{ width: `${Math.min(100, (program.count / Math.max(1, seatRows.length)) * 100)}%` }} /></div>
+                <small>{program.count} seat(s)</small>
+              </div>
+            )) : <p className="profile-helper">No seat assignments yet.</p>}
+          </article>
+        </section>
         <form className="admin-create-form" onSubmit={handleSeatSubmit}>
           <h2>Add or assign seat</h2>
           <div className="admin-form-grid">
@@ -1560,10 +1873,10 @@ export default function AdminSectionPage({ view }) {
           columns={[
             { key: 'eventId', label: 'Event ID' },
             { key: 'program', label: 'Program' },
-            { key: 'seatLabel', label: 'Seats' },
+            { key: 'seatNumber', label: 'Seat' },
             { key: 'assignedTo', label: 'Assigned to' },
             { key: 'email', label: 'Registered by' },
-            { key: 'checkedIn', label: 'Checked in', render: (row) => row.checkedIn ? 'Yes' : 'No' }
+            { key: 'status', label: 'Status' }
           ]}
         />
       </>
@@ -1571,12 +1884,48 @@ export default function AdminSectionPage({ view }) {
   }
 
   if (view === 'teacher') {
+    const classRows = registrations.filter((row) => row.registrationType === 'class' || programs.some((program) => program.title === row.program));
+    const confirmedClassRows = statusCount(classRows, (status) => status.includes('confirmed'));
+    const paidClassRows = classRows.filter(isPaidRegistration).length;
+    const classGroups = summarizeBy(classRows, 'program', 6);
+    const totalStudents = classRows.length;
     return (
       <>
         <PageHeader root="Teacher" area="Class Area" title="Teacher class area" />
+        <section className="workflow-hero teacher-hero">
+          <div>
+            <p className="eyebrow">Teacher workspace</p>
+            <h2>Class roster and readiness</h2>
+            <p>Review enrolled students, confirmation status, payment readiness, and family contact details before class.</p>
+          </div>
+          <div className="workflow-action-list">
+            <article><strong>{totalStudents}</strong><span>Students</span></article>
+            <article><strong>{confirmedClassRows}</strong><span>Confirmed</span></article>
+            <article><strong>{paidClassRows}</strong><span>Paid</span></article>
+          </div>
+        </section>
+        <section className="class-roster-grid">
+          {classGroups.length ? classGroups.map((group) => {
+            const confirmed = statusCount(group.rows, (status) => status.includes('confirmed'));
+            const paid = group.rows.filter(isPaidRegistration).length;
+            return (
+              <article key={group.label}>
+                <div className="panel-mini-heading">
+                  <span>{group.label}</span>
+                  <strong>{group.count}</strong>
+                </div>
+                <div className="roster-meta">
+                  <span>{confirmed} confirmed</span>
+                  <span>{paid} paid</span>
+                </div>
+                <div className="progress-track"><span style={{ width: `${Math.min(100, (confirmed / Math.max(1, group.count)) * 100)}%` }} /></div>
+              </article>
+            );
+          }) : <article><strong>No class registrations yet.</strong><p>Student rosters will appear here after members register for classes.</p></article>}
+        </section>
         <AdminTable
           title="Class registrations"
-          rows={registrations.filter((row) => row.registrationType === 'class' || programs.some((program) => program.title === row.program))}
+          rows={classRows}
           emptyText="No class registrations yet."
           filters={[{ key: 'program', label: 'Class', options: uniqueOptions(registrations, 'program') }]}
           columns={[
@@ -1596,9 +1945,72 @@ export default function AdminSectionPage({ view }) {
   }
 
   if (view === 'treasurer') {
+    const expenseStatus = getExpenseStatus(expenses);
+    const submittedAmount = expenses
+      .filter((row) => String(row.status || '').toLowerCase().includes('submitted'))
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const approvedAmount = expenses
+      .filter((row) => String(row.status || '').toLowerCase().includes('approved'))
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const paidAmount = expenses
+      .filter((row) => String(row.status || '').toLowerCase().includes('paid'))
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const totalExpenseAmount = expenses.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const expenseCategories = summarizeBy(expenses, 'category', 5);
     return (
       <>
         <PageHeader root="Treasurer" area="Expense Review" title="Treasurer expense workflow" />
+        <section className="workflow-hero treasurer-hero">
+          <div>
+            <p className="eyebrow">Treasurer queue</p>
+            <h2>${(submittedAmount + approvedAmount).toLocaleString()} awaiting payment flow</h2>
+            <p>Review submitted expenses, approve reimbursements, mark paid items, and watch category-level spend.</p>
+          </div>
+          <div className="workflow-action-list">
+            <article><strong>{expenseStatus.submitted}</strong><span>Submitted</span></article>
+            <article><strong>{expenseStatus.approved}</strong><span>Approved</span></article>
+            <article><strong>{expenseStatus.paid}</strong><span>Paid</span></article>
+          </div>
+        </section>
+        <section className="admin-dashboard-hero-grid">
+          <article><ReceiptText size={24} /><span>Total expenses</span><strong>{expenses.length}</strong></article>
+          <article><HandCoins size={24} /><span>Submitted</span><strong>${submittedAmount.toLocaleString()}</strong></article>
+          <article><CalendarDays size={24} /><span>Approved</span><strong>${approvedAmount.toLocaleString()}</strong></article>
+          <article><UsersRound size={24} /><span>Paid</span><strong>${paidAmount.toLocaleString()}</strong></article>
+        </section>
+        <section className="finance-insight-grid">
+          <article>
+            <div className="panel-mini-heading">
+              <span>Workflow status</span>
+              <strong>${totalExpenseAmount.toLocaleString()}</strong>
+            </div>
+            {[
+              ['Submitted', expenseStatus.submitted],
+              ['Approved', expenseStatus.approved],
+              ['Paid', expenseStatus.paid],
+              ['Rejected', expenseStatus.rejected]
+            ].map(([label, count]) => (
+              <div className="program-progress-row" key={label}>
+                <strong>{label}</strong>
+                <div className="progress-track"><span style={{ width: `${Math.min(100, (count / Math.max(1, expenses.length)) * 100)}%` }} /></div>
+                <small>{count} item(s)</small>
+              </div>
+            ))}
+          </article>
+          <article>
+            <div className="panel-mini-heading">
+              <span>Category spend</span>
+              <strong>{expenseCategories.length}</strong>
+            </div>
+            {expenseCategories.length ? expenseCategories.map((category) => (
+              <div className="program-progress-row" key={category.label}>
+                <strong>{category.label}</strong>
+                <div className="progress-track"><span style={{ width: `${Math.min(100, (category.amount / Math.max(1, totalExpenseAmount)) * 100)}%` }} /></div>
+                <small>${category.amount.toLocaleString()} across {category.count} item(s)</small>
+              </div>
+            )) : <p className="profile-helper">No expenses submitted yet.</p>}
+          </article>
+        </section>
         <AdminTable
           title="Expense review"
           rows={expenses}
@@ -1716,6 +2128,48 @@ export default function AdminSectionPage({ view }) {
     );
   }
 
+  if (view === 'developer') {
+    const localKeys = Object.keys(localStorage || {}).filter((key) => key.startsWith('kb-')).sort();
+    const tableCounts = [
+      ['Users', users.length],
+      ['Registrations', registrations.length],
+      ['Classes', programs.length],
+      ['Events', allEvents.length],
+      ['Donations', donations.length],
+      ['Expenses', expenses.length],
+      ['Announcements', announcements.length],
+      ['Email outbox', emailOutbox.length]
+    ];
+    return (
+      <>
+        <PageHeader area="Developer" title="Admin developer tools" />
+        <section className="admin-dashboard-hero-grid">
+          {tableCounts.slice(0, 4).map(([label, count]) => (
+            <article key={label}><ReceiptText size={24} /><span>{label}</span><strong>{count}</strong></article>
+          ))}
+        </section>
+        <section className="admin-page-panel">
+          <div className="admin-page-panel-heading"><h2>System diagnostics</h2><span>{tableCounts.reduce((sum, [, count]) => sum + count, 0)}</span></div>
+          <div className="detail-popup-grid">
+            {tableCounts.map(([label, count]) => <article key={label}><span>{label}</span><strong>{count}</strong></article>)}
+            <article><span>API mode</span><strong>{import.meta.env.VITE_API_URL ? 'Configured API URL' : 'Default /api proxy'}</strong></article>
+            <article><span>Google login</span><strong>{import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'Configured' : 'Missing client id'}</strong></article>
+            <article><span>reCAPTCHA</span><strong>{import.meta.env.VITE_GOOGLE_RECAPTCHA_SITE_KEY ? 'Configured' : 'Local fallback'}</strong></article>
+          </div>
+        </section>
+        <AdminTable
+          title="Local cache keys"
+          rows={localKeys.map((key) => ({ key, size: String(localStorage.getItem(key) || '').length }))}
+          emptyText="No local Kannada Bharati cache keys found."
+          columns={[
+            { key: 'key', label: 'Key' },
+            { key: 'size', label: 'Stored characters' }
+          ]}
+        />
+      </>
+    );
+  }
+
   if (view === 'users') {
     return (
       <>
@@ -1767,7 +2221,21 @@ export default function AdminSectionPage({ view }) {
                 </select>
               )
             },
-            { key: 'enabled', label: 'Enabled', render: (row) => row.enabled === false ? 'No' : '✓' },
+            { key: 'emailConfirmed', label: 'Email confirmed', render: (row) => row.emailConfirmed ? 'Yes' : 'No' },
+            { key: 'twoFactorEnabled', label: '2FA', render: (row) => row.twoFactorEnabled ? 'On' : 'Off' },
+            {
+              key: 'enabled',
+              label: 'Enabled',
+              render: (row) => (
+                <button
+                  className={`mini-action-link ${row.enabled === false ? 'secondary' : 'success'}`}
+                  type="button"
+                  onClick={() => updateUser(row, { enabled: row.enabled === false })}
+                >
+                  {row.enabled === false ? 'Enable' : 'Disable'}
+                </button>
+              )
+            },
             { key: 'details', label: 'Details', render: (row) => <button className="mini-action-link secondary" type="button" onClick={() => setRegistrationDetail(row)}>View details</button> }
           ]}
         />
@@ -1782,11 +2250,30 @@ export default function AdminSectionPage({ view }) {
     <>
       <PageHeader area="Dashboard" title="Member dashboard" />
       <section className="admin-dashboard-hero-grid">
-        <article><UsersRound size={24} /><span>Registrations</span><strong>{registrations.length}</strong></article>
-        <article><CalendarDays size={24} /><span>Current Events</span><strong>{allEvents.length}</strong></article>
-        <article><ReceiptText size={24} /><span>Expenses</span><strong>{expenses.length}</strong></article>
+        <article><UsersRound size={24} /><span>My registrations</span><strong>{userRegistrations.length}</strong></article>
+        <article><CalendarDays size={24} /><span>My classes</span><strong>{userClassRegistrations.length}</strong></article>
+        <article><ReceiptText size={24} /><span>My events</span><strong>{userEventRegistrations.length}</strong></article>
         <article><Megaphone size={24} /><span>Announcements</span><strong>{announcements.length}</strong></article>
       </section>
+      <section className="admin-page-panel member-dashboard-profile">
+        <div className="admin-page-panel-heading"><h2>My information</h2><a className="mini-action-link secondary" href="/admin/profile">Update profile</a></div>
+        <div className="detail-popup-grid">
+          <article><span>Name</span><strong>{[profile.firstName || user.firstName || user.name, profile.lastName || user.lastName].filter(Boolean).join(' ') || user.email}</strong></article>
+          <article><span>Email</span><strong>{user.email}</strong></article>
+          <article><span>Phone</span><strong>{profile.phone || user.phone || '-'}</strong></article>
+          <article><span>Company</span><strong>{profile.company || '-'}</strong></article>
+          <article><span>Spouse</span><strong>{[profile.spouseFirstName, profile.spouseLastName].filter(Boolean).join(' ') || '-'}</strong></article>
+          <article><span>Children</span><strong>{profileChildren.length}</strong></article>
+        </div>
+      </section>
+      {isAdmin(user) && (
+        <section className="admin-dashboard-hero-grid">
+          <article><UsersRound size={24} /><span>All registrations</span><strong>{registrations.length}</strong></article>
+        <article><CalendarDays size={24} /><span>Current Events</span><strong>{allEvents.length}</strong></article>
+        <article><ReceiptText size={24} /><span>Expenses</span><strong>{expenses.length}</strong></article>
+          <article><Megaphone size={24} /><span>Announcements</span><strong>{announcements.length}</strong></article>
+        </section>
+      )}
       <AdminTable
         title="Current events"
         rows={dashboardRows}
@@ -1802,10 +2289,32 @@ export default function AdminSectionPage({ view }) {
           { key: 'register', label: 'Register', render: (row) => <a className="mini-action-link" href={`/admin/register-member?program=${encodeURIComponent(row.title)}`}>Register</a> }
         ]}
       />
-      <section className="history-card-grid admin-route-history">
-        <article><h3>Your Event Registrations History</h3><p>Not registered yet!</p></article>
-        <article><h3>Your Class Registrations History</h3><p>{registrations.length ? `${registrations.length} registration record${registrations.length === 1 ? '' : 's'} found.` : 'Not registered yet!'}</p></article>
-      </section>
+      <AdminTable
+        title="My class registrations"
+        rows={userClassRegistrations}
+        emptyText="You have not registered for any classes yet."
+        columns={[
+          { key: 'createdAt', label: 'Registered on' },
+          { key: 'program', label: 'Class' },
+          { key: 'familyMember', label: 'Member', render: (row) => row.familyMember || row.studentName || '-' },
+          { key: 'status', label: 'Status' },
+          { key: 'paid', label: 'Paid', render: (row) => row.paid ? 'Yes' : 'No' },
+          { key: 'amount', label: 'Amount', render: (row) => `$${Number(row.amount || 0).toLocaleString()}` }
+        ]}
+      />
+      <AdminTable
+        title="My event registrations"
+        rows={userEventRegistrations}
+        emptyText="You have not registered for any events yet."
+        columns={[
+          { key: 'createdAt', label: 'Registered on' },
+          { key: 'program', label: 'Event' },
+          { key: 'familyMember', label: 'Member', render: (row) => row.familyMember || row.studentName || '-' },
+          { key: 'status', label: 'Status' },
+          { key: 'paid', label: 'Paid', render: (row) => row.paid ? 'Yes' : 'No' },
+          { key: 'amount', label: 'Amount', render: (row) => `$${Number(row.amount || 0).toLocaleString()}` }
+        ]}
+      />
       {detailRecord && <EventDetailModal item={detailRecord} onClose={() => setDetailRecord(null)} />}
     </>
   );

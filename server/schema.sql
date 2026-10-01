@@ -167,6 +167,7 @@ create table if not exists public.kb_events (
   end_on timestamptz,
   recurrence text,
   capacity integer not null default 0,
+  price numeric not null default 0,
   is_all_day boolean not null default false,
   is_age_restricted boolean not null default false,
   is_payment_required boolean not null default false,
@@ -193,6 +194,7 @@ alter table public.kb_events add column if not exists start_on timestamptz;
 alter table public.kb_events add column if not exists end_on timestamptz;
 alter table public.kb_events add column if not exists recurrence text;
 alter table public.kb_events add column if not exists capacity integer not null default 0;
+alter table public.kb_events add column if not exists price numeric not null default 0;
 alter table public.kb_events add column if not exists is_all_day boolean not null default false;
 alter table public.kb_events add column if not exists is_age_restricted boolean not null default false;
 alter table public.kb_events add column if not exists is_payment_required boolean not null default false;
@@ -282,6 +284,19 @@ create table if not exists public.kb_site_settings (
   updated_at timestamptz not null default now()
 );
 
+insert into public.kb_site_settings (key, value)
+values (
+  'volunteer-google-form',
+  '{"enabled": false, "url": "https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true"}'::jsonb
+)
+on conflict (key) do update
+set value = jsonb_set(
+  public.kb_site_settings.value,
+  '{url}',
+  '"https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true"'::jsonb
+)
+where coalesce(public.kb_site_settings.value->>'url', '') = '';
+
 create table if not exists public.kb_member_profiles (
   id uuid primary key default gen_random_uuid(),
   email text unique not null,
@@ -369,6 +384,16 @@ create table if not exists public.kb_email_outbox (
   sent_at timestamptz
 );
 
+create table if not exists public.kb_sms_outbox (
+  id uuid primary key default gen_random_uuid(),
+  to_phone text not null,
+  body text not null,
+  payload jsonb,
+  status text not null default 'Stored',
+  created_at timestamptz not null default now(),
+  sent_at timestamptz
+);
+
 create table if not exists public.kb_defaulter_history (
   id uuid primary key default gen_random_uuid(),
   user_email text not null,
@@ -408,6 +433,7 @@ alter table public.kb_seats enable row level security;
 alter table public.kb_phone_verifications enable row level security;
 alter table public.kb_external_logins enable row level security;
 alter table public.kb_email_outbox enable row level security;
+alter table public.kb_sms_outbox enable row level security;
 alter table public.kb_defaulter_history enable row level security;
 
 drop policy if exists "Public can read classes" on public.kb_classes;

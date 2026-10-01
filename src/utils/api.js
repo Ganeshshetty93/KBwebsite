@@ -170,6 +170,7 @@ export function normalizeEvent(row) {
     endOn: row.end_on || row.endOn,
     recurrence: row.recurrence,
     capacity: Number(row.capacity || 0),
+    price: Number(row.price || 0),
     isAllDay: row.is_all_day ?? row.isAllDay,
     isAgeRestricted: row.is_age_restricted ?? row.isAgeRestricted,
     isPaymentRequired: row.is_payment_required ?? row.isPaymentRequired,
@@ -411,6 +412,11 @@ export async function apiReadReceptionRegistrations(eventId = '', includeDeleted
   return data.map(normalizeRegistration);
 }
 
+export async function apiLookupUserPhone(email) {
+  await ensureAdminToken();
+  return request(`/users/phone?email=${encodeURIComponent(email)}`);
+}
+
 export async function apiReceptionCheckin(payload) {
   await ensureAdminToken();
   return request('/reception/checkin', {
@@ -538,6 +544,57 @@ export async function apiSetTwoFactor(enabled) {
 
   localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
   return data.user;
+}
+
+export async function apiChangePassword(payload) {
+  const data = await request('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
+export async function apiSetPassword(payload) {
+  const data = await request('/auth/set-password', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
+export async function apiReadExternalLogins() {
+  return request('/auth/external-logins');
+}
+
+export async function apiLinkExternalLogin(provider) {
+  return request('/auth/external-logins', {
+    method: 'POST',
+    body: JSON.stringify({ provider })
+  });
+}
+
+export async function apiRemoveExternalLogin(provider) {
+  return request(`/auth/external-logins/${encodeURIComponent(provider)}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function apiStartPhoneVerification(phone) {
+  return request('/auth/verify-phone/start', {
+    method: 'POST',
+    body: JSON.stringify({ phone })
+  });
+}
+
+export async function apiConfirmPhoneVerification(payload) {
+  return request('/auth/verify-phone/confirm', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function apiReadProfile() {

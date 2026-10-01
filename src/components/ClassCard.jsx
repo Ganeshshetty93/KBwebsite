@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CalendarDays, Clock, MapPin, UserRound, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { appendRecord, getCurrentUser, readJson } from '../utils/storage.js';
+import { apiAppendRecord } from '../utils/api.js';
 import { cleanText, firstError, validateEmail, validatePhone, validateRequired } from '../utils/validation.js';
 
 function getClassImage(item) {
@@ -23,6 +24,12 @@ function getFeeText(item) {
   if (value === null || value === undefined || value === '') return 'the listed donation/fee';
   if (typeof value === 'number') return `$${value}`;
   return String(value);
+}
+
+function getFeeAmount(item) {
+  const value = item.fee ?? item.registrationFee ?? item.price ?? item.donationAmount;
+  const parsed = Number(String(value || '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function fullName(...parts) {
@@ -78,7 +85,7 @@ function buildMemberOptions(user) {
   return members;
 }
 
-export default function ClassCard({ item }) {
+export default function ClassCard({ item, registerSignal = 0 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showMemberRegister, setShowMemberRegister] = useState(false);
   const [selectedMember, setSelectedMember] = useState('');
@@ -90,10 +97,37 @@ export default function ClassCard({ item }) {
   const classImage = getClassImage(item);
   const registerUrl = `/register?program=${encodeURIComponent(item.title)}`;
   const feeText = getFeeText(item);
+  const feeAmount = getFeeAmount(item);
   const user = getCurrentUser();
   const memberOptions = buildMemberOptions(user);
 
-  function handleGuestSubmit(event) {
+  function openMemberRegistration() {
+    setShowDetails(true);
+    setShowGuestForm(false);
+    setShowMemberRegister(true);
+    setSelectedMember(memberOptions[0]?.value || '');
+    setMemberError('');
+    setMemberSaved(false);
+  }
+
+  useEffect(() => {
+    if (registerSignal > 0) openMemberRegistration();
+  }, [registerSignal]);
+
+  async function saveRegistration(record) {
+    try {
+      const saved = await apiAppendRecord('kb-registration-submissions', record);
+      appendRecord('kb-registration-submissions', saved || record);
+      return saved || record;
+    } catch (error) {
+      if (/already registered/i.test(error.message || '')) throw error;
+      appendRecord('kb-registration-submissions', record);
+      error.localSaved = true;
+      throw error;
+    }
+  }
+
+  async function handleGuestSubmit(event) {
     event.preventDefault();
     setGuestError('');
     setGuestSaved(false);
@@ -115,21 +149,32 @@ export default function ClassCard({ item }) {
       return;
     }
 
-    appendRecord('kb-registration-submissions', {
+    const record = {
       parentName: `${firstName} ${lastName}`.trim(),
       studentName: cleanText(payload.studentName) || `${firstName} ${lastName}`.trim(),
       email,
       phone: phone || '-',
       program: item.title,
       status: 'Guest submitted',
-      fee: feeText
-    });
+      fee: feeText,
+      amount: feeAmount,
+      registrationType: 'guest'
+    };
 
     event.currentTarget.reset();
-    setGuestSaved(true);
+    try {
+      await saveRegistration(record);
+      setGuestSaved(true);
+    } catch (error) {
+      setGuestError(/already registered/i.test(error.message || '')
+        ? error.message
+        : error.localSaved
+          ? 'Guest registration was saved locally, but could not reach the server.'
+          : error.message || 'Guest registration could not be submitted.');
+    }
   }
 
-  function handleMemberSubmit(event) {
+  async function handleMemberSubmit(event) {
     event.preventDefault();
     setMemberSaved(false);
     setMemberError('');
@@ -144,21 +189,44 @@ export default function ClassCard({ item }) {
       return;
     }
 
-    appendRecord('kb-registration-submissions', {
+    const existing = readJson('kb-registration-submissions', []).some((registration) => (
+      String(registration.email || '').toLowerCase() === String(user.email || '').toLowerCase()
+      && registration.program === item.title
+      && (registration.studentName === member.name || registration.familyMember === member.name)
+      && registration.status !== 'Deleted'
+    ));
+    if (existing) {
+      setMemberError('This member is already registered for this class.');
+      return;
+    }
+
+    const record = {
       parentName: user.name || user.email,
       studentName: member.name,
-      familyMember: member.relation,
+      familyMember: member.name,
       birthYear: member.birthYear,
       email: user.email,
       phone: user.phone || '-',
       program: item.title,
       status: 'Submitted',
       fee: feeText,
+      amount: feeAmount,
+      registrationType: 'class',
       seats: 1,
       totalMembers: 1
-    });
+    };
 
-    setMemberSaved(true);
+    try {
+      await saveRegistration(record);
+      setMemberSaved(true);
+      setShowGuestForm(false);
+    } catch (error) {
+      setMemberError(/already registered/i.test(error.message || '')
+        ? error.message
+        : error.localSaved
+          ? 'Registration was saved locally, but could not reach the server.'
+          : error.message || 'Registration could not be submitted.');
+    }
   }
 
   return (
@@ -182,9 +250,14 @@ export default function ClassCard({ item }) {
           <li><UserRound size={17} /> {item.age}</li>
           <li><MapPin size={17} /> {item.location || 'Virtual Google Classroom'}</li>
         </ul>
-        <button className="button compact" type="button" onClick={() => setShowDetails(true)}>
-          Details
-        </button>
+        <div className="class-card-actions">
+          <button className="button secondary-dark" type="button" onClick={() => setShowDetails(true)}>
+            Details
+          </button>
+          <button className="button compact" type="button" onClick={openMemberRegistration}>
+            Register
+          </button>
+        </div>
       </article>
 
       {showDetails && (
@@ -219,12 +292,7 @@ export default function ClassCard({ item }) {
               </ol>
             </section>
             <div className="class-detail-actions">
-              <button className="button primary" type="button" onClick={() => {
-                setShowMemberRegister((value) => !value);
-                setSelectedMember(memberOptions[0]?.value || '');
-                setMemberError('');
-                setMemberSaved(false);
-              }}>
+              <button className="button primary" type="button" onClick={openMemberRegistration}>
                 Register
               </button>
               <button className="button primary" type="button" onClick={() => { setShowGuestForm((value) => !value); setGuestError(''); }}>
@@ -234,7 +302,7 @@ export default function ClassCard({ item }) {
             {showMemberRegister && (
               <form className="guest-registration-form member-registration-form" onSubmit={handleMemberSubmit}>
                 <div className="notice-box">
-                  Need to add a new person? Update it in your <Link to="/profile">account</Link>.
+                  Need to add a new person? Update it in your <Link to="/admin/profile">account</Link>.
                 </div>
                 <label>
                   Please select the member(s) to register <b>*</b>
@@ -248,7 +316,7 @@ export default function ClassCard({ item }) {
                 {!user && <p className="fine-print">Please <Link to="/login">login</Link> or <Link to={registerUrl}>create an account</Link> before registering.</p>}
                 {user && memberOptions.length === 1 && <p className="fine-print">Only self is available right now. Add spouse or children in your account profile to show them here.</p>}
                 {memberError && <p className="form-error">{memberError}</p>}
-                {memberSaved && <p className="success">Registration submitted. Please wait for approved email confirmation.</p>}
+                {memberSaved && <p className="success">Registration submitted. Admin will review and approve it before payment is completed.</p>}
                 <button className="blue-submit" type="submit" disabled={!user}>Register</button>
               </form>
             )}
@@ -265,7 +333,7 @@ export default function ClassCard({ item }) {
                   <label>Phone <input name="phone" type="tel" placeholder="425 555 0100" /></label>
                 </div>
                 {guestError && <p className="form-error">{guestError}</p>}
-                {guestSaved && <p className="success">Guest registration submitted. Please wait for approved email confirmation.</p>}
+                {guestSaved && <p className="success">Guest registration submitted. Admin will review and approve it before payment is completed.</p>}
                 <button className="button primary" type="submit">Submit Registration</button>
               </form>
             )}

@@ -57,12 +57,24 @@ function positiveAmount(value) {
   return `$${amount}`;
 }
 
+function parseJsonField(value, label) {
+  const text = cleanText(value);
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${label} must be valid JSON.`);
+  }
+}
+
 export default function AdminCreateForm({ type, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [eventTypes, setEventTypes] = useState(() => readJson('kb-event-types', defaultEventTypes));
   const [recurrences, setRecurrences] = useState(() => readJson('kb-recurrence-options', defaultRecurrences));
+  const [priceRows, setPriceRows] = useState([{ label: 'Adult', price: '25' }, { label: 'Child', price: '10' }]);
+  const [rsvpSettings, setRsvpSettings] = useState({ question: 'Will you attend?', options: ['Yes', 'No', 'Maybe'] });
   const isClass = type === 'class';
   const isFundraiser = type === 'fundraiser';
   const isEvent = !isClass && !isFundraiser;
@@ -125,6 +137,20 @@ export default function AdminCreateForm({ type, onCreated }) {
     const beneficiary = cleanText(formData.get('beneficiary'));
     const eventId = cleanText(formData.get('eventId'));
     const urlKey = cleanText(formData.get('urlKey'));
+    const priceMenuItems = priceRows
+      .map((row, index) => ({
+        id: `price-${index + 1}`,
+        label: cleanText(row.label),
+        price: Number(row.price || 0)
+      }))
+      .filter((row) => row.label && Number.isFinite(row.price) && row.price >= 0);
+    const rsvpOptions = rsvpSettings.options.map(cleanText).filter(Boolean);
+    const rsvp = isEvent && rsvpOptions.length
+      ? { question: cleanText(rsvpSettings.question) || 'Will you attend?', options: rsvpOptions }
+      : null;
+    const priceMenu = isEvent && priceMenuItems.length
+      ? { name: 'Tickets', items: priceMenuItems }
+      : null;
 
     const validationError = firstError([
       validateRequired(title, isFundraiser ? 'Cause title' : isClass ? 'Class name' : 'Event title'),
@@ -213,6 +239,7 @@ export default function AdminCreateForm({ type, onCreated }) {
           endOn,
           recurrence: formData.get('recurrence'),
           capacity: Number(formData.get('capacity') || 0),
+          price: Number(formData.get('price') || 0),
           isAllDay: Boolean(formData.get('isAllDay')),
           isAgeRestricted: Boolean(formData.get('isAgeRestricted')),
           isPaymentRequired: Boolean(formData.get('isPaymentRequired')),
@@ -224,12 +251,18 @@ export default function AdminCreateForm({ type, onCreated }) {
           freeForVolunteers: Boolean(formData.get('freeForVolunteers')),
           enableCheckIn: Boolean(formData.get('enableCheckIn')),
           enableVolunteerDiscount: Boolean(formData.get('enableVolunteerDiscount')),
+          volunteerDiscountPercentage: Number(formData.get('volunteerDiscountPercentage') || 0),
+          defaulterFineAmount: Number(formData.get('defaulterFineAmount') || 0),
+          rsvp,
+          priceMenu,
           photo
         };
 
     try {
       await appendAdminRecordAsync(key, payload);
       form.reset();
+      setPriceRows([{ label: 'Adult', price: '25' }, { label: 'Child', price: '10' }]);
+      setRsvpSettings({ question: 'Will you attend?', options: ['Yes', 'No', 'Maybe'] });
       setMessage(`${isFundraiser ? 'Fundraising cause' : isClass ? 'Class' : 'Event'} added successfully and saved to database.`);
       onCreated?.();
     } catch (error) {
@@ -391,6 +424,18 @@ export default function AdminCreateForm({ type, onCreated }) {
               Capacity
               <input name="capacity" type="number" min="1" step="1" required />
             </label>
+            <label>
+              Base price
+              <input name="price" type="number" min="0" step="0.01" defaultValue="0" />
+            </label>
+            <label>
+              Volunteer discount %
+              <input name="volunteerDiscountPercentage" type="number" min="0" max="100" step="1" defaultValue="0" />
+            </label>
+            <label>
+              Defaulter fine amount
+              <input name="defaulterFineAmount" type="number" min="0" step="0.01" defaultValue="0" />
+            </label>
           </>
         )}
         {!isFundraiser && (
@@ -419,6 +464,48 @@ export default function AdminCreateForm({ type, onCreated }) {
           <label className="admin-checkbox"><input name="freeForVolunteers" type="checkbox" /> Free for Volunteers</label>
           <label className="admin-checkbox"><input name="enableCheckIn" type="checkbox" /> Enable for Check-in</label>
           <label className="admin-checkbox"><input name="enableVolunteerDiscount" type="checkbox" /> Enable Volunteer discount</label>
+        </div>
+      )}
+      {isEvent && (
+        <div className="advanced-pricing-builder">
+          <section>
+            <div className="panel-mini-heading">
+              <span>RSVP workflow</span>
+              <strong>{rsvpSettings.options.filter(Boolean).length} options</strong>
+            </div>
+            <label>
+              RSVP question
+              <input value={rsvpSettings.question} onChange={(event) => setRsvpSettings((current) => ({ ...current, question: event.target.value }))} />
+            </label>
+            <div className="dynamic-list">
+              {rsvpSettings.options.map((option, index) => (
+                <label key={`${option}-${index}`}>
+                  Option {index + 1}
+                  <span>
+                    <input value={option} onChange={(event) => setRsvpSettings((current) => ({ ...current, options: current.options.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} />
+                    <button type="button" className="mini-action-link danger" onClick={() => setRsvpSettings((current) => ({ ...current, options: current.options.filter((_item, itemIndex) => itemIndex !== index) }))}>Remove</button>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <button type="button" className="mini-action-link secondary" onClick={() => setRsvpSettings((current) => ({ ...current, options: [...current.options, ''] }))}>Add RSVP option</button>
+          </section>
+          <section>
+            <div className="panel-mini-heading">
+              <span>Price menu</span>
+              <strong>{priceRows.length} item(s)</strong>
+            </div>
+            <div className="dynamic-list">
+              {priceRows.map((row, index) => (
+                <div className="price-builder-row" key={`price-row-${index}`}>
+                  <label>Label<input value={row.label} onChange={(event) => setPriceRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item))} /></label>
+                  <label>Price<input type="number" min="0" step="0.01" value={row.price} onChange={(event) => setPriceRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, price: event.target.value } : item))} /></label>
+                  <button type="button" className="mini-action-link danger" onClick={() => setPriceRows((current) => current.filter((_item, itemIndex) => itemIndex !== index))}>Remove</button>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="mini-action-link secondary" onClick={() => setPriceRows((current) => [...current, { label: '', price: '0' }])}>Add price option</button>
+          </section>
         </div>
       )}
       <label>

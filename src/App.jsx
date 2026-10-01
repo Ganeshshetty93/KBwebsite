@@ -1,8 +1,8 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Gauge, Globe2, HeartHandshake, LogIn, LogOut, Menu, UserCircle, X } from 'lucide-react';
+import { Gauge, Globe2, HeartHandshake, LogIn, LogOut, Megaphone, Menu, UserCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
-import { getCurrentUser, isAdmin, readJson, setCurrentUser } from './utils/storage.js';
+import { getCurrentUser, readJson, setCurrentUser } from './utils/storage.js';
 import { apiReadRecords } from './utils/api.js';
 import PageLoader from './components/PageLoader.jsx';
 
@@ -15,6 +15,15 @@ const nav = [
   ['navDonate', '/donate'],
   ['navContact', '/contact']
 ];
+
+function getAnnouncementHref(item) {
+  const url = item.ctaUrl || '';
+  const isRegistrationCta = /register/i.test(`${item.ctaText || ''} ${item.text || ''}`);
+  if (isRegistrationCta && /kannada-shaale/i.test(url) && !/[?&]register=/.test(url)) {
+    return `${url}${url.includes('?') ? '&' : '?'}register=1`;
+  }
+  return url;
+}
 
 export default function App() {
   const [open, setOpen] = useState(false);
@@ -122,7 +131,7 @@ export default function App() {
               {t(label)}
             </NavLink>
           ))}
-          {isAdmin(user) && (
+          {user && (
             <NavLink className="nav-login" to="/admin" onClick={() => setOpen(false)}>
               <Gauge size={17} /> {t('navDashboard')}
             </NavLink>
@@ -143,7 +152,7 @@ export default function App() {
               </button>
               {profileOpen && (
                 <div className="nav-profile-dropdown">
-                  <Link to="/profile" onClick={() => { setOpen(false); setProfileOpen(false); }}>
+                  <Link to="/admin/profile" onClick={() => { setOpen(false); setProfileOpen(false); }}>
                     <UserCircle size={17} /> Profile
                   </Link>
                   <button type="button" onClick={handleLogout}>
@@ -160,12 +169,13 @@ export default function App() {
         </nav>
       </header>
 
-      {activeAnnouncements.length > 0 && (
+      {!isAdminRoute && activeAnnouncements.length > 0 && (
         <section className="announcement-strip" aria-label="Kannada Bharati announcements">
           {activeAnnouncements.slice(0, 2).map((item, index) => (
             <article key={`${item.text}-${index}`}>
+              <span className="announcement-kicker"><Megaphone size={16} /> Registration</span>
               <strong>{item.text}</strong>
-              {item.ctaUrl && <Link to={item.ctaUrl}>{item.ctaText || 'Learn more'}</Link>}
+              {item.ctaUrl && <Link to={getAnnouncementHref(item)}>{item.ctaText || 'Learn more'}</Link>}
             </article>
           ))}
         </section>
@@ -197,7 +207,7 @@ export default function App() {
           <Link className="footer-link" to="/sportsdayrules">Sports Rules</Link>
           <Link className="footer-link" to="/webrequirements">Web Requirements</Link>
           <Link className="footer-link" to="/privacy">Privacy</Link>
-          {isAdmin(user) && <Link className="footer-link" to="/admin">{t('navDashboard')}</Link>}
+          {user && <Link className="footer-link" to="/admin">{t('navDashboard')}</Link>}
           <Link className="footer-link" to="/login">{t('memberLogin')}</Link>
         </div>
       </footer>
