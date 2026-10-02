@@ -20,8 +20,9 @@ const azureStorageConnectionString = process.env.AZURE_STORAGE_CONNECTION_STRING
 const smtpHost = process.env.EMAIL_SMTP_HOST || process.env.SMTP_HOST || '';
 const smtpPort = Number(process.env.EMAIL_SMTP_PORT || process.env.SMTP_PORT || 587);
 const smtpUser = process.env.EMAIL_SMTP_USER || process.env.SMTP_USER || '';
-const smtpPass = process.env.EMAIL_SMTP_PASS || process.env.SMTP_PASS || '';
+const smtpPass = (process.env.EMAIL_SMTP_PASS || process.env.SMTP_PASS || '').replace(/\s+/g, '');
 const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpUser || 'no-reply@kannadabharati.org';
+const emailFromHeader = /<.+@.+>/.test(emailFromAddress) ? emailFromAddress : `"Kannada Bharati" <${emailFromAddress}>`;
 const recaptchaSecret = process.env.GOOGLE_RECAPTCHA_SECRET || '';
 const defaultVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true';
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || '';
@@ -31,6 +32,7 @@ const paypalBaseUrl = (process.env.PAYPAL_ENV || 'live').toLowerCase() === 'sand
   ? 'https://api-m.sandbox.paypal.com'
   : 'https://api-m.paypal.com';
 const appBaseUrl = process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'http://localhost:5174';
+const kbPaypalDonateUrl = process.env.KB_PAYPAL_DONATE_URL || 'https://www.paypal.com/donate?token=yXa3TfA1QxdZl-dL-PRMtJzuNTDf_55QcI_FQp48Twwc1UBYepRrXg79VpA_BqL2NoCnFjuGg9CrKgMJ';
 const roleNames = ['member', 'admin', 'superadmin', 'receptionist', 'teacher', 'volunteer', 'treasurer'];
 const allowedOrigins = new Set([
   process.env.CLIENT_ORIGIN,
@@ -80,7 +82,7 @@ function tokenFor(user) {
   return jwt.sign(publicUser(user), jwtSecret, { expiresIn: '7d' });
 }
 
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
 
@@ -89,7 +91,19 @@ function authenticate(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, jwtSecret);
+    const tokenUser = jwt.verify(token, jwtSecret);
+    req.user = tokenUser;
+    try {
+      const supabase = requireSupabase();
+      const { data: freshUser, error } = await supabase
+        .from('kb_users')
+        .select('*')
+        .eq('email', String(tokenUser.email || '').toLowerCase())
+        .maybeSingle();
+      if (!error && freshUser) req.user = publicUser(freshUser);
+    } catch {
+      // Fall back to the signed token when Supabase is unavailable.
+    }
     return next();
   } catch {
     return res.status(401).json({ error: 'Invalid login token.' });
@@ -202,8 +216,8 @@ function parseDataUrl(dataUrl) {
   }
 
   const contentType = match[1].toLowerCase();
-  if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(contentType)) {
-    const error = new Error('Only png, jpg, jpeg, and webp images can be uploaded.');
+  if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/pdf'].includes(contentType)) {
+    const error = new Error('Only png, jpg, jpeg, webp, and PDF files can be uploaded.');
     error.status = 400;
     throw error;
   }
@@ -229,7 +243,7 @@ async function uploadImageFile({ dataUrl, fileName, container = 'users', directo
     };
   }
 
-  const extensionFromType = parsed.contentType === 'image/png' ? 'png' : parsed.contentType === 'image/webp' ? 'webp' : 'jpg';
+  const extensionFromType = parsed.contentType === 'image/png' ? 'png' : parsed.contentType === 'image/webp' ? 'webp' : parsed.contentType === 'application/pdf' ? 'pdf' : 'jpg';
   const safeContainer = safePathPart(container, 'users').split('/')[0].toLowerCase();
   const safeDirectory = directory ? safePathPart(directory, '') : '';
   const safeFileName = safePathPart(fileName || `upload-${Date.now()}.${extensionFromType}`, `upload.${extensionFromType}`);
@@ -380,6 +394,13 @@ function normalizePayload(table, payload) {
       amount: numberValue(payload.amount, 0),
       expense_date: payload.expense_date || payload.expenseDate || payload.date || null,
       description: payload.description || payload.notes || null,
+      vendor: payload.vendor || null,
+      payment_method: payload.payment_method || payload.paymentMethod || null,
+      reimbursement_to: payload.reimbursement_to || payload.reimbursementTo || null,
+      receipt_url: payload.receipt_url || payload.receiptUrl || null,
+      receipt_name: payload.receipt_name || payload.receiptName || null,
+      receipt_type: payload.receipt_type || payload.receiptType || null,
+      receipt_size: numberValue(payload.receipt_size ?? payload.receiptSize, 0),
       status: payload.status || 'Submitted',
       submitted_by: payload.submitted_by || payload.submittedBy || payload.email || null
     };
@@ -396,10 +417,66 @@ function normalizePayload(table, payload) {
     };
   }
 
+  if (table === 'kb_attendance') {
+    const registrationId = payload.registration_id || payload.registrationId || null;
+    return {
+      class_key: payload.class_key || payload.classKey || payload.className || null,
+      class_name: payload.class_name || payload.className || payload.classKey || null,
+      attendance_date: payload.attendance_date || payload.attendanceDate || new Date().toISOString().slice(0, 10),
+      registration_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(registrationId || '')) ? registrationId : null,
+      registration_key: payload.registration_key || payload.registrationKey || null,
+      student_name: payload.student_name || payload.studentName || payload.familyMember || 'Student',
+      family_member: payload.family_member || payload.familyMember || payload.studentName || null,
+      email: payload.email || null,
+      status: payload.status || 'Present',
+      notes: payload.notes || null,
+      taken_by: payload.taken_by || payload.takenBy || payload.email || null,
+      updated_at: payload.updated_at || payload.updatedAt || new Date().toISOString()
+    };
+  }
+
+  if (table === 'kb_seats') {
+    return {
+      event_id: payload.event_id || payload.eventId || null,
+      seat_number: payload.seat_number || payload.seatNumber || null,
+      registration_id: payload.registration_id || payload.registrationId || null,
+      assigned_to: payload.assigned_to || payload.assignedTo || null,
+      status: payload.status || (payload.registration_id || payload.registrationId ? 'Assigned' : 'Available'),
+      updated_at: payload.updated_at || payload.updatedAt || new Date().toISOString()
+    };
+  }
+
   return payload;
 }
 
 function normalizePatch(table, payload) {
+  if (['kb_events', 'kb_announcements', 'kb_checkins', 'kb_attendance'].includes(table)) {
+    return normalizePayload(table, payload);
+  }
+
+  if (table === 'kb_registrations') {
+    const patch = {};
+    if (payload.parentName !== undefined || payload.parent_name !== undefined) patch.parent_name = payload.parentName ?? payload.parent_name;
+    if (payload.studentName !== undefined || payload.student_name !== undefined) patch.student_name = payload.studentName ?? payload.student_name;
+    if (payload.familyMember !== undefined || payload.family_member !== undefined) patch.family_member = payload.familyMember ?? payload.family_member;
+    if (payload.email !== undefined) patch.email = payload.email;
+    if (payload.phone !== undefined) patch.phone = payload.phone || null;
+    if (payload.program !== undefined) patch.program = payload.program;
+    if (payload.registrationType !== undefined || payload.registration_type !== undefined) patch.registration_type = payload.registrationType ?? payload.registration_type;
+    if (payload.status !== undefined) patch.status = payload.status;
+    if (payload.amount !== undefined) patch.amount = numberValue(payload.amount, 0);
+    if (payload.paid !== undefined) patch.paid = booleanValue(payload.paid, false);
+    if (payload.paymentReceived !== undefined || payload.payment_received !== undefined) patch.payment_received = booleanValue(payload.paymentReceived ?? payload.payment_received, false);
+    if (payload.enabled !== undefined) patch.enabled = booleanValue(payload.enabled, true);
+    if (payload.birthYear !== undefined || payload.birth_year !== undefined) patch.birth_year = payload.birthYear ?? payload.birth_year;
+    if (payload.totalMembers !== undefined || payload.total_members !== undefined) patch.total_members = numberValue(payload.totalMembers ?? payload.total_members, 1);
+    if (payload.seats !== undefined) patch.seats = numberValue(payload.seats, 1);
+    if (payload.rsvp !== undefined) patch.rsvp = payload.rsvp || null;
+    if (payload.priceSelection !== undefined) patch.price_menu = mergePaymentDetails(payload.priceMenu || payload.price_menu, { priceSelection: payload.priceSelection });
+    if (payload.emailStatus !== undefined || payload.email_status !== undefined) patch.email_status = payload.emailStatus ?? payload.email_status;
+    return patch;
+  }
+
   if (table === 'kb_users') {
     const roles = normalizeRoles(payload.roles || payload.role);
     const patch = {};
@@ -422,6 +499,7 @@ function normalizePatch(table, payload) {
     const patch = {};
     if (payload.status !== undefined) patch.status = payload.status;
     if (payload.sent_at !== undefined || payload.sentAt !== undefined) patch.sent_at = payload.sent_at ?? payload.sentAt;
+    if (payload.payload !== undefined) patch.payload = payload.payload;
     return patch;
   }
 
@@ -446,6 +524,13 @@ function normalizePatch(table, payload) {
     if (payload.status !== undefined) patch.status = payload.status;
     if (payload.description !== undefined) patch.description = payload.description;
     if (payload.notes !== undefined) patch.description = payload.notes;
+    if (payload.vendor !== undefined) patch.vendor = payload.vendor;
+    if (payload.paymentMethod !== undefined || payload.payment_method !== undefined) patch.payment_method = payload.paymentMethod ?? payload.payment_method;
+    if (payload.reimbursementTo !== undefined || payload.reimbursement_to !== undefined) patch.reimbursement_to = payload.reimbursementTo ?? payload.reimbursement_to;
+    if (payload.receiptUrl !== undefined || payload.receipt_url !== undefined) patch.receipt_url = payload.receiptUrl ?? payload.receipt_url;
+    if (payload.receiptName !== undefined || payload.receipt_name !== undefined) patch.receipt_name = payload.receiptName ?? payload.receipt_name;
+    if (payload.receiptType !== undefined || payload.receipt_type !== undefined) patch.receipt_type = payload.receiptType ?? payload.receipt_type;
+    if (payload.receiptSize !== undefined || payload.receipt_size !== undefined) patch.receipt_size = numberValue(payload.receiptSize ?? payload.receipt_size, 0);
     if (payload.approvedBy !== undefined || payload.approved_by !== undefined) patch.approved_by = payload.approvedBy ?? payload.approved_by;
     if (payload.approvedAt !== undefined || payload.approved_at !== undefined) patch.approved_at = payload.approvedAt ?? payload.approved_at;
     return patch;
@@ -712,6 +797,42 @@ async function paypalAccessToken() {
   return payload.access_token;
 }
 
+async function createPayPalRegistrationOrder({ kind, registrationId, amount, description, returnUrl, cancelUrl }) {
+  const token = await paypalAccessToken();
+  const order = await fetchJson(`${paypalBaseUrl}/v2/checkout/orders`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      intent: 'CAPTURE',
+      purchase_units: [{
+        description,
+        custom_id: registrationId || undefined,
+        amount: {
+          currency_code: 'USD',
+          value: Number(amount || 0).toFixed(2)
+        }
+      }],
+      application_context: {
+        brand_name: 'Kannada Bharati',
+        landing_page: 'LOGIN',
+        user_action: 'PAY_NOW',
+        return_url: returnUrl,
+        cancel_url: cancelUrl
+      }
+    })
+  });
+
+  return {
+    registrationId,
+    orderId: order.id,
+    approvalUrl: order.links?.find((link) => link.rel === 'approve')?.href,
+    kind
+  };
+}
+
 async function markDonationPaid({ donationId, orderId, captureId, paymentPayload }) {
   if (!donationId || !isUuid(donationId)) return null;
 
@@ -741,6 +862,14 @@ async function markDonationPaid({ donationId, orderId, captureId, paymentPayload
   }
 
   if (result.error) throw result.error;
+  if (result.data?.email) {
+    await sendEmailOrQueue({
+      to: result.data.email,
+      subject: 'Kannada Bharati donation confirmation',
+      template: 'donation-confirmation',
+      payload: { donation: result.data, payment: { orderId, captureId, status: 'Paid', paymentPayload } }
+    });
+  }
   return result.data;
 }
 
@@ -757,7 +886,11 @@ async function getRegistrationById(id) {
 }
 
 async function markRegistrationPaid({ registrationId, orderId, captureId, paymentPayload, status = 'Confirmed' }) {
-  if (!registrationId || !isUuid(registrationId)) return null;
+  if (!registrationId || !isUuid(registrationId)) {
+    const error = new Error('Registration id is required to complete payment.');
+    error.status = 400;
+    throw error;
+  }
   const patch = {
     paid: true,
     paymentReceived: true,
@@ -765,6 +898,11 @@ async function markRegistrationPaid({ registrationId, orderId, captureId, paymen
     emailStatus: 'Payment sent'
   };
   const registration = await updateRecord('kb_registrations', registrationId, patch);
+  if (!registration) {
+    const error = new Error('Registration was not found for this payment.');
+    error.status = 404;
+    throw error;
+  }
   await sendEmailOrQueue({
     to: registration.email,
     subject: 'Kannada Bharati payment confirmation',
@@ -817,6 +955,91 @@ function priceFromMenu(priceMenu, selection) {
   const selected = String(selection || '').toLowerCase();
   const match = values.find((item) => String(item.id || item.key || item.name || item.label || '').toLowerCase() === selected);
   return numberValue(match?.price ?? match?.amount, 0);
+}
+
+function mergePaymentDetails(priceMenu, details = {}) {
+  const base = priceMenu && typeof priceMenu === 'object' && !Array.isArray(priceMenu)
+    ? priceMenu
+    : { items: Array.isArray(priceMenu) ? priceMenu : [] };
+  return {
+    ...base,
+    paymentDetails: {
+      ...(base.paymentDetails || {}),
+      ...details,
+      updatedAt: new Date().toISOString()
+    }
+  };
+}
+
+function registrationKindLabel(registration = {}) {
+  const type = String(registration.registration_type || registration.registrationType || '').toLowerCase();
+  if (type === 'class') return 'class registration';
+  if (type === 'guest') return 'guest event registration';
+  if (type === 'event') return 'event registration';
+  return 'registration';
+}
+
+function registrationPaymentKind(registration = {}) {
+  const type = String(registration.registration_type || registration.registrationType || '').toLowerCase();
+  if (type === 'class') return 'class';
+  if (type === 'guest') return 'guest-event';
+  return 'event';
+}
+
+function registrationPaymentUrls(registration = {}) {
+  const kind = registrationPaymentKind(registration);
+  const registrationId = registration.id || '';
+  const encodedKind = encodeURIComponent(kind);
+  const encodedId = encodeURIComponent(registrationId);
+  if (kind === 'class') {
+    return {
+      returnUrl: `${appBaseUrl}/admin/profile?payment=complete&kind=${encodedKind}&registrationId=${encodedId}`,
+      cancelUrl: `${appBaseUrl}/admin/profile?payment=cancel&registrationId=${encodedId}`
+    };
+  }
+
+  return {
+    returnUrl: `${appBaseUrl}/events?payment=complete&kind=${encodedKind}&registrationId=${encodedId}`,
+    cancelUrl: `${appBaseUrl}/events?payment=cancel&registrationId=${encodedId}`
+  };
+}
+
+async function sendRegistrationEmail(registration, reason = 'submitted') {
+  if (!registration?.email) return null;
+  const label = registrationKindLabel(registration);
+  const amountDue = numberValue(registration.amount, 0);
+  const paid = registration.paid === true || registration.payment_received === true;
+  let payUrl = '';
+  if (amountDue > 0 && !paid && registration.id && reason !== 'paid') {
+    payUrl = kbPaypalDonateUrl;
+  }
+  const subjectByReason = {
+    submitted: `Kannada Bharati ${label} received`,
+    confirmed: `Kannada Bharati ${label} confirmed`,
+    updated: `Kannada Bharati ${label} updated`,
+    paid: 'Kannada Bharati payment confirmation'
+  };
+  return sendEmailOrQueue({
+    to: registration.email,
+    subject: subjectByReason[reason] || subjectByReason.updated,
+    template: reason === 'paid' ? 'payment-confirmation' : (registration.registration_type === 'class' || registration.registrationType === 'class' ? 'class-registration' : 'registration-update'),
+    payload: { registration, payUrl }
+  });
+}
+
+async function createRegistrationRecord(payload, { sendEmail = true } = {}) {
+  const registration = await insertRecord('kb_registrations', payload);
+  if (sendEmail) {
+    await sendRegistrationEmail(registration, registration.status === 'Confirmed' ? 'confirmed' : 'submitted');
+    if (registration.email_status !== 'Sent') {
+      try {
+        return await updateRecord('kb_registrations', registration.id, { emailStatus: 'Sent' });
+      } catch {
+        // Email was sent; do not fail registration if optional update fails.
+      }
+    }
+  }
+  return registration;
 }
 
 async function calculateRegistrationPayload(payload) {
@@ -886,7 +1109,11 @@ async function queueEmail({ to, subject, template, payload }) {
 
 function renderEmail({ subject, template, payload = {} }) {
   const registration = payload.registration || {};
-  const rows = [
+  const donation = payload.donation || {};
+  const amountDue = Number(registration.amount || 0);
+  const registrationPaid = registration.paid === true || registration.payment_received === true;
+  const payUrl = amountDue > 0 && !registrationPaid ? payload.payUrl || '' : '';
+  const registrationRows = [
     ['Program', registration.program],
     ['Registered member', registration.family_member || registration.student_name || registration.parent_name],
     ['Status', registration.status],
@@ -894,14 +1121,23 @@ function renderEmail({ subject, template, payload = {} }) {
     ['Payment', registration.paid || registration.payment_received ? 'Paid' : 'Pending'],
     ['Registered by', registration.email]
   ].filter(([, value]) => value !== undefined && value !== null && value !== '');
-  const cta = template === 'confirm-email' ? payload.confirmUrl : template === 'forgot-password' ? payload.resetUrl : '';
+  const donationRows = [
+    ['Name', donation.name],
+    ['Email', donation.email],
+    ['Cause', donation.cause_title || donation.cause],
+    ['Amount', donation.amount !== undefined ? `$${Number(donation.amount || 0).toFixed(2)}` : ''],
+    ['Payment', donation.payment_status || 'Paid']
+  ].filter(([, value]) => value !== undefined && value !== null && value !== '');
+  const rows = template === 'donation-confirmation' ? donationRows : registrationRows;
+  const cta = template === 'confirm-email' ? payload.confirmUrl : template === 'forgot-password' ? payload.resetUrl : payUrl;
+  const ctaLabel = payUrl ? 'Pay Registration Fee' : 'Open link';
   const introByTemplate = {
     'confirm-email': 'Please confirm your Kannada Bharati account.',
     'forgot-password': 'Use the link below to reset your Kannada Bharati password.',
     'registration-update': 'Your Kannada Bharati registration has been updated.',
     'class-registration': 'Your class registration details are below.',
     'payment-confirmation': 'Thank you. Your payment has been received.',
-    donation: 'Thank you for supporting Kannada Bharati.'
+    'donation-confirmation': 'Thank you for supporting Kannada Bharati.'
   };
   const intro = introByTemplate[template] || 'Kannada Bharati notification.';
   const text = [
@@ -909,6 +1145,7 @@ function renderEmail({ subject, template, payload = {} }) {
     '',
     intro,
     cta ? `Link: ${cta}` : '',
+    payUrl ? `Pay online: ${cta}` : '',
     ...rows.map(([label, value]) => `${label}: ${value}`),
     '',
     'Kannada Bharati'
@@ -917,7 +1154,8 @@ function renderEmail({ subject, template, payload = {} }) {
     <div style="font-family:Arial,sans-serif;color:#102a26;line-height:1.5;max-width:680px">
       <h2 style="color:#004d46">${subject}</h2>
       <p>${intro}</p>
-      ${cta ? `<p><a style="display:inline-block;background:#edae13;color:#111;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700" href="${cta}">Open link</a></p>` : ''}
+      ${payUrl ? `<p style="margin:16px 0 8px"><strong>Payment is pending.</strong> Use the button below to open your account and pay this registration fee.</p>` : ''}
+      ${cta ? `<p><a style="display:inline-block;background:#edae13;color:#111;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700" href="${cta}">${ctaLabel}</a></p>` : ''}
       ${rows.length ? `<table style="border-collapse:collapse;width:100%;margin-top:16px">${rows.map(([label, value]) => `<tr><th style="text-align:left;background:#f4f7f2;border:1px solid #d7dfda;padding:8px">${label}</th><td style="border:1px solid #d7dfda;padding:8px">${String(value).replace(/</g, '&lt;')}</td></tr>`).join('')}</table>` : ''}
       <p style="margin-top:18px">Kannada Bharati</p>
     </div>
@@ -929,6 +1167,34 @@ async function sendEmailOrQueue(message) {
   const queued = await queueEmail(message);
   if (!smtpHost || !smtpUser || !smtpPass) return queued;
 
+  try {
+    const smtp = await sendEmailNow(message);
+    if (queued?.id) {
+      await updateRecord('kb_email_outbox', queued.id, {
+        status: 'Sent',
+        sent_at: new Date().toISOString(),
+        payload: attachSmtpDelivery(queued.payload || message.payload, smtp)
+      });
+    }
+  } catch (error) {
+    if (queued?.id) {
+      try {
+        await updateRecord('kb_email_outbox', queued.id, { status: 'Failed' });
+      } catch {
+        // Keep original send error.
+      }
+    }
+    throw error;
+  }
+
+  return queued;
+}
+
+async function sendEmailNow(message) {
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    throw new Error('SMTP is not configured.');
+  }
+
   const transporter = nodemailer.createTransport({
     host: smtpHost,
     port: smtpPort,
@@ -939,23 +1205,34 @@ async function sendEmailOrQueue(message) {
     }
   });
   const rendered = renderEmail(message);
-  await transporter.sendMail({
-    from: emailFromAddress,
+  const info = await transporter.sendMail({
+    from: emailFromHeader,
+    replyTo: emailFromAddress,
     to: message.to,
     subject: message.subject,
     text: rendered.text,
     html: rendered.html
   });
+  return {
+    accepted: info.accepted || [],
+    rejected: info.rejected || [],
+    response: info.response || '',
+    messageId: info.messageId || '',
+    envelope: info.envelope || {}
+  };
+}
 
-  if (queued?.id) {
-    try {
-      await updateRecord('kb_email_outbox', queued.id, { status: 'Sent', sent_at: new Date().toISOString() });
-    } catch {
-      // Email was delivered; outbox status is best-effort.
+function attachSmtpDelivery(payload = {}, smtp = {}) {
+  return {
+    ...payload,
+    smtpDelivery: {
+      accepted: smtp.accepted || [],
+      rejected: smtp.rejected || [],
+      response: smtp.response || '',
+      messageId: smtp.messageId || '',
+      sentAt: new Date().toISOString()
     }
-  }
-
-  return queued;
+  };
 }
 
 async function sendSmsOrStore({ to, body, payload }) {
@@ -1572,12 +1849,30 @@ app.post('/api/auth/verify-phone/confirm', authenticate, asyncHandler(async (req
   res.json({ ok: true });
 }));
 
-app.post('/api/registrations/:id/action', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+app.post('/api/registrations/:id/action', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
   const action = String(req.body.action || '').toLowerCase();
+  const existingRegistration = action === 'paid' ? await getRegistrationById(req.params.id) : null;
+  const paymentDetails = req.body.paymentDetails || null;
   const patchByAction = {
     confirm: { status: 'Confirmed' },
     reset: { status: 'Submitted' },
-    paid: { paid: true, paymentReceived: true },
+    paid: {
+      paid: true,
+      paymentReceived: true,
+      status: 'Confirmed',
+      emailStatus: 'Payment sent',
+      ...(paymentDetails ? {
+        priceMenu: mergePaymentDetails(existingRegistration?.price_menu, {
+          method: paymentDetails.method || 'PayPal',
+          reference: paymentDetails.reference || '',
+          notes: paymentDetails.notes || '',
+          amount: numberValue(paymentDetails.amount ?? existingRegistration?.amount, 0),
+          program: existingRegistration?.program || '',
+          registrationType: existingRegistration?.registration_type || '',
+          markedBy: req.user.email
+        })
+      } : {})
+    },
     delete: { enabled: false, status: 'Deleted' },
     enable: { enabled: true, status: 'Submitted' },
     checkin: { checkedIn: true, checkedInAt: new Date().toISOString() },
@@ -1587,12 +1882,7 @@ app.post('/api/registrations/:id/action', authenticate, requireAdmin, asyncHandl
   if (!patch) return res.status(400).json({ error: 'Unknown registration action.' });
   const registration = await updateRecord('kb_registrations', req.params.id, patch);
   if (['confirm', 'emailstatus', 'paid'].includes(action)) {
-    await sendEmailOrQueue({
-      to: registration.email,
-      subject: `Kannada Bharati registration ${registration.status || action}`,
-      template: action === 'paid' ? 'payment-confirmation' : 'registration-update',
-      payload: { registration }
-    });
+    await sendRegistrationEmail(registration, action === 'confirm' ? 'confirmed' : action === 'paid' ? 'paid' : 'updated');
   }
   res.json(registration);
 }));
@@ -1627,10 +1917,15 @@ app.get('/api/reception/registrations', authenticate, requireRole('receptionist'
 
 app.post('/api/reception/checkin', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
   const registrationId = req.body.registrationId || req.body.registration_id;
-  const registration = registrationId ? await updateRecord('kb_registrations', registrationId, {
+  const existingRegistration = registrationId ? await getRegistrationById(registrationId) : null;
+  if (!existingRegistration) return res.status(404).json({ error: 'Registration was not found.' });
+  if (booleanValue(existingRegistration.checked_in, false) || existingRegistration.checked_in_at) {
+    return res.status(403).json({ error: 'Already checked in.' });
+  }
+  const registration = await updateRecord('kb_registrations', registrationId, {
     checkedIn: true,
     checkedInAt: new Date().toISOString()
-  }) : null;
+  });
   const checkin = await insertOptionalRecord('kb_checkins', {
     registrationId,
     registrationKey: req.body.registrationKey,
@@ -1740,7 +2035,7 @@ app.post('/api/payments/:kind/create', asyncHandler(async (req, res) => {
       isDefaulter: req.body.isDefaulter,
       rsvp: req.body.rsvp
     });
-    const registration = await insertRecord('kb_registrations', calculated);
+    const registration = await createRegistrationRecord(calculated);
     registrationId = registration.id;
   }
 
@@ -1837,14 +2132,28 @@ app.post('/api/eventmgmt/seats', authenticate, requireRole('receptionist'), asyn
   const eventId = String(req.body.eventId || '').trim();
   const seatNumber = String(req.body.seatNumber || req.body.seat_number || '').trim();
   if (!eventId || !seatNumber) return res.status(400).json({ error: 'Event id and seat number are required.' });
-  const seat = await insertOptionalRecord('kb_seats', {
+  const payload = normalizePayload('kb_seats', {
     event_id: eventId,
     seat_number: seatNumber,
     registration_id: req.body.registrationId || null,
     assigned_to: req.body.assignedTo || null,
     status: req.body.status || (req.body.registrationId ? 'Assigned' : 'Available')
   });
-  res.status(201).json(seat || { event_id: eventId, seat_number: seatNumber, status: 'Available' });
+  try {
+    const supabase = requireSupabase();
+    const { data, error } = await supabase
+      .from('kb_seats')
+      .upsert({ ...payload, updated_at: new Date().toISOString() }, { onConflict: 'event_id,seat_number' })
+      .select('*')
+      .single();
+    if (error) throw error;
+    return res.status(201).json(data);
+  } catch (error) {
+    if (error.code === '42P01' || /does not exist|column .* does not exist/i.test(error.message || '')) {
+      return res.status(201).json({ ...payload, id: `${eventId}-${seatNumber}` });
+    }
+    throw error;
+  }
 }));
 
 app.patch('/api/eventmgmt/seats/:id', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
@@ -1852,6 +2161,41 @@ app.patch('/api/eventmgmt/seats/:id', authenticate, requireRole('receptionist'),
     ...req.body,
     updatedAt: new Date().toISOString()
   }));
+}));
+
+app.get('/api/attendance', authenticate, requireRole('teacher'), asyncHandler(async (req, res) => {
+  const rows = await listOptionalTable('kb_attendance');
+  res.json(rows);
+}));
+
+app.post('/api/attendance', authenticate, requireRole('teacher'), asyncHandler(async (req, res) => {
+  const records = Array.isArray(req.body.records) ? req.body.records : [req.body];
+  if (!records.length) return res.json({ records: [] });
+  const normalized = records.map((record) => normalizePayload('kb_attendance', {
+    ...record,
+    takenBy: record.takenBy || req.user?.email
+  }));
+
+  try {
+    const supabase = requireSupabase();
+    const { data, error } = await supabase
+      .from('kb_attendance')
+      .upsert(normalized, { onConflict: 'class_key,attendance_date,registration_key' })
+      .select('*');
+    if (error) throw error;
+    return res.json({ records: data || [] });
+  } catch (error) {
+    if (['42P01', 'PGRST205'].includes(error.code) || /does not exist|could not find/i.test(error.message || '')) {
+      return res.json({
+        records: normalized.map((record) => ({
+          id: `${record.class_key}-${record.attendance_date}-${record.registration_key}`,
+          created_at: new Date().toISOString(),
+          ...record
+        }))
+      });
+    }
+    throw error;
+  }
 }));
 
 app.post('/api/email-outbox/:id/send', authenticate, requireAdmin, asyncHandler(async (req, res) => {
@@ -1863,14 +2207,55 @@ app.post('/api/email-outbox/:id/send', authenticate, requireAdmin, asyncHandler(
     .maybeSingle();
   if (error) throw error;
   if (!message) return res.status(404).json({ error: 'Email not found.' });
-  await sendEmailOrQueue({
-    to: message.to_email,
-    subject: message.subject,
-    template: message.template,
-    payload: message.payload
-  });
-  const updated = await updateRecord('kb_email_outbox', req.params.id, { status: smtpHost && smtpUser && smtpPass ? 'Sent' : 'Stored', sent_at: new Date().toISOString() });
-  res.json(updated);
+  try {
+    const smtp = await sendEmailNow({
+      to: message.to_email,
+      subject: message.subject,
+      template: message.template,
+      payload: message.payload
+    });
+    const updated = await updateRecord('kb_email_outbox', req.params.id, {
+      status: 'Sent',
+      sent_at: new Date().toISOString(),
+      payload: attachSmtpDelivery(message.payload, smtp)
+    });
+    res.json(updated);
+  } catch (sendError) {
+    await updateRecord('kb_email_outbox', req.params.id, { status: 'Failed' });
+    throw sendError;
+  }
+}));
+
+app.post('/api/email-outbox/test', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  const to = req.body.to || req.user.email || adminEmail;
+  const message = {
+    to,
+    subject: 'Kannada Bharati email test',
+    template: 'test-email',
+    payload: {
+      registration: {
+        program: 'SMTP configuration',
+        student_name: 'Email test',
+        status: 'Sent',
+        email: to
+      }
+    }
+  };
+  const queued = await queueEmail(message);
+  try {
+    const smtp = await sendEmailNow(message);
+    const updated = queued?.id
+      ? await updateRecord('kb_email_outbox', queued.id, {
+          status: 'Sent',
+          sent_at: new Date().toISOString(),
+          payload: attachSmtpDelivery(queued.payload || message.payload, smtp)
+        })
+      : queued;
+    res.json({ ok: true, email: updated });
+  } catch (sendError) {
+    if (queued?.id) await updateRecord('kb_email_outbox', queued.id, { status: 'Failed' });
+    throw sendError;
+  }
 }));
 
 app.get('/api/submissions/:type', authenticate, requireAdmin, asyncHandler(async (req, res) => {
@@ -1883,7 +2268,10 @@ app.post('/api/submissions/:type', asyncHandler(async (req, res) => {
   const table = submissionTables[req.params.type];
   if (!table) return res.status(404).json({ error: 'Unknown submission type.' });
   const payload = table === 'kb_registrations' ? await calculateRegistrationPayload(req.body) : req.body;
-  res.status(201).json(await insertRecord(table, payload));
+  const record = table === 'kb_registrations'
+    ? await createRegistrationRecord(payload)
+    : await insertRecord(table, payload);
+  res.status(201).json(record);
 }));
 
 app.patch('/api/submissions/:type/:id', authenticate, requireAdmin, asyncHandler(async (req, res) => {
@@ -1924,8 +2312,9 @@ app.post('/api/fundraisers', authenticate, requireAdmin, asyncHandler(async (req
 }));
 
 app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
-  const privileged = hasAnyRole(req.user, ['admin', 'superadmin', 'receptionist', 'teacher', 'volunteer', 'treasurer']);
-  if (!privileged) {
+  const fullAdmin = hasAnyRole(req.user, ['admin', 'superadmin']);
+  const staff = hasAnyRole(req.user, ['receptionist', 'teacher', 'volunteer', 'treasurer']);
+  if (!fullAdmin && !staff) {
     const supabase = requireSupabase();
     const email = String(req.user.email || '').toLowerCase();
     const [user, registrations, donations, classes, events, announcements, expenses] = await Promise.all([
@@ -1956,13 +2345,58 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
       fundraisers: [],
       announcements: announcements.data || [],
       expenses: expenses.data || [],
+      attendance: [],
       checkins: [],
       emailOutbox: [],
       defaulterHistory: []
     });
   }
 
-  const [users, registrations, donations, volunteers, contacts, logins, classes, events, fundraisers, announcements, expenses, checkins, emailOutbox, defaulterHistory] = await Promise.all([
+  if (!fullAdmin) {
+    const email = String(req.user.email || '').toLowerCase();
+    const roles = normalizeRoles(req.user.roles || req.user.role);
+    const canReception = roles.includes('receptionist');
+    const canTeacher = roles.includes('teacher');
+    const canVolunteer = roles.includes('volunteer');
+    const canTreasurer = roles.includes('treasurer');
+    const [ownUser, classes, events, announcements] = await Promise.all([
+      listTable('kb_users').then((rows) => rows.filter((row) => String(row.email || '').toLowerCase() === email)),
+      listTable('kb_classes'),
+      listTable('kb_events'),
+      listOptionalTable('kb_announcements')
+    ]);
+    const [registrations, donations, volunteers, contacts, expenses, checkins, attendance] = await Promise.all([
+      (canReception || canTeacher) ? listTable('kb_registrations') : listTable('kb_registrations').then((rows) => rows.filter((row) => String(row.email || '').toLowerCase() === email)),
+      canTreasurer ? listTable('kb_donations') : Promise.resolve([]),
+      canReception ? listTable('kb_volunteers') : Promise.resolve([]),
+      Promise.resolve([]),
+      (canTreasurer || canVolunteer)
+        ? listOptionalTable('kb_expenses').then((rows) => canTreasurer ? rows : rows.filter((row) => String(row.submitted_by || row.submittedBy || '').toLowerCase() === email))
+        : Promise.resolve([]),
+      canReception ? listOptionalTable('kb_checkins') : Promise.resolve([]),
+      canTeacher ? listOptionalTable('kb_attendance') : Promise.resolve([])
+    ]);
+
+    return res.json({
+      users: ownUser,
+      registrations,
+      donations,
+      volunteers,
+      contacts,
+      logins: [],
+      classes,
+      events,
+      fundraisers: [],
+      announcements,
+      expenses,
+      attendance,
+      checkins,
+      emailOutbox: [],
+      defaulterHistory: []
+    });
+  }
+
+  const [users, registrations, donations, volunteers, contacts, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory] = await Promise.all([
     listTable('kb_users'),
     listTable('kb_registrations'),
     listTable('kb_donations'),
@@ -1975,11 +2409,12 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
     listOptionalTable('kb_announcements'),
     listOptionalTable('kb_expenses'),
     listOptionalTable('kb_checkins'),
+    listOptionalTable('kb_attendance'),
     listOptionalTable('kb_email_outbox'),
     listOptionalTable('kb_defaulter_history')
   ]);
 
-  res.json({ users, registrations, donations, volunteers, contacts, logins, classes, events, fundraisers, announcements, expenses, checkins, emailOutbox, defaulterHistory });
+  res.json({ users, registrations, donations, volunteers, contacts, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory });
 }));
 
 app.use((error, req, res, next) => {

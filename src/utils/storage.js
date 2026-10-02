@@ -109,3 +109,50 @@ export function hasAnyRole(user, roles = []) {
 export function canUseAdminArea(user) {
   return Boolean(user);
 }
+
+const adminOnlyPaths = [
+  '/admin/users',
+  '/admin/user-search',
+  '/admin/events',
+  '/admin/event-settings',
+  '/admin/announcements',
+  '/admin/fundraising',
+  '/admin/donations',
+  '/admin/messages',
+  '/admin/volunteer-interest',
+  '/admin/email-outbox',
+  '/admin/developer',
+  '/admin/registrations',
+  '/admin/registration-classes',
+  '/admin/registration-payments'
+];
+
+const rolePathRules = [
+  { path: '/admin/checkin', roles: ['receptionist'] },
+  { path: '/admin/guest-checkin', roles: ['receptionist'] },
+  { path: '/admin/seats', roles: ['receptionist'] },
+  { path: '/admin/expense', roles: ['volunteer'] },
+  { path: '/admin/teacher', roles: ['teacher'] },
+  { path: '/admin/teacher-attendance', roles: ['teacher'] },
+  { path: '/admin/treasurer', roles: ['treasurer'] },
+  ...adminOnlyPaths.map((path) => ({ path, roles: ['admin', 'superadmin'] }))
+];
+
+export function canAccessAdminPath(user, pathname = '/admin') {
+  if (!canUseAdminArea(user)) return false;
+  if (isAdmin(user)) return true;
+
+  const normalizedPath = String(pathname || '/admin').replace(/\/+$/, '') || '/admin';
+  const rule = rolePathRules.find((item) => normalizedPath === item.path || normalizedPath.startsWith(`${item.path}/`));
+  if (!rule) return true;
+  return hasAnyRole(user, rule.roles);
+}
+
+export function defaultAdminPath(user) {
+  if (isAdmin(user)) return '/admin';
+  if (hasAnyRole(user, ['receptionist'])) return '/admin/checkin';
+  if (hasAnyRole(user, ['teacher'])) return '/admin/teacher';
+  if (hasAnyRole(user, ['treasurer'])) return '/admin/treasurer';
+  if (hasAnyRole(user, ['volunteer'])) return '/admin/expense';
+  return '/admin';
+}

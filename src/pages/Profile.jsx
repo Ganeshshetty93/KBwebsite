@@ -21,6 +21,7 @@ import {
   apiUploadFile
 } from '../utils/api.js';
 import { cleanText, firstError, validateDateOrder, validateImageFile, validatePhone, validateRequired } from '../utils/validation.js';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 function profileKey(email) {
   return `kb-member-profile-${String(email || 'guest').toLowerCase()}`;
@@ -48,6 +49,7 @@ function scrollToProfileSection(id) {
 }
 
 export default function Profile() {
+  const { tr } = useLanguage();
   const user = getCurrentUser();
   const [searchParams] = useSearchParams();
   if (!user) return <Navigate to="/login" replace />;
@@ -500,7 +502,7 @@ export default function Profile() {
             {paymentMessage && <p className="success">{paymentMessage}</p>}
             <div className="table-scroll">
               <table>
-                <thead><tr><th>Registered on</th><th>Program</th><th>Member</th><th>Status</th><th>Amount</th><th>Paid</th><th>Action</th></tr></thead>
+                <thead><tr><th>{tr('Registered on')}</th><th>{tr('Program')}</th><th>{tr('Member')}</th><th>{tr('Status')}</th><th>{tr('Amount')}</th><th>{tr('Paid')}</th><th>{tr('Action')}</th></tr></thead>
                 <tbody>
                   {registrations.length ? registrations.map((row) => {
                     const paid = row.paid || row.paymentReceived;
@@ -509,18 +511,18 @@ export default function Profile() {
                         <td>{row.createdAt || row.created_at || '-'}</td>
                         <td>{row.program || '-'}</td>
                         <td>{row.familyMember || row.studentName || '-'}</td>
-                        <td>{row.status || 'Submitted'}</td>
+                        <td>{tr(row.status || 'Submitted')}</td>
                         <td>${Number(row.amount || 0).toLocaleString()}</td>
-                        <td>{paid ? 'Paid' : 'Pending'}</td>
+                        <td>{tr(paid ? 'Paid' : 'Pending')}</td>
                         <td>
                           <div className="admin-row-actions">
-                            <button className="mini-action-link secondary" type="button" onClick={() => setSelectedRegistration(row)}>Details</button>
-                            {paid ? <span className="confirmed-badge">Confirmed</span> : <button className="mini-action-link success" type="button" onClick={() => startRegistrationPayment(row)}>Pay now</button>}
+                            <button className="mini-action-link secondary" type="button" onClick={() => setSelectedRegistration(row)}>{tr('Details')}</button>
+                            {paid ? <span className="confirmed-badge">{tr('Confirmed')}</span> : <button className="mini-action-link success" type="button" onClick={() => startRegistrationPayment(row)}>{tr('Pay now')}</button>}
                           </div>
                         </td>
                       </tr>
                     );
-                  }) : <tr><td colSpan="7">No class or event registrations yet.</td></tr>}
+                  }) : <tr><td colSpan="7">{tr('No class or event registrations yet.')}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -571,20 +573,20 @@ export default function Profile() {
               <p>{selectedRegistration.familyMember || selectedRegistration.studentName || user.email}</p>
             </div>
             <section className="payment-confirmation-grid">
-              <article><ReceiptText size={22} /><span>Status</span><strong>{selectedRegistration.status || 'Submitted'}</strong></article>
-              <article><CheckCircle2 size={22} /><span>Payment</span><strong>{selectedRegistration.paid || selectedRegistration.paymentReceived ? 'Paid' : 'Pending'}</strong></article>
-              <article><ReceiptText size={22} /><span>Amount</span><strong>${Number(selectedRegistration.amount || 0).toFixed(2)}</strong></article>
+              <article><ReceiptText size={22} /><span>{tr('Status')}</span><strong>{tr(selectedRegistration.status || 'Submitted')}</strong></article>
+              <article><CheckCircle2 size={22} /><span>{tr('Payment')}</span><strong>{tr(selectedRegistration.paid || selectedRegistration.paymentReceived ? 'Paid' : 'Pending')}</strong></article>
+              <article><ReceiptText size={22} /><span>{tr('Amount')}</span><strong>${Number(selectedRegistration.amount || 0).toFixed(2)}</strong></article>
             </section>
             <div className="payment-detail-list">
-              <span><strong>Registered by</strong>{selectedRegistration.email || user.email}</span>
-              <span><strong>Registered on</strong>{selectedRegistration.createdAt || selectedRegistration.created_at || '-'}</span>
-              <span><strong>Family member</strong>{selectedRegistration.familyMember || selectedRegistration.studentName || '-'}</span>
-              <span><strong>Total members</strong>{selectedRegistration.totalMembers || selectedRegistration.seats || 1}</span>
+              <span><strong>{tr('Registered by')}</strong>{selectedRegistration.email || user.email}</span>
+              <span><strong>{tr('Registered on')}</strong>{selectedRegistration.createdAt || selectedRegistration.created_at || '-'}</span>
+              <span><strong>{tr('Family member')}</strong>{selectedRegistration.familyMember || selectedRegistration.studentName || '-'}</span>
+              <span><strong>{tr('Total members')}</strong>{selectedRegistration.totalMembers || selectedRegistration.seats || 1}</span>
               <span><strong>RSVP</strong>{typeof selectedRegistration.rsvp === 'string' ? selectedRegistration.rsvp || '-' : selectedRegistration.rsvp?.question || '-'}</span>
               <span><strong>Price option</strong>{selectedRegistration.priceSelection || '-'}</span>
             </div>
             {!(selectedRegistration.paid || selectedRegistration.paymentReceived) && (
-              <button className="button primary" type="button" onClick={() => startRegistrationPayment(selectedRegistration)}>Pay now</button>
+              <button className="button primary" type="button" onClick={() => startRegistrationPayment(selectedRegistration)}>{tr('Pay now')}</button>
             )}
           </div>
         </div>

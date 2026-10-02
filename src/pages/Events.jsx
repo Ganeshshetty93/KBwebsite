@@ -47,7 +47,7 @@ function memberOptions(user) {
 }
 
 export default function Events() {
-  const { t } = useLanguage();
+  const { t, tr } = useLanguage();
   const [dbEvents, setDbEvents] = useState([]);
 
   useEffect(() => {
@@ -85,6 +85,7 @@ export default function Events() {
   const [eventSaved, setEventSaved] = useState(false);
   const [eventMessage, setEventMessage] = useState('');
   const [eventDraft, setEventDraft] = useState(null);
+  const [eventNotice, setEventNotice] = useState(null);
   const user = getCurrentUser();
   const availableMembers = memberOptions(user);
 
@@ -111,6 +112,7 @@ export default function Events() {
     setEventError('');
     setEventSaved(false);
     setEventDraft(null);
+    setEventNotice(null);
   }
 
   function buildRegistrationRecord(form) {
@@ -190,6 +192,12 @@ export default function Events() {
       return;
     }
     setEventSaved(true);
+    setEventNotice({
+      title: record.amount > 0 ? 'Registration saved' : 'Registration submitted',
+      message: record.amount > 0
+        ? 'We saved your registration and sent the email confirmation. Opening payment now.'
+        : 'We saved your registration and sent the email confirmation.'
+    });
     if (record.amount > 0) {
       try {
         const payment = await apiCreateFlowPayment(record.registrationType === 'guest' ? 'guest-event' : 'event', {
@@ -205,7 +213,11 @@ export default function Events() {
           returnUrl: `${window.location.origin}/events?payment=complete&kind=${record.registrationType === 'guest' ? 'guest-event' : 'event'}&registrationId=${encodeURIComponent(savedRegistration?.id || '')}`,
           cancelUrl: `${window.location.origin}/events?payment=cancel`
         });
-        if (payment.approvalUrl) window.location.href = payment.approvalUrl;
+        if (payment.approvalUrl) {
+          window.setTimeout(() => {
+            window.location.href = payment.approvalUrl;
+          }, 900);
+        }
       } catch (error) {
         setEventError(error.message || 'Payment could not be started.');
       }
@@ -239,7 +251,7 @@ export default function Events() {
               <h2>{featuredEvent.title}</h2>
               <p>{featuredEvent.body}</p>
               {featuredEvent.location && <p className="event-location">{featuredEvent.location}</p>}
-              <button className="button primary" type="button" onClick={() => openRegistration(featuredEvent)}>Register</button>
+              <button className="button primary" type="button" onClick={() => openRegistration(featuredEvent)}>{tr('Register')}</button>
             </div>
           </article>
         )}
@@ -253,7 +265,7 @@ export default function Events() {
                 <h3>{event.title}</h3>
                 <p>{event.body}</p>
                 {event.location && <p className="event-location">{event.location}</p>}
-                <button className="button compact" type="button" onClick={() => openRegistration(event)}>Register</button>
+                <button className="button compact" type="button" onClick={() => openRegistration(event)}>{tr('Register')}</button>
               </div>
             </article>
           ))}
@@ -298,11 +310,11 @@ export default function Events() {
             <button className="popup-close" type="button" aria-label="Close registration" onClick={() => setRegisteringEvent(null)}><X size={20} /></button>
             <div className="registration-stepper">
               {['Details', 'Pricing', 'Review'].map((label, index) => (
-                <span key={label} className={registrationStep >= index + 1 ? 'is-active' : ''}>{index + 1}. {label}</span>
+                <span key={label} className={registrationStep >= index + 1 ? 'is-active' : ''}>{index + 1}. {tr(label)}</span>
               ))}
             </div>
             <div className="event-registration-heading">
-              <span>{user ? 'Member registration' : 'Guest registration'}</span>
+              <span>{tr(user ? 'Member registration' : 'Guest registration')}</span>
               <h2>{registeringEvent.title}</h2>
               <p>{registeringEvent.body}</p>
             </div>
@@ -362,18 +374,29 @@ export default function Events() {
             )}
             {registrationStep === 3 && (
               <section className="event-registration-review">
-                <article><UsersRound size={20} /><span>Registrant</span><strong>{eventDraft?.familyMember || 'Ready to submit'}</strong></article>
-                <article><ReceiptText size={20} /><span>Total members</span><strong>{eventDraft?.totalMembers || 1}</strong></article>
-                <article><CheckCircle2 size={20} /><span>Amount</span><strong>${Number(eventDraft?.amount || eventAmount(registeringEvent)).toFixed(2)}</strong></article>
+                <article><UsersRound size={20} /><span>{tr('Registrant')}</span><strong>{eventDraft?.familyMember || tr('Ready to submit')}</strong></article>
+                <article><ReceiptText size={20} /><span>{tr('Total members')}</span><strong>{eventDraft?.totalMembers || 1}</strong></article>
+                <article><CheckCircle2 size={20} /><span>{tr('Amount')}</span><strong>${Number(eventDraft?.amount || eventAmount(registeringEvent)).toFixed(2)}</strong></article>
               </section>
             )}
             {eventError && <p className="form-error">{eventError}</p>}
             {eventSaved && <p className="success">Registration submitted. {Number(eventDraft?.amount || 0) > 0 ? 'Opening payment...' : 'No payment is required.'}</p>}
             <div className="event-registration-actions">
-              {registrationStep > 1 && <button className="button secondary-dark" type="button" onClick={() => setRegistrationStep((step) => step - 1)}>Back</button>}
-              <button className="button primary" type="submit">{registrationStep < 3 ? 'Continue' : Number(eventDraft?.amount || eventAmount(registeringEvent)) > 0 ? 'Save & Pay' : 'Submit Registration'}</button>
+              {registrationStep > 1 && <button className="button secondary-dark" type="button" onClick={() => setRegistrationStep((step) => step - 1)}>{tr('Back')}</button>}
+              <button className="button primary" type="submit">{tr(registrationStep < 3 ? 'Continue' : Number(eventDraft?.amount || eventAmount(registeringEvent)) > 0 ? 'Save & Pay' : 'Submit Registration')}</button>
             </div>
           </form>
+        </div>
+      )}
+      {eventNotice && (
+        <div className="popup-backdrop registration-message-backdrop" role="presentation">
+          <div className="popup-panel registration-message-popup" role="dialog" aria-modal="true" aria-label={eventNotice.title}>
+            <button className="popup-close" type="button" aria-label="Close message" onClick={() => setEventNotice(null)}><X size={20} /></button>
+            <span className="registration-message-icon"><CheckCircle2 size={34} /></span>
+            <h2>{eventNotice.title}</h2>
+            <p>{eventNotice.message}</p>
+            <button className="button primary" type="button" onClick={() => setEventNotice(null)}>Done</button>
+          </div>
         </div>
       )}
     </>

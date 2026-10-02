@@ -2,12 +2,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CalendarDays, KeyRound, Mail, ShieldCheck, Sparkles, UsersRound } from 'lucide-react';
-import { appendRecord, setCurrentUser } from '../utils/storage.js';
+import { appendRecord, defaultAdminPath, hasAnyRole, isAdmin, setCurrentUser } from '../utils/storage.js';
 import { apiConfirmEmail, apiForgotPassword, apiGoogleLogin, apiLogin, apiResetPassword } from '../utils/api.js';
 import { cleanText, firstError, validateEmail, validatePassword } from '../utils/validation.js';
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || 'ganeshshetty93@gmail.com').toLowerCase();
+const staffRoles = ['receptionist', 'teacher', 'volunteer', 'treasurer'];
 
 function loadGoogleIdentityScript() {
   if (window.google?.accounts?.oauth2) return Promise.resolve();
@@ -28,6 +29,10 @@ function loadGoogleIdentityScript() {
     script.onerror = reject;
     document.head.appendChild(script);
   });
+}
+
+function loginDestination(user) {
+  return isAdmin(user) || hasAnyRole(user, staffRoles) ? defaultAdminPath(user) : '/classes';
 }
 
 export default function Login() {
@@ -63,7 +68,7 @@ export default function Login() {
       appendRecord('kb-login-submissions', user);
     }
     setCurrentUser(user);
-    navigate(user.role === 'admin' ? '/admin' : '/classes');
+    navigate(loginDestination(user));
   }
 
   function handleSubmit(event) {
@@ -86,7 +91,7 @@ export default function Login() {
       apiResetPassword({ token: resetToken, password: payload.password })
         .then((user) => {
           setCurrentUser(user);
-          navigate(user.role === 'admin' ? '/admin' : '/classes');
+          navigate(loginDestination(user));
         })
         .catch((resetError) => setError(resetError.message || 'Password reset failed.'));
       return;
@@ -136,7 +141,7 @@ export default function Login() {
           try {
             const user = await apiGoogleLogin({ accessToken: response.access_token });
             setCurrentUser(user);
-            navigate(user.role === 'admin' ? '/admin' : '/classes');
+            navigate(loginDestination(user));
           } catch (googleError) {
             setError(googleError.message || 'Google login failed.');
           }

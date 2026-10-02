@@ -254,6 +254,13 @@ create table if not exists public.kb_expenses (
   amount numeric not null default 0,
   expense_date date,
   description text,
+  vendor text,
+  payment_method text,
+  reimbursement_to text,
+  receipt_url text,
+  receipt_name text,
+  receipt_type text,
+  receipt_size numeric not null default 0,
   status text not null default 'Submitted',
   submitted_by text,
   approved_by text,
@@ -263,6 +270,13 @@ create table if not exists public.kb_expenses (
 
 alter table public.kb_expenses add column if not exists approved_by text;
 alter table public.kb_expenses add column if not exists approved_at timestamptz;
+alter table public.kb_expenses add column if not exists vendor text;
+alter table public.kb_expenses add column if not exists payment_method text;
+alter table public.kb_expenses add column if not exists reimbursement_to text;
+alter table public.kb_expenses add column if not exists receipt_url text;
+alter table public.kb_expenses add column if not exists receipt_name text;
+alter table public.kb_expenses add column if not exists receipt_type text;
+alter table public.kb_expenses add column if not exists receipt_size numeric not null default 0;
 
 create table if not exists public.kb_event_types (
   id uuid primary key default gen_random_uuid(),
@@ -353,6 +367,24 @@ create table if not exists public.kb_seats (
   unique(event_id, seat_number)
 );
 
+create table if not exists public.kb_attendance (
+  id uuid primary key default gen_random_uuid(),
+  class_key text not null,
+  class_name text not null,
+  attendance_date date not null,
+  registration_id uuid,
+  registration_key text not null,
+  student_name text not null,
+  family_member text,
+  email text,
+  status text not null default 'Present',
+  notes text,
+  taken_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(class_key, attendance_date, registration_key)
+);
+
 create table if not exists public.kb_phone_verifications (
   id uuid primary key default gen_random_uuid(),
   email text not null,
@@ -430,6 +462,7 @@ alter table public.kb_member_profiles enable row level security;
 alter table public.kb_member_children enable row level security;
 alter table public.kb_checkins enable row level security;
 alter table public.kb_seats enable row level security;
+alter table public.kb_attendance enable row level security;
 alter table public.kb_phone_verifications enable row level security;
 alter table public.kb_external_logins enable row level security;
 alter table public.kb_email_outbox enable row level security;

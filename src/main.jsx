@@ -66,11 +66,14 @@ createRoot(document.getElementById('root')).render(
               <Route path="guest-checkin" element={<AdminSectionPage view="guest-checkin" />} />
               <Route path="seats" element={<AdminSectionPage view="seats" />} />
               <Route path="teacher" element={<AdminSectionPage view="teacher" />} />
+              <Route path="teacher-attendance" element={<AdminSectionPage view="teacher-attendance" />} />
               <Route path="treasurer" element={<AdminSectionPage view="treasurer" />} />
               <Route path="user-search" element={<AdminSectionPage view="user-search" />} />
               <Route path="email-outbox" element={<AdminSectionPage view="email-outbox" />} />
               <Route path="developer" element={<AdminSectionPage view="developer" />} />
               <Route path="registrations" element={<AdminSectionPage view="registrations" />} />
+              <Route path="registration-classes" element={<AdminSectionPage view="registration-classes" />} />
+              <Route path="registration-payments" element={<AdminSectionPage view="registration-payments" />} />
               <Route path="student-view" element={<AdminSectionPage view="student-view" />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

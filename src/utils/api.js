@@ -13,7 +13,8 @@ const storageMap = {
   'kb-admin-events': { path: '/events', normalize: normalizeEvent },
   'kb-admin-fundraisers': { path: '/fundraisers', normalize: normalizeFundraiser },
   'kb-announcement-submissions': { path: '/submissions/announcement', normalize: normalizeAnnouncement },
-  'kb-expense-submissions': { path: '/submissions/expense', normalize: normalizeExpense }
+  'kb-expense-submissions': { path: '/submissions/expense', normalize: normalizeExpense },
+  'kb-attendance-records': { path: '/attendance', normalize: normalizeAttendance }
 };
 
 function getToken() {
@@ -48,6 +49,12 @@ function normalizeBase(row) {
 }
 
 function normalizeRegistration(row) {
+  const paid = row.paid === true
+    || row.payment_received === true
+    || row.paymentReceived === true
+    || String(row.paid || '').toLowerCase() === 'paid'
+    || String(row.payment_received || row.paymentReceived || '').toLowerCase() === 'true';
+  const priceMenu = row.price_menu || row.priceMenu || null;
   return {
     ...normalizeBase(row),
     parentName: row.parent_name || row.parentName || row.name,
@@ -56,7 +63,7 @@ function normalizeRegistration(row) {
     phone: row.phone || '-',
     program: row.program,
     familyMember: row.family_member || row.familyMember || '',
-    paid: Boolean(row.paid),
+    paid,
     emailStatus: row.email_status || row.emailStatus || '',
     birthYear: row.birth_year || row.birthYear || '',
     status: row.status || 'Submitted',
@@ -70,8 +77,9 @@ function normalizeRegistration(row) {
     totalMembers: Number(row.total_members || row.totalMembers || row.seats || 1),
     registrationType: row.registration_type || row.registrationType || 'member',
     rsvp: row.rsvp || null,
-    priceMenu: row.price_menu || row.priceMenu || null,
-    paymentReceived: row.payment_received ?? row.paymentReceived ?? false,
+    priceMenu,
+    paymentDetails: row.payment_details || row.paymentDetails || priceMenu?.paymentDetails || null,
+    paymentReceived: paid,
     checkedIn: row.checked_in ?? row.checkedIn ?? false,
     checkedInAt: row.checked_in_at || row.checkedInAt || '',
     enabled: row.enabled ?? true
@@ -263,10 +271,35 @@ function normalizeExpense(row) {
     amount: Number(row.amount || 0),
     expenseDate: row.expense_date || row.expenseDate || row.date || '',
     description: row.description || '',
+    vendor: row.vendor || '',
+    paymentMethod: row.payment_method || row.paymentMethod || '',
+    reimbursementTo: row.reimbursement_to || row.reimbursementTo || '',
+    receiptUrl: row.receipt_url || row.receiptUrl || '',
+    receiptName: row.receipt_name || row.receiptName || '',
+    receiptType: row.receipt_type || row.receiptType || '',
+    receiptSize: Number(row.receipt_size || row.receiptSize || 0),
     status: row.status || 'Submitted',
     submittedBy: row.submitted_by || row.submittedBy || '',
     approvedBy: row.approved_by || row.approvedBy || '',
     approvedAt: row.approved_at || row.approvedAt || ''
+  };
+}
+
+function normalizeAttendance(row) {
+  return {
+    ...normalizeBase(row),
+    classKey: row.class_key || row.classKey || '',
+    className: row.class_name || row.className || '',
+    attendanceDate: row.attendance_date || row.attendanceDate || '',
+    registrationId: row.registration_id || row.registrationId || '',
+    registrationKey: row.registration_key || row.registrationKey || '',
+    studentName: row.student_name || row.studentName || '',
+    familyMember: row.family_member || row.familyMember || '',
+    email: row.email || '',
+    status: row.status || 'Present',
+    notes: row.notes || '',
+    takenBy: row.taken_by || row.takenBy || '',
+    updatedAt: row.updated_at || row.updatedAt || ''
   };
 }
 
@@ -358,6 +391,9 @@ export async function apiUpdateSubmission(type, id, payload) {
 
   if (type === 'registration') return normalizeRegistration(data);
   if (type === 'announcement') return normalizeAnnouncement(data);
+  if (type === 'event') return normalizeEvent(data);
+  if (type === 'class') return normalizeClass(data);
+  if (type === 'fundraiser') return normalizeFundraiser(data);
   return data;
 }
 
@@ -376,11 +412,11 @@ export async function apiUpdateUser(id, payload) {
   }));
 }
 
-export async function apiRegistrationAction(id, action) {
+export async function apiRegistrationAction(id, action, payload = {}) {
   await ensureAdminToken();
   return normalizeRegistration(await request(`/registrations/${id}/action`, {
     method: 'POST',
-    body: JSON.stringify({ action })
+    body: JSON.stringify({ action, ...payload })
   }));
 }
 
@@ -419,10 +455,14 @@ export async function apiLookupUserPhone(email) {
 
 export async function apiReceptionCheckin(payload) {
   await ensureAdminToken();
-  return request('/reception/checkin', {
+  const data = await request('/reception/checkin', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
+  return {
+    ...data,
+    registration: data.registration ? normalizeRegistration(data.registration) : null
+  };
 }
 
 export async function apiReadSeats(eventId = '') {
@@ -450,11 +490,27 @@ export async function apiUpdateSeat(id, payload) {
   });
 }
 
+export async function apiSaveAttendance(records) {
+  const data = await request('/attendance', {
+    method: 'POST',
+    body: JSON.stringify({ records })
+  });
+  return (data.records || []).map(normalizeAttendance);
+}
+
 export async function apiSendOutboxEmail(id) {
   await ensureAdminToken();
   return request(`/email-outbox/${encodeURIComponent(id)}/send`, {
     method: 'POST',
     body: JSON.stringify({})
+  });
+}
+
+export async function apiSendTestEmail(to) {
+  await ensureAdminToken();
+  return request('/email-outbox/test', {
+    method: 'POST',
+    body: JSON.stringify({ to })
   });
 }
 
@@ -675,6 +731,7 @@ export async function apiAdminDashboard() {
     fundraisers: (data.fundraisers || []).map(normalizeFundraiser),
     announcements: (data.announcements || []).map(normalizeAnnouncement),
     expenses: (data.expenses || []).map(normalizeExpense),
+    attendance: (data.attendance || []).map(normalizeAttendance),
     checkins: data.checkins || [],
     emailOutbox: data.emailOutbox || [],
     defaulterHistory: data.defaulterHistory || []

@@ -134,16 +134,6 @@ export default function KannadaShaale() {
           <button className="button secondary-dark" type="button" onClick={() => openRegistration(1)}>Register Levels 2-6</button>
         </div>
       </section>
-      <section className="section paata-intro-grid">
-        <article>
-          <h2>About Kannada Bharati Paata Shaale</h2>
-          <p>Kannada Bharati, in association with Kannada Academy, is planning to organize and conduct classes for Kannada Bharati Paata Shaale. This is a fantastic opportunity for Kannadigas who would like to teach their kids Kannada language reading, writing, and spoken Kannada in a lighter version.</p>
-        </article>
-        <article>
-          <h2>Classes</h2>
-          <p>This course is helpful for kids who want to get credit in their high schools. Kannada Bharati Paata Shaale will support kids who are looking for online 60-minute classes. If you are interested in enrolling your kids, please register through the Classes page.</p>
-        </article>
-      </section>
       <section className="section class-grid two-cards" id="paata-registration-options">
         {paataClasses.map((level, index) => (
           <ClassCard key={level.title} item={level} registerSignal={registerSignals[index] || 0} />
