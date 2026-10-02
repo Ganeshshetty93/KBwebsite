@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { BookOpen, CalendarDays, Eye, HandCoins, Megaphone, Plus, ReceiptText, UsersRound, X } from 'lucide-react';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
+import DatePicker from '../components/DatePicker.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { culturalClasses, events, paataShaaleLevels } from '../data/siteData.js';
 import { appendRecord, canAccessAdminPath, defaultAdminPath, getCurrentUser, hasAnyRole, isAdmin, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
@@ -34,6 +35,7 @@ const fallbackPrograms = [
 
 const defaultEventTypes = ['Classroom', 'Workshop', 'Seminar', 'Cultural'];
 const defaultRecurrences = ['OneTime', 'Daily', 'Weekly', 'Monthly', 'Yearly'];
+const assignableRoles = ['member', 'admin', 'superadmin', 'receptionist', 'teacher', 'volunteer', 'treasurer'];
 const referenceVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true';
 const defaultVolunteerGoogleForm = {
   enabled: false,
@@ -113,12 +115,6 @@ function formatFileSize(size = 0) {
   if (!bytes) return '-';
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function dateInputValue(offsetDays = 0) {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  return date.toISOString().slice(0, 10);
 }
 
 function makeCsv(rows, columns) {
@@ -428,7 +424,7 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
           </label>
           <label>
             {tr('Date')}
-            <input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} />
+            <DatePicker value={attendanceDate} onChange={setAttendanceDate} placeholder={tr('Choose date')} />
           </label>
           <button className="button primary" type="button" onClick={handleSave} disabled={!classRows.length || saving}>
             {saving ? tr('Saving...') : tr(savedForSelection.length ? 'Update attendance' : 'Save attendance')}
@@ -756,7 +752,19 @@ function ReceiptLink({ row }) {
 }
 
 function getPaymentDetails(row = {}) {
-  return row.paymentDetails || row.priceMenu?.paymentDetails || row.price_menu?.paymentDetails || null;
+  const nested = row.paymentDetails || row.priceMenu?.paymentDetails || row.price_menu?.paymentDetails || null;
+  if (nested) return nested;
+  if (!row.paypalOrderId && !row.paypalCaptureId && !row.paymentStatus) return null;
+  return {
+    method: 'PayPal',
+    status: row.paymentStatus || (row.paymentReceived || row.paid ? 'Paid' : 'Pending'),
+    reference: row.paypalCaptureId || row.paypalOrderId || '',
+    orderId: row.paypalOrderId || '',
+    captureId: row.paypalCaptureId || '',
+    invoiceId: row.invoiceId || row.id || '',
+    amount: row.amount || 0,
+    updatedAt: row.paymentCompletedAt || row.paymentCancelledAt || row.createdAt || ''
+  };
 }
 
 function mergeLocalPaymentDetails(row = {}, details = {}) {
@@ -1023,6 +1031,25 @@ function RegistrationDetailModal({ row, onClose }) {
   );
 }
 
+function UserRoleEditor({ row, onChange }) {
+  const roles = Array.isArray(row.roles) && row.roles.length ? row.roles : [row.role || 'member'];
+  function toggleRole(role) {
+    let next = roles.includes(role) ? roles.filter((item) => item !== role) : [...roles, role];
+    if (!next.length) next = ['member'];
+    onChange(next);
+  }
+  return (
+    <div className="role-chip-editor">
+      {assignableRoles.map((role) => (
+        <label key={role} className={roles.includes(role) ? 'is-selected' : ''}>
+          <input type="checkbox" checked={roles.includes(role)} onChange={() => toggleRole(role)} />
+          <span>{role}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose, onSave }) {
   const [error, setError] = useState('');
   const title = kind === 'event' ? 'Edit event' : kind === 'announcement' ? 'Edit announcement' : 'Edit registration';
@@ -1051,14 +1078,28 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
         recurrence: data.recurrence,
         capacity: Number(data.capacity || 0),
         price: Number(data.price || 0),
+        minAge: data.minAge ? Number(data.minAge) : null,
+        maxAge: data.maxAge ? Number(data.maxAge) : null,
         enabled: Boolean(data.enabled),
         isOpenForRegistration: Boolean(data.isOpenForRegistration),
         isPaymentRequired: Boolean(data.isPaymentRequired),
+        isAgeRestricted: Boolean(data.isAgeRestricted),
+        displaySeatNumbers: Boolean(data.displaySeatNumbers),
+        isAutoApproved: Boolean(data.isAutoApproved),
+        enableDefaulterFine: Boolean(data.enableDefaulterFine),
         enableCheckIn: Boolean(data.enableCheckIn),
         freeForVolunteers: Boolean(data.freeForVolunteers),
         enableVolunteerDiscount: Boolean(data.enableVolunteerDiscount),
         volunteerDiscountPercentage: Number(data.volunteerDiscountPercentage || 0),
-        defaulterFineAmount: Number(data.defaulterFineAmount || 0)
+        defaulterFineAmount: Number(data.defaulterFineAmount || 0),
+        photo: data.removePhoto ? '' : cleanText(data.photo),
+        teachers: cleanText(data.teachers).split(',').map((item) => item.trim()).filter(Boolean),
+        registrationInfo: {
+          heading: cleanText(data.registrationHeading) || 'Registration',
+          instructions: cleanText(data.registrationInstructions),
+          confirmationMessage: cleanText(data.registrationConfirmation),
+          paymentMessage: cleanText(data.paymentMessage)
+        }
       };
     } else if (kind === 'announcement') {
       if (!cleanText(data.text)) {
@@ -1118,12 +1159,16 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
                 <label>URL key<input name="urlKey" defaultValue={row.urlKey || ''} /></label>
                 <label>Event ID<input name="eventId" defaultValue={row.eventId || ''} /></label>
                 <label>Event type<select name="eventType" defaultValue={row.eventType || eventTypes[0] || 'Workshop'}>{eventTypes.map((item) => <option key={item}>{item}</option>)}</select></label>
-                <label>Start on<input name="startOn" type="datetime-local" defaultValue={String(row.startOn || '').slice(0, 16)} /></label>
-                <label>End on<input name="endOn" type="datetime-local" defaultValue={String(row.endOn || '').slice(0, 16)} /></label>
+                <label>Start on<DatePicker name="startOn" mode="datetime" defaultValue={String(row.startOn || '').slice(0, 16)} placeholder="Choose start date and time" /></label>
+                <label>End on<DatePicker name="endOn" mode="datetime" defaultValue={String(row.endOn || '').slice(0, 16)} placeholder="Choose end date and time" /></label>
                 <label>Recurrence<select name="recurrence" defaultValue={row.recurrence || recurrences[0] || 'OneTime'}>{recurrences.map((item) => <option key={item}>{item}</option>)}</select></label>
                 <label>Location<input name="location" defaultValue={row.location || ''} /></label>
                 <label>Capacity<input name="capacity" type="number" min="0" defaultValue={row.capacity || 0} /></label>
                 <label>Base price<input name="price" type="number" min="0" step="0.01" defaultValue={row.price || 0} /></label>
+                <label>Image URL<input name="photo" defaultValue={row.photo || ''} placeholder="https://..." /></label>
+                <label>Min age<input name="minAge" type="number" min="0" max="100" defaultValue={row.minAge || ''} /></label>
+                <label>Max age<input name="maxAge" type="number" min="0" max="100" defaultValue={row.maxAge || ''} /></label>
+                <label>Teachers<input name="teachers" defaultValue={(row.teachers || []).join ? row.teachers.join(', ') : row.teachers || ''} /></label>
                 <label>Volunteer discount %<input name="volunteerDiscountPercentage" type="number" min="0" max="100" defaultValue={row.volunteerDiscountPercentage || 0} /></label>
                 <label>Defaulter fine<input name="defaulterFineAmount" type="number" min="0" step="0.01" defaultValue={row.defaulterFineAmount || 0} /></label>
               </div>
@@ -1131,11 +1176,22 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
                 <label className="admin-checkbox"><input name="enabled" type="checkbox" defaultChecked={row.enabled !== false} /> Enabled</label>
                 <label className="admin-checkbox"><input name="isOpenForRegistration" type="checkbox" defaultChecked={Boolean(row.isOpenForRegistration)} /> Open for registration</label>
                 <label className="admin-checkbox"><input name="isPaymentRequired" type="checkbox" defaultChecked={Boolean(row.isPaymentRequired)} /> Payment required</label>
+                <label className="admin-checkbox"><input name="isAgeRestricted" type="checkbox" defaultChecked={Boolean(row.isAgeRestricted)} /> Age restricted</label>
+                <label className="admin-checkbox"><input name="isAutoApproved" type="checkbox" defaultChecked={Boolean(row.isAutoApproved)} /> Auto approved</label>
+                <label className="admin-checkbox"><input name="displaySeatNumbers" type="checkbox" defaultChecked={Boolean(row.displaySeatNumbers)} /> Display seats</label>
+                <label className="admin-checkbox"><input name="enableDefaulterFine" type="checkbox" defaultChecked={Boolean(row.enableDefaulterFine)} /> Defaulter fine</label>
+                <label className="admin-checkbox"><input name="removePhoto" type="checkbox" /> Remove image</label>
                 <label className="admin-checkbox"><input name="enableCheckIn" type="checkbox" defaultChecked={Boolean(row.enableCheckIn)} /> Enable check-in</label>
                 <label className="admin-checkbox"><input name="freeForVolunteers" type="checkbox" defaultChecked={Boolean(row.freeForVolunteers)} /> Free for volunteers</label>
                 <label className="admin-checkbox"><input name="enableVolunteerDiscount" type="checkbox" defaultChecked={Boolean(row.enableVolunteerDiscount)} /> Volunteer discount</label>
               </div>
               <label>Description<textarea name="body" defaultValue={row.body || ''} /></label>
+              <div className="admin-form-grid">
+                <label>Registration heading<input name="registrationHeading" defaultValue={row.registrationInfo?.heading || 'Registration'} /></label>
+                <label>Registration instructions<textarea name="registrationInstructions" defaultValue={row.registrationInfo?.instructions || ''} /></label>
+                <label>Confirmation message<textarea name="registrationConfirmation" defaultValue={row.registrationInfo?.confirmationMessage || ''} /></label>
+                <label>Payment message<textarea name="paymentMessage" defaultValue={row.registrationInfo?.paymentMessage || ''} /></label>
+              </div>
             </>
           )}
           {kind === 'announcement' && (
@@ -1144,8 +1200,8 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
               <label>CTA text<input name="ctaText" defaultValue={row.ctaText || ''} /></label>
               <label>CTA URL<input name="ctaUrl" defaultValue={row.ctaUrl || ''} /></label>
               <div className="admin-form-grid">
-                <label>Start on<input name="startOn" type="date" defaultValue={String(row.startOn || '').slice(0, 10)} /></label>
-                <label>End on<input name="endOn" type="date" defaultValue={String(row.endOn || '').slice(0, 10)} /></label>
+                <label>Start on<DatePicker name="startOn" defaultValue={String(row.startOn || '').slice(0, 10)} placeholder="Choose start date" /></label>
+                <label>End on<DatePicker name="endOn" defaultValue={String(row.endOn || '').slice(0, 10)} placeholder="Choose end date" /></label>
               </div>
               <label className="admin-checkbox"><input name="enabled" type="checkbox" defaultChecked={isEnabledValue(row.enabled)} /> Enabled</label>
             </>
@@ -2080,7 +2136,7 @@ export default function AdminSectionPage({ view }) {
           <div className="admin-form-grid">
             <label>First name <input name="firstName" defaultValue={profile.firstName || user.firstName || user.name?.split(' ')[0] || ''} required /></label>
             <label>Last name <input name="lastName" defaultValue={profile.lastName || user.lastName || user.name?.split(' ').slice(1).join(' ') || ''} required /></label>
-            <label>Date of birth <input name="birthDate" type="date" defaultValue={profile.birthDate || ''} required /></label>
+            <label>Date of birth <DatePicker name="birthDate" defaultValue={profile.birthDate || ''} required placeholder="Choose date of birth" /></label>
             <label>Phone number <input name="phone" type="tel" defaultValue={profile.phone || user.phone || ''} /></label>
             <label>Gender <select name="gender" defaultValue={profile.gender || 'Male'} required><option>Male</option><option>Female</option><option>Prefer not to say</option></select></label>
             <label>Company <small>(NA - if not applicable)</small><input name="company" defaultValue={profile.company || 'NA'} required /></label>
@@ -2100,7 +2156,7 @@ export default function AdminSectionPage({ view }) {
           <div className="admin-form-grid">
             <label>First name <input name="spouseFirstName" defaultValue={profile.spouseFirstName || ''} /></label>
             <label>Last name <input name="spouseLastName" defaultValue={profile.spouseLastName || ''} /></label>
-            <label>Date of birth <input name="spouseBirthDate" type="date" defaultValue={profile.spouseBirthDate || ''} /></label>
+            <label>Date of birth <DatePicker name="spouseBirthDate" defaultValue={profile.spouseBirthDate || ''} placeholder="Choose date of birth" /></label>
           </div>
           <button className="button primary" type="submit">Save</button>
           {profileError && <p className="form-error">{profileError}</p>}
@@ -2201,15 +2257,15 @@ export default function AdminSectionPage({ view }) {
                 <label>Amount<input name="amount" type="number" min="1" step="0.01" required placeholder="0.00" /></label>
                 <label className="advanced-date-field">
                   Expense date
-                  <span className="advanced-date-input">
-                    <CalendarDays size={18} />
-                    <input name="expenseDate" type="date" required />
-                  </span>
-                  <span className="date-shortcuts">
-                    <button type="button" onClick={(event) => { event.currentTarget.closest('form').elements.expenseDate.value = dateInputValue(0); }}>Today</button>
-                    <button type="button" onClick={(event) => { event.currentTarget.closest('form').elements.expenseDate.value = dateInputValue(-1); }}>Yesterday</button>
-                    <button type="button" onClick={(event) => { event.currentTarget.closest('form').elements.expenseDate.value = dateInputValue(-7); }}>Last week</button>
-                  </span>
+                  <DatePicker
+                    name="expenseDate"
+                    required
+                    placeholder="Choose expense date"
+                    quickOptions={[
+                      { label: 'Yesterday', offsetDays: -1 },
+                      { label: 'Last week', offsetDays: -7 }
+                    ]}
+                  />
                 </label>
                 <label>Vendor / paid to<input name="vendor" placeholder="Costco, venue, printer..." /></label>
                 <label>Payment method<select name="paymentMethod" defaultValue="Personal card"><option>Personal card</option><option>Cash</option><option>Check</option><option>PayPal</option><option>Bank transfer</option><option>Other</option></select></label>
@@ -2438,8 +2494,8 @@ export default function AdminSectionPage({ view }) {
                 <label>CTA text<input name="ctaText" required maxLength="40" placeholder="Register today" /></label>
                 <label>CTA URL<input name="ctaUrl" required placeholder="/register or https://example.com" /></label>
                 <div className="admin-form-grid">
-                  <label>Start on<input name="startOn" type="date" required /></label>
-                  <label>End on<input name="endOn" type="date" required /></label>
+                  <label>Start on<DatePicker name="startOn" required placeholder="Choose start date" /></label>
+                  <label>End on<DatePicker name="endOn" required placeholder="Choose end date" /></label>
                 </div>
                 <label className="admin-checkbox"><input name="enabled" type="checkbox" defaultChecked /> Enabled</label>
                 <button className="button primary" type="submit">Save</button>
@@ -3424,24 +3480,28 @@ export default function AdminSectionPage({ view }) {
     const templatePreviews = [
       {
         title: 'Confirm email',
+        key: 'confirm-email',
         subject: 'Confirm your Kannada Bharati account',
         body: 'Please confirm your Kannada Bharati account.',
         action: 'Confirm Email'
       },
       {
         title: 'Forgot password',
+        key: 'forgot-password',
         subject: 'Reset your Kannada Bharati password',
         body: 'Use the link below to reset your Kannada Bharati password.',
         action: 'Reset Password'
       },
       {
         title: 'Registration',
+        key: 'registration',
         subject: 'Kannada Bharati registration received',
         body: 'Your registration details are below. Payment instructions appear when an amount is pending.',
         action: 'Pay Registration Fee'
       },
       {
         title: 'Donation',
+        key: 'donation',
         subject: 'Kannada Bharati donation confirmation',
         body: 'Thank you for supporting Kannada Bharati.',
         action: 'View Donation'
@@ -3457,24 +3517,48 @@ export default function AdminSectionPage({ view }) {
       ['Announcements', announcements.length],
       ['Email outbox', emailOutbox.length]
     ];
+    const totalDiagnostics = tableCounts.reduce((sum, [, count]) => sum + count, 0);
+    const systemStatuses = [
+      ['API mode', import.meta.env.VITE_API_URL ? 'Configured API URL' : 'Default /api proxy', Boolean(import.meta.env.VITE_API_URL)],
+      ['Google login', import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'Configured' : 'Missing client id', Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)],
+      ['reCAPTCHA', import.meta.env.VITE_GOOGLE_RECAPTCHA_SITE_KEY ? 'Configured' : 'Local fallback', Boolean(import.meta.env.VITE_GOOGLE_RECAPTCHA_SITE_KEY)]
+    ];
     return (
       <>
         <PageHeader area="Developer" title="Admin developer tools" />
-        <section className="admin-dashboard-hero-grid">
-          {tableCounts.slice(0, 4).map(([label, count]) => (
-            <article key={label}><ReceiptText size={24} /><span>{label}</span><strong>{count}</strong></article>
-          ))}
-        </section>
-        <section className="admin-page-panel">
-          <div className="admin-page-panel-heading"><h2>System diagnostics</h2><span>{tableCounts.reduce((sum, [, count]) => sum + count, 0)}</span></div>
-          <div className="detail-popup-grid">
-            {tableCounts.map(([label, count]) => <article key={label}><span>{label}</span><strong>{count}</strong></article>)}
-            <article><span>API mode</span><strong>{import.meta.env.VITE_API_URL ? 'Configured API URL' : 'Default /api proxy'}</strong></article>
-            <article><span>Google login</span><strong>{import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'Configured' : 'Missing client id'}</strong></article>
-            <article><span>reCAPTCHA</span><strong>{import.meta.env.VITE_GOOGLE_RECAPTCHA_SITE_KEY ? 'Configured' : 'Local fallback'}</strong></article>
+        <section className="developer-hero-panel">
+          <div>
+            <p className="eyebrow">System overview</p>
+            <h2>{totalDiagnostics} records tracked across core modules</h2>
+            <p>Use this page to verify data volume, integration readiness, email templates, and local browser cache during admin testing.</p>
+          </div>
+          <div className="developer-hero-stats">
+            <article><strong>{tableCounts.length}</strong><span>Data groups</span></article>
+            <article><strong>{templatePreviews.length}</strong><span>Email templates</span></article>
+            <article><strong>{localKeys.length}</strong><span>Local keys</span></article>
           </div>
         </section>
-        <section className="admin-page-panel">
+        <section className="admin-page-panel developer-panel">
+          <div className="admin-page-panel-heading"><h2>System diagnostics</h2><span>{tableCounts.reduce((sum, [, count]) => sum + count, 0)}</span></div>
+          <div className="developer-diagnostic-grid">
+            {tableCounts.map(([label, count]) => (
+              <article key={label} className="developer-metric-card">
+                <span>{label}</span>
+                <strong>{count}</strong>
+                <small>{count ? 'Data available' : 'No records yet'}</small>
+              </article>
+            ))}
+          </div>
+          <div className="developer-status-row">
+            {systemStatuses.map(([label, value, configured]) => (
+              <article key={label} className={configured ? 'developer-status-card is-ready' : 'developer-status-card'}>
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </article>
+            ))}
+          </div>
+        </section>
+        <section className="admin-page-panel developer-panel">
           <div className="admin-page-panel-heading"><h2>Email template previews</h2><span>{templatePreviews.length}</span></div>
           <div className="template-preview-grid">
             {templatePreviews.map((template) => (
@@ -3482,7 +3566,7 @@ export default function AdminSectionPage({ view }) {
                 <span>{template.title}</span>
                 <h3>{template.subject}</h3>
                 <p>{template.body}</p>
-                <button className="button compact" type="button">{template.action}</button>
+                <a className="button compact" href={`/api/developer/email-templates/${template.key}`} target="_blank" rel="noreferrer">{template.action}</a>
                 <small>Kannada Bharati</small>
               </article>
             ))}
@@ -3535,22 +3619,18 @@ export default function AdminSectionPage({ view }) {
             },
             {
               key: 'role',
-              label: 'Role',
+              label: 'Roles',
               render: (row) => (
-                <select
-                  className="inline-admin-select"
-                  value={row.role || 'member'}
-                  onChange={(event) => updateUser(row, { role: event.target.value, roles: [event.target.value] })}
-                >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="superadmin">SuperAdmin</option>
-                  <option value="receptionist">Receptionist</option>
-                  <option value="teacher">Teacher</option>
-                  <option value="volunteer">Volunteer</option>
-                  <option value="treasurer">Treasurer</option>
-                </select>
+                <UserRoleEditor row={row} onChange={(roles) => updateUser(row, { role: roles.includes('admin') || roles.includes('superadmin') ? 'admin' : roles[0], roles })} />
               )
+            },
+            {
+              key: 'defaulterHistory',
+              label: 'History',
+              render: (row) => {
+                const history = (dashboard.defaulterHistory || []).filter((item) => String(item.user_email || item.userEmail || '').toLowerCase() === String(row.email || '').toLowerCase());
+                return history.length ? `${history.length} record(s)` : '-';
+              }
             },
             { key: 'emailConfirmed', label: 'Email confirmed', render: (row) => row.emailConfirmed ? 'Yes' : 'No' },
             { key: 'twoFactorEnabled', label: '2FA', render: (row) => row.twoFactorEnabled ? 'On' : 'Off' },

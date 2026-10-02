@@ -5,6 +5,7 @@ create table if not exists public.kb_users (
   email text unique not null,
   name text not null,
   phone text,
+  phone_confirmed boolean not null default false,
   role text not null default 'member',
   roles text[] not null default array['member'],
   password_hash text,
@@ -21,6 +22,7 @@ create table if not exists public.kb_users (
 );
 
 alter table public.kb_users add column if not exists roles text[] not null default array['member'];
+alter table public.kb_users add column if not exists phone_confirmed boolean not null default false;
 alter table public.kb_users add column if not exists enabled boolean not null default true;
 alter table public.kb_users add column if not exists email_confirmed boolean not null default false;
 alter table public.kb_users add column if not exists email_confirmation_token text;
@@ -63,6 +65,14 @@ create table if not exists public.kb_registrations (
   rsvp jsonb,
   price_menu jsonb,
   payment_received boolean not null default false,
+  payment_status text not null default 'Pending',
+  invoice_id text,
+  paypal_order_id text,
+  paypal_capture_id text,
+  paypal_order jsonb,
+  paypal_payment jsonb,
+  payment_completed_at timestamptz,
+  payment_cancelled_at timestamptz,
   checked_in boolean not null default false,
   checked_in_at timestamptz,
   enabled boolean not null default true,
@@ -86,6 +96,14 @@ alter table public.kb_registrations add column if not exists registration_type t
 alter table public.kb_registrations add column if not exists rsvp jsonb;
 alter table public.kb_registrations add column if not exists price_menu jsonb;
 alter table public.kb_registrations add column if not exists payment_received boolean not null default false;
+alter table public.kb_registrations add column if not exists payment_status text not null default 'Pending';
+alter table public.kb_registrations add column if not exists invoice_id text;
+alter table public.kb_registrations add column if not exists paypal_order_id text;
+alter table public.kb_registrations add column if not exists paypal_capture_id text;
+alter table public.kb_registrations add column if not exists paypal_order jsonb;
+alter table public.kb_registrations add column if not exists paypal_payment jsonb;
+alter table public.kb_registrations add column if not exists payment_completed_at timestamptz;
+alter table public.kb_registrations add column if not exists payment_cancelled_at timestamptz;
 alter table public.kb_registrations add column if not exists checked_in boolean not null default false;
 alter table public.kb_registrations add column if not exists checked_in_at timestamptz;
 alter table public.kb_registrations add column if not exists enabled boolean not null default true;
@@ -170,6 +188,8 @@ create table if not exists public.kb_events (
   price numeric not null default 0,
   is_all_day boolean not null default false,
   is_age_restricted boolean not null default false,
+  min_age integer,
+  max_age integer,
   is_payment_required boolean not null default false,
   enable_defaulter_fine boolean not null default false,
   is_open_for_registration boolean not null default false,
@@ -181,6 +201,8 @@ create table if not exists public.kb_events (
   enable_volunteer_discount boolean not null default false,
   volunteer_discount_percentage numeric not null default 0,
   defaulter_fine_amount numeric not null default 0,
+  registration_info jsonb,
+  teachers text[],
   rsvp jsonb,
   price_menu jsonb,
   photo text,
@@ -197,6 +219,8 @@ alter table public.kb_events add column if not exists capacity integer not null 
 alter table public.kb_events add column if not exists price numeric not null default 0;
 alter table public.kb_events add column if not exists is_all_day boolean not null default false;
 alter table public.kb_events add column if not exists is_age_restricted boolean not null default false;
+alter table public.kb_events add column if not exists min_age integer;
+alter table public.kb_events add column if not exists max_age integer;
 alter table public.kb_events add column if not exists is_payment_required boolean not null default false;
 alter table public.kb_events add column if not exists enable_defaulter_fine boolean not null default false;
 alter table public.kb_events add column if not exists is_open_for_registration boolean not null default false;
@@ -208,6 +232,8 @@ alter table public.kb_events add column if not exists enable_check_in boolean no
 alter table public.kb_events add column if not exists enable_volunteer_discount boolean not null default false;
 alter table public.kb_events add column if not exists volunteer_discount_percentage numeric not null default 0;
 alter table public.kb_events add column if not exists defaulter_fine_amount numeric not null default 0;
+alter table public.kb_events add column if not exists registration_info jsonb;
+alter table public.kb_events add column if not exists teachers text[];
 alter table public.kb_events add column if not exists rsvp jsonb;
 alter table public.kb_events add column if not exists price_menu jsonb;
 
@@ -405,6 +431,16 @@ create table if not exists public.kb_external_logins (
   unique(email, provider)
 );
 
+create table if not exists public.kb_two_factor_challenges (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  provider text not null,
+  code text,
+  expires_at timestamptz not null,
+  verified boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.kb_email_outbox (
   id uuid primary key default gen_random_uuid(),
   to_email text not null,
@@ -432,8 +468,15 @@ create table if not exists public.kb_defaulter_history (
   is_defaulter boolean not null default false,
   notes text,
   set_by text,
+  reset_by text,
+  set_date timestamptz not null default now(),
+  reset_date timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table public.kb_defaulter_history add column if not exists reset_by text;
+alter table public.kb_defaulter_history add column if not exists set_date timestamptz not null default now();
+alter table public.kb_defaulter_history add column if not exists reset_date timestamptz;
 
 insert into public.kb_event_types (name)
 values ('Classroom'), ('Workshop'), ('Seminar'), ('Cultural')
@@ -465,6 +508,7 @@ alter table public.kb_seats enable row level security;
 alter table public.kb_attendance enable row level security;
 alter table public.kb_phone_verifications enable row level security;
 alter table public.kb_external_logins enable row level security;
+alter table public.kb_two_factor_challenges enable row level security;
 alter table public.kb_email_outbox enable row level security;
 alter table public.kb_sms_outbox enable row level security;
 alter table public.kb_defaulter_history enable row level security;

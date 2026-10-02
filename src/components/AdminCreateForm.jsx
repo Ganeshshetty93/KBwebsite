@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { appendAdminRecordAsync, readJson } from '../utils/storage.js';
 import { apiUploadFile } from '../utils/api.js';
+import DatePicker from './DatePicker.jsx';
 import {
   cleanText,
   firstError,
@@ -137,6 +138,13 @@ export default function AdminCreateForm({ type, onCreated }) {
     const beneficiary = cleanText(formData.get('beneficiary'));
     const eventId = cleanText(formData.get('eventId'));
     const urlKey = cleanText(formData.get('urlKey'));
+    const teachers = cleanText(formData.get('teachers')).split(',').map((item) => item.trim()).filter(Boolean);
+    const registrationInfo = isEvent ? {
+      heading: cleanText(formData.get('registrationHeading')) || 'Registration',
+      instructions: cleanText(formData.get('registrationInstructions')),
+      confirmationMessage: cleanText(formData.get('registrationConfirmation')),
+      paymentMessage: cleanText(formData.get('paymentMessage'))
+    } : null;
     const priceMenuItems = priceRows
       .map((row, index) => ({
         id: `price-${index + 1}`,
@@ -242,6 +250,8 @@ export default function AdminCreateForm({ type, onCreated }) {
           price: Number(formData.get('price') || 0),
           isAllDay: Boolean(formData.get('isAllDay')),
           isAgeRestricted: Boolean(formData.get('isAgeRestricted')),
+          minAge: formData.get('minAge') ? Number(formData.get('minAge')) : null,
+          maxAge: formData.get('maxAge') ? Number(formData.get('maxAge')) : null,
           isPaymentRequired: Boolean(formData.get('isPaymentRequired')),
           enableDefaulterFine: Boolean(formData.get('enableDefaulterFine')),
           isOpenForRegistration: Boolean(formData.get('isOpenForRegistration')),
@@ -253,6 +263,8 @@ export default function AdminCreateForm({ type, onCreated }) {
           enableVolunteerDiscount: Boolean(formData.get('enableVolunteerDiscount')),
           volunteerDiscountPercentage: Number(formData.get('volunteerDiscountPercentage') || 0),
           defaulterFineAmount: Number(formData.get('defaulterFineAmount') || 0),
+          registrationInfo,
+          teachers,
           rsvp,
           priceMenu,
           photo
@@ -320,7 +332,7 @@ export default function AdminCreateForm({ type, onCreated }) {
             </label>
             <label>
               Deadline
-              <input name="deadline" type="date" required />
+              <DatePicker name="deadline" required placeholder="Choose deadline" />
             </label>
             <label>
               Status
@@ -355,11 +367,11 @@ export default function AdminCreateForm({ type, onCreated }) {
             </label>
             <label>
               Start date
-              <input name="startDate" type="date" required />
+              <DatePicker name="startDate" required placeholder="Choose start date" />
             </label>
             <label>
               End date
-              <input name="endDate" type="date" required />
+              <DatePicker name="endDate" required placeholder="Choose end date" />
             </label>
             <label>
               Weekday
@@ -408,11 +420,11 @@ export default function AdminCreateForm({ type, onCreated }) {
             </label>
             <label>
               Start on
-              <input name="startOn" type="datetime-local" required />
+              <DatePicker name="startOn" mode="datetime" required placeholder="Choose start date and time" />
             </label>
             <label>
               End on
-              <input name="endOn" type="datetime-local" required />
+              <DatePicker name="endOn" mode="datetime" required placeholder="Choose end date and time" />
             </label>
             <label>
               Recurrence
@@ -427,6 +439,18 @@ export default function AdminCreateForm({ type, onCreated }) {
             <label>
               Base price
               <input name="price" type="number" min="0" step="0.01" defaultValue="0" />
+            </label>
+            <label>
+              Min age
+              <input name="minAge" type="number" min="0" max="100" placeholder="Optional" />
+            </label>
+            <label>
+              Max age
+              <input name="maxAge" type="number" min="0" max="100" placeholder="Optional" />
+            </label>
+            <label>
+              Teachers
+              <input name="teachers" placeholder="Teacher 1, Teacher 2" />
             </label>
             <label>
               Volunteer discount %
@@ -505,6 +529,16 @@ export default function AdminCreateForm({ type, onCreated }) {
               ))}
             </div>
             <button type="button" className="mini-action-link secondary" onClick={() => setPriceRows((current) => [...current, { label: '', price: '0' }])}>Add price option</button>
+          </section>
+          <section>
+            <div className="panel-mini-heading">
+              <span>Registration info</span>
+              <strong>Member flow</strong>
+            </div>
+            <label>Heading<input name="registrationHeading" defaultValue="Registration" /></label>
+            <label>Instructions<textarea name="registrationInstructions" placeholder="Explain who can register, prerequisites, and approval steps." /></label>
+            <label>Confirmation message<textarea name="registrationConfirmation" placeholder="Message shown after registration is submitted." /></label>
+            <label>Payment message<textarea name="paymentMessage" placeholder="Message shown when payment is required." /></label>
           </section>
         </div>
       )}

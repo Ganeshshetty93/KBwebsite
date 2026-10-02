@@ -72,6 +72,7 @@ function publicUser(user) {
     role: roles.includes('admin') || roles.includes('superadmin') ? 'admin' : roles[0] || 'member',
     roles,
     phone: user.phone,
+    phoneConfirmed: booleanValue(user.phone_confirmed, false),
     emailConfirmed: booleanValue(user.email_confirmed, false),
     twoFactorEnabled: booleanValue(user.two_factor_enabled, false),
     isVolunteeringDefaulter: booleanValue(user.is_volunteering_defaulter, false)
@@ -80,6 +81,59 @@ function publicUser(user) {
 
 function tokenFor(user) {
   return jwt.sign(publicUser(user), jwtSecret, { expiresIn: '7d' });
+}
+
+function twoFactorTokenFor(user) {
+  return jwt.sign({
+    purpose: 'two-factor',
+    email: String(user.email || '').toLowerCase(),
+    providers: twoFactorProvidersFor(user).map((provider) => provider.id)
+  }, jwtSecret, { expiresIn: '10m' });
+}
+
+function readTwoFactorToken(token) {
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    if (payload?.purpose !== 'two-factor' || !payload.email) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function codeHash(code) {
+  return crypto.createHash('sha256').update(String(code || '')).digest('hex');
+}
+
+function twoFactorVerificationTokenFor({ email, provider, code, challengeId }) {
+  return jwt.sign({
+    purpose: 'two-factor-code',
+    email: String(email || '').toLowerCase(),
+    provider,
+    challengeId: challengeId || '',
+    codeHash: codeHash(code)
+  }, jwtSecret, { expiresIn: '10m' });
+}
+
+function readTwoFactorVerificationToken(token) {
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    if (payload?.purpose !== 'two-factor-code' || !payload.email || !payload.provider || !payload.codeHash) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function twoFactorProvidersFor(user) {
+  const providers = [];
+  if (booleanValue(user.email_confirmed, false) || user.email) {
+    providers.push({ id: 'email', label: 'Email', destination: user.email });
+  }
+  if (booleanValue(user.phone_confirmed, false) && user.phone) {
+    providers.push({ id: 'phone', label: 'Text message', destination: user.phone });
+  }
+  return providers;
 }
 
 async function authenticate(req, res, next) {
@@ -164,6 +218,36 @@ async function insertRecord(table, payload) {
       email: payload.email,
       amount: Number(payload.amount || 0)
     };
+    result = await supabase
+      .from(table)
+      .insert({ ...normalizedPayload, created_at: new Date().toISOString() })
+      .select('*')
+      .single();
+  }
+
+  if (result.error && table === 'kb_registrations' && /payment_status|invoice_id|paypal_order_id|paypal_capture_id|paypal_order|paypal_payment|payment_completed_at|payment_cancelled_at/i.test(result.error.message || '')) {
+    normalizedPayload = normalizePayload(table, payload);
+    delete normalizedPayload.payment_status;
+    delete normalizedPayload.invoice_id;
+    delete normalizedPayload.paypal_order_id;
+    delete normalizedPayload.paypal_capture_id;
+    delete normalizedPayload.paypal_order;
+    delete normalizedPayload.paypal_payment;
+    delete normalizedPayload.payment_completed_at;
+    delete normalizedPayload.payment_cancelled_at;
+    result = await supabase
+      .from(table)
+      .insert({ ...normalizedPayload, created_at: new Date().toISOString() })
+      .select('*')
+      .single();
+  }
+
+  if (result.error && table === 'kb_events' && /min_age|max_age|registration_info|teachers/i.test(result.error.message || '')) {
+    normalizedPayload = normalizePayload(table, payload);
+    delete normalizedPayload.min_age;
+    delete normalizedPayload.max_age;
+    delete normalizedPayload.registration_info;
+    delete normalizedPayload.teachers;
     result = await supabase
       .from(table)
       .insert({ ...normalizedPayload, created_at: new Date().toISOString() })
@@ -298,6 +382,14 @@ function normalizePayload(table, payload) {
       rsvp: payload.rsvp || null,
       price_menu: payload.priceMenu || payload.price_menu || null,
       payment_received: booleanValue(payload.paymentReceived ?? payload.payment_received, false),
+      payment_status: payload.paymentStatus || payload.payment_status || (booleanValue(payload.paymentReceived ?? payload.payment_received, false) ? 'Paid' : 'Pending'),
+      invoice_id: payload.invoiceId || payload.invoice_id || null,
+      paypal_order_id: payload.paypalOrderId || payload.paypal_order_id || null,
+      paypal_capture_id: payload.paypalCaptureId || payload.paypal_capture_id || null,
+      paypal_order: payload.paypalOrder || payload.paypal_order || null,
+      paypal_payment: payload.paypalPayment || payload.paypal_payment || null,
+      payment_completed_at: payload.paymentCompletedAt || payload.payment_completed_at || null,
+      payment_cancelled_at: payload.paymentCancelledAt || payload.payment_cancelled_at || null,
       checked_in: booleanValue(payload.checkedIn ?? payload.checked_in, false),
       checked_in_at: payload.checkedInAt || payload.checked_in_at || null,
       enabled: booleanValue(payload.enabled, true)
@@ -359,6 +451,8 @@ function normalizePayload(table, payload) {
       price: numberValue(payload.price, 0),
       is_all_day: booleanValue(payload.is_all_day ?? payload.isAllDay, false),
       is_age_restricted: booleanValue(payload.is_age_restricted ?? payload.isAgeRestricted, false),
+      min_age: payload.minAge || payload.min_age ? numberValue(payload.minAge ?? payload.min_age, 0) : null,
+      max_age: payload.maxAge || payload.max_age ? numberValue(payload.maxAge ?? payload.max_age, 0) : null,
       is_payment_required: booleanValue(payload.is_payment_required ?? payload.isPaymentRequired, false),
       enable_defaulter_fine: booleanValue(payload.enable_defaulter_fine ?? payload.enableDefaulterFine, false),
       is_open_for_registration: booleanValue(payload.is_open_for_registration ?? payload.isOpenForRegistration, false),
@@ -370,6 +464,8 @@ function normalizePayload(table, payload) {
       enable_volunteer_discount: booleanValue(payload.enable_volunteer_discount ?? payload.enableVolunteerDiscount, false),
       volunteer_discount_percentage: numberValue(payload.volunteer_discount_percentage ?? payload.volunteerDiscountPercentage, 0),
       defaulter_fine_amount: numberValue(payload.defaulter_fine_amount ?? payload.defaulterFineAmount, 0),
+      registration_info: payload.registrationInfo || payload.registration_info || null,
+      teachers: Array.isArray(payload.teachers) ? payload.teachers : String(payload.teachers || '').split(',').map((item) => item.trim()).filter(Boolean),
       rsvp: payload.rsvp || null,
       price_menu: payload.priceMenu || payload.price_menu || null,
       photo: payload.photo || null
@@ -450,7 +546,44 @@ function normalizePayload(table, payload) {
 }
 
 function normalizePatch(table, payload) {
-  if (['kb_events', 'kb_announcements', 'kb_checkins', 'kb_attendance'].includes(table)) {
+  if (table === 'kb_events') {
+    const patch = {};
+    if (payload.eventId !== undefined || payload.event_id !== undefined) patch.event_id = payload.eventId ?? payload.event_id;
+    if (payload.urlKey !== undefined || payload.url_key !== undefined) patch.url_key = payload.urlKey ?? payload.url_key;
+    if (payload.eventType !== undefined || payload.event_type !== undefined) patch.event_type = payload.eventType ?? payload.event_type;
+    if (payload.month !== undefined) patch.month = payload.month;
+    if (payload.title !== undefined) patch.title = payload.title;
+    if (payload.body !== undefined) patch.body = payload.body;
+    if (payload.location !== undefined) patch.location = payload.location;
+    if (payload.startOn !== undefined || payload.start_on !== undefined) patch.start_on = payload.startOn ?? payload.start_on;
+    if (payload.endOn !== undefined || payload.end_on !== undefined) patch.end_on = payload.endOn ?? payload.end_on;
+    if (payload.recurrence !== undefined) patch.recurrence = payload.recurrence;
+    if (payload.capacity !== undefined) patch.capacity = numberValue(payload.capacity, 0);
+    if (payload.price !== undefined) patch.price = numberValue(payload.price, 0);
+    if (payload.isAllDay !== undefined || payload.is_all_day !== undefined) patch.is_all_day = booleanValue(payload.isAllDay ?? payload.is_all_day, false);
+    if (payload.isAgeRestricted !== undefined || payload.is_age_restricted !== undefined) patch.is_age_restricted = booleanValue(payload.isAgeRestricted ?? payload.is_age_restricted, false);
+    if (payload.minAge !== undefined || payload.min_age !== undefined) patch.min_age = payload.minAge || payload.min_age ? numberValue(payload.minAge ?? payload.min_age, 0) : null;
+    if (payload.maxAge !== undefined || payload.max_age !== undefined) patch.max_age = payload.maxAge || payload.max_age ? numberValue(payload.maxAge ?? payload.max_age, 0) : null;
+    if (payload.isPaymentRequired !== undefined || payload.is_payment_required !== undefined) patch.is_payment_required = booleanValue(payload.isPaymentRequired ?? payload.is_payment_required, false);
+    if (payload.enableDefaulterFine !== undefined || payload.enable_defaulter_fine !== undefined) patch.enable_defaulter_fine = booleanValue(payload.enableDefaulterFine ?? payload.enable_defaulter_fine, false);
+    if (payload.isOpenForRegistration !== undefined || payload.is_open_for_registration !== undefined) patch.is_open_for_registration = booleanValue(payload.isOpenForRegistration ?? payload.is_open_for_registration, false);
+    if (payload.isAutoApproved !== undefined || payload.is_auto_approved !== undefined) patch.is_auto_approved = booleanValue(payload.isAutoApproved ?? payload.is_auto_approved, false);
+    if (payload.enabled !== undefined) patch.enabled = booleanValue(payload.enabled, true);
+    if (payload.displaySeatNumbers !== undefined || payload.display_seat_numbers !== undefined) patch.display_seat_numbers = booleanValue(payload.displaySeatNumbers ?? payload.display_seat_numbers, false);
+    if (payload.freeForVolunteers !== undefined || payload.free_for_volunteers !== undefined) patch.free_for_volunteers = booleanValue(payload.freeForVolunteers ?? payload.free_for_volunteers, false);
+    if (payload.enableCheckIn !== undefined || payload.enable_check_in !== undefined) patch.enable_check_in = booleanValue(payload.enableCheckIn ?? payload.enable_check_in, false);
+    if (payload.enableVolunteerDiscount !== undefined || payload.enable_volunteer_discount !== undefined) patch.enable_volunteer_discount = booleanValue(payload.enableVolunteerDiscount ?? payload.enable_volunteer_discount, false);
+    if (payload.volunteerDiscountPercentage !== undefined || payload.volunteer_discount_percentage !== undefined) patch.volunteer_discount_percentage = numberValue(payload.volunteerDiscountPercentage ?? payload.volunteer_discount_percentage, 0);
+    if (payload.defaulterFineAmount !== undefined || payload.defaulter_fine_amount !== undefined) patch.defaulter_fine_amount = numberValue(payload.defaulterFineAmount ?? payload.defaulter_fine_amount, 0);
+    if (payload.registrationInfo !== undefined || payload.registration_info !== undefined) patch.registration_info = payload.registrationInfo ?? payload.registration_info;
+    if (payload.teachers !== undefined) patch.teachers = Array.isArray(payload.teachers) ? payload.teachers : String(payload.teachers || '').split(',').map((item) => item.trim()).filter(Boolean);
+    if (payload.rsvp !== undefined) patch.rsvp = payload.rsvp || null;
+    if (payload.priceMenu !== undefined || payload.price_menu !== undefined) patch.price_menu = payload.priceMenu ?? payload.price_menu;
+    if (payload.photo !== undefined) patch.photo = payload.photo || null;
+    return patch;
+  }
+
+  if (['kb_announcements', 'kb_checkins', 'kb_attendance'].includes(table)) {
     return normalizePayload(table, payload);
   }
 
@@ -467,6 +600,14 @@ function normalizePatch(table, payload) {
     if (payload.amount !== undefined) patch.amount = numberValue(payload.amount, 0);
     if (payload.paid !== undefined) patch.paid = booleanValue(payload.paid, false);
     if (payload.paymentReceived !== undefined || payload.payment_received !== undefined) patch.payment_received = booleanValue(payload.paymentReceived ?? payload.payment_received, false);
+    if (payload.paymentStatus !== undefined || payload.payment_status !== undefined) patch.payment_status = payload.paymentStatus ?? payload.payment_status;
+    if (payload.invoiceId !== undefined || payload.invoice_id !== undefined) patch.invoice_id = payload.invoiceId ?? payload.invoice_id;
+    if (payload.paypalOrderId !== undefined || payload.paypal_order_id !== undefined) patch.paypal_order_id = payload.paypalOrderId ?? payload.paypal_order_id;
+    if (payload.paypalCaptureId !== undefined || payload.paypal_capture_id !== undefined) patch.paypal_capture_id = payload.paypalCaptureId ?? payload.paypal_capture_id;
+    if (payload.paypalOrder !== undefined || payload.paypal_order !== undefined) patch.paypal_order = payload.paypalOrder ?? payload.paypal_order;
+    if (payload.paypalPayment !== undefined || payload.paypal_payment !== undefined) patch.paypal_payment = payload.paypalPayment ?? payload.paypal_payment;
+    if (payload.paymentCompletedAt !== undefined || payload.payment_completed_at !== undefined) patch.payment_completed_at = payload.paymentCompletedAt ?? payload.payment_completed_at;
+    if (payload.paymentCancelledAt !== undefined || payload.payment_cancelled_at !== undefined) patch.payment_cancelled_at = payload.paymentCancelledAt ?? payload.payment_cancelled_at;
     if (payload.enabled !== undefined) patch.enabled = booleanValue(payload.enabled, true);
     if (payload.birthYear !== undefined || payload.birth_year !== undefined) patch.birth_year = payload.birthYear ?? payload.birth_year;
     if (payload.totalMembers !== undefined || payload.total_members !== undefined) patch.total_members = numberValue(payload.totalMembers ?? payload.total_members, 1);
@@ -679,6 +820,20 @@ async function updateRecord(table, id, payload) {
       .single();
   }
 
+  if (result.error && table === 'kb_events' && /min_age|max_age|registration_info|teachers/i.test(result.error.message || '')) {
+    patch = normalizePatch(table, payload);
+    delete patch.min_age;
+    delete patch.max_age;
+    delete patch.registration_info;
+    delete patch.teachers;
+    result = await supabase
+      .from(table)
+      .update(patch)
+      .eq('id', id)
+      .select('*')
+      .single();
+  }
+
   const { data, error } = result;
   if (error) throw error;
   return data;
@@ -829,8 +984,94 @@ async function createPayPalRegistrationOrder({ kind, registrationId, amount, des
     registrationId,
     orderId: order.id,
     approvalUrl: order.links?.find((link) => link.rel === 'approve')?.href,
-    kind
+    kind,
+    order
   };
+}
+
+function paypalPaymentDetails({ kind, order, payment, capture, phase, amount, registration }) {
+  return {
+    method: 'PayPal',
+    provider: 'PayPal',
+    kind,
+    phase,
+    status: payment?.status || order?.status || phase,
+    reference: capture?.id || payment?.id || order?.id || '',
+    orderId: payment?.id || order?.id || '',
+    captureId: capture?.id || '',
+    invoiceId: registration?.invoice_id || registration?.id || '',
+    amount: numberValue(amount ?? registration?.amount, 0),
+    payerEmail: payment?.payer?.email_address || '',
+    updatedAt: new Date().toISOString()
+  };
+}
+
+async function updateRegistrationPaymentState(registrationId, patch, fallbackDetails = {}) {
+  try {
+    return await updateRecord('kb_registrations', registrationId, patch);
+  } catch (error) {
+    if (!/paypal_|payment_status|invoice_id|payment_completed_at|payment_cancelled_at|column .* does not exist/i.test(error.message || '')) throw error;
+    const existing = await getRegistrationById(registrationId);
+    if (!existing) throw error;
+    return updateRecord('kb_registrations', registrationId, {
+      paid: patch.paid,
+      paymentReceived: patch.paymentReceived ?? patch.payment_received,
+      status: patch.status,
+      emailStatus: patch.emailStatus || patch.email_status,
+      priceMenu: mergePaymentDetails(existing.price_menu, fallbackDetails)
+    });
+  }
+}
+
+async function eventForRegistration(registration) {
+  if (!registration) return null;
+  const supabase = requireSupabase();
+  const eventId = registration.event_id || registration.eventId;
+  const program = registration.program;
+  let query = supabase.from('kb_events').select('*').limit(1);
+  if (eventId) query = query.or(`id.eq.${eventId},event_id.eq.${eventId},url_key.eq.${eventId}`);
+  else if (program) query = query.eq('title', program);
+  else return null;
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+function completedRegistrationStatus(registration, event) {
+  if (String(registration?.registration_type || '').toLowerCase() === 'class') return 'Confirmed';
+  if (event && !booleanValue(event.is_auto_approved, false)) return 'Submitted';
+  return 'Confirmed';
+}
+
+async function resetDefaulterAfterPayment(registration, event, actor = 'payment') {
+  if (!registration?.email || !event || !booleanValue(event.enable_defaulter_fine, false)) return;
+  try {
+    const supabase = requireSupabase();
+    const email = String(registration.email).toLowerCase();
+    const { data: user, error } = await supabase
+      .from('kb_users')
+      .select('id, email, is_volunteering_defaulter')
+      .eq('email', email)
+      .maybeSingle();
+    if (error) throw error;
+    if (!user?.is_volunteering_defaulter) return;
+    const note = `${new Date().toISOString()}: Paid defaulter fine for event '${event.title || event.event_id || registration.program}'.`;
+    await updateRecord('kb_users', user.id, {
+      isVolunteeringDefaulter: false,
+      defaulterNotes: note
+    });
+    await insertDefaulterHistory({
+      user_email: email,
+      is_defaulter: false,
+      notes: note,
+      set_by: null,
+      reset_by: actor,
+      set_date: new Date().toISOString(),
+      reset_date: new Date().toISOString()
+    });
+  } catch {
+    // Payment success should not be rolled back if optional defaulter tracking is unavailable.
+  }
 }
 
 async function markDonationPaid({ donationId, orderId, captureId, paymentPayload }) {
@@ -885,55 +1126,55 @@ async function getRegistrationById(id) {
   return data;
 }
 
-async function markRegistrationPaid({ registrationId, orderId, captureId, paymentPayload, status = 'Confirmed' }) {
+async function markRegistrationPaid({ registrationId, orderId, captureId, paymentPayload, paypalOrder = null, kind = 'event', status }) {
   if (!registrationId || !isUuid(registrationId)) {
     const error = new Error('Registration id is required to complete payment.');
     error.status = 400;
     throw error;
   }
-  const patch = {
-    paid: true,
-    paymentReceived: true,
-    status,
-    emailStatus: 'Payment sent'
-  };
-  const registration = await updateRecord('kb_registrations', registrationId, patch);
-  if (!registration) {
+  const existing = await getRegistrationById(registrationId);
+  if (!existing) {
     const error = new Error('Registration was not found for this payment.');
     error.status = 404;
     throw error;
   }
+  const event = await eventForRegistration(existing);
+  const capture = paymentPayload?.purchase_units?.[0]?.payments?.captures?.[0] || null;
+  const completedAt = new Date().toISOString();
+  const nextStatus = status || completedRegistrationStatus(existing, event);
+  const fallbackDetails = paypalPaymentDetails({
+    kind,
+    order: paypalOrder,
+    payment: paymentPayload,
+    capture,
+    phase: 'Paid',
+    registration: existing
+  });
+  const patch = {
+    paid: true,
+    paymentReceived: true,
+    status: nextStatus,
+    emailStatus: 'Payment sent',
+    paymentStatus: 'Paid',
+    invoiceId: existing.invoice_id || existing.id,
+    paypalOrderId: orderId,
+    paypalCaptureId: captureId,
+    paypalOrder,
+    paypalPayment: paymentPayload,
+    paymentCompletedAt: completedAt,
+    priceMenu: mergePaymentDetails(existing.price_menu, fallbackDetails)
+  };
+  const registration = await updateRegistrationPaymentState(registrationId, patch, fallbackDetails);
   await sendEmailOrQueue({
     to: registration.email,
-    subject: 'Kannada Bharati payment confirmation',
+    subject: String(registration.registration_type || '').toLowerCase() === 'class'
+      ? 'Kannada Bharati class payment confirmation'
+      : 'Kannada Bharati event payment confirmation',
     template: 'payment-confirmation',
-    payload: { registration, payment: { orderId, captureId, status: 'Paid', paymentPayload } }
+    payload: { registration, payment: { orderId, captureId, status: 'Paid', paypalOrder, paypalPayment: paymentPayload } }
   });
 
-  if (registration.email) {
-    try {
-      const supabase = requireSupabase();
-      const { data: user } = await supabase
-        .from('kb_users')
-        .select('id, is_volunteering_defaulter')
-        .eq('email', String(registration.email).toLowerCase())
-        .maybeSingle();
-      if (user?.is_volunteering_defaulter) {
-        await updateRecord('kb_users', user.id, {
-          isVolunteeringDefaulter: false,
-          defaulterNotes: 'Reset after successful registration payment.'
-        });
-        await insertOptionalRecord('kb_defaulter_history', {
-          user_email: registration.email,
-          is_defaulter: false,
-          notes: 'Reset after successful registration payment.',
-          set_by: 'payment'
-        });
-      }
-    } catch {
-      // Payment confirmation should not fail if optional defaulter columns are missing.
-    }
-  }
+  await resetDefaulterAfterPayment(registration, event, 'payment');
   return registration;
 }
 
@@ -1011,7 +1252,8 @@ async function sendRegistrationEmail(registration, reason = 'submitted') {
   const paid = registration.paid === true || registration.payment_received === true;
   let payUrl = '';
   if (amountDue > 0 && !paid && registration.id && reason !== 'paid') {
-    payUrl = kbPaypalDonateUrl;
+    const kind = registrationPaymentKind(registration);
+    payUrl = `${appBaseUrl}${kind === 'class' ? '/admin/profile' : '/events'}?openPayment=1&kind=${encodeURIComponent(kind)}&registrationId=${encodeURIComponent(registration.id)}`;
   }
   const subjectByReason = {
     submitted: `Kannada Bharati ${label} received`,
@@ -1028,6 +1270,34 @@ async function sendRegistrationEmail(registration, reason = 'submitted') {
 }
 
 async function createRegistrationRecord(payload, { sendEmail = true } = {}) {
+  const supabase = requireSupabase();
+  const email = String(payload.email || '').toLowerCase();
+  const member = String(payload.familyMember || payload.studentName || payload.student_name || '').toLowerCase();
+  if (email && member && payload.program) {
+    const { data: existingRows, error: existingError } = await supabase
+      .from('kb_registrations')
+      .select('*')
+      .eq('email', email)
+      .eq('program', payload.program)
+      .order('created_at', { ascending: false });
+    if (existingError) throw existingError;
+    const reusable = (existingRows || []).find((row) => (
+      String(row.family_member || row.student_name || '').toLowerCase() === member
+      && (row.enabled === false || ['deleted', 'disabled', 'cancelled', 'payment cancelled'].includes(String(row.status || '').toLowerCase()))
+    ));
+    if (reusable?.id) {
+      const revived = await updateRecord('kb_registrations', reusable.id, {
+        ...payload,
+        enabled: true,
+        status: payload.status || 'Submitted',
+        paid: false,
+        paymentReceived: false,
+        emailStatus: null
+      });
+      if (sendEmail) await sendRegistrationEmail(revived, revived.status === 'Confirmed' ? 'confirmed' : 'submitted');
+      return revived;
+    }
+  }
   const registration = await insertRecord('kb_registrations', payload);
   if (sendEmail) {
     await sendRegistrationEmail(registration, registration.status === 'Confirmed' ? 'confirmed' : 'submitted');
@@ -1097,6 +1367,17 @@ async function insertOptionalRecord(table, payload) {
   }
 }
 
+async function insertDefaulterHistory(payload) {
+  const saved = await insertOptionalRecord('kb_defaulter_history', payload);
+  if (saved) return saved;
+  return insertOptionalRecord('kb_defaulter_history', {
+    user_email: payload.user_email,
+    is_defaulter: payload.is_defaulter,
+    notes: payload.notes,
+    set_by: payload.set_by || payload.reset_by || null
+  });
+}
+
 async function queueEmail({ to, subject, template, payload }) {
   return insertOptionalRecord('kb_email_outbox', {
     to_email: to,
@@ -1134,6 +1415,7 @@ function renderEmail({ subject, template, payload = {} }) {
   const introByTemplate = {
     'confirm-email': 'Please confirm your Kannada Bharati account.',
     'forgot-password': 'Use the link below to reset your Kannada Bharati password.',
+    'two-factor-code': `Use this code to finish signing in: ${payload.code || ''}`,
     'registration-update': 'Your Kannada Bharati registration has been updated.',
     'class-registration': 'Your class registration details are below.',
     'payment-confirmation': 'Thank you. Your payment has been received.',
@@ -1161,6 +1443,56 @@ function renderEmail({ subject, template, payload = {} }) {
     </div>
   `;
   return { text, html };
+}
+
+function sampleTemplateMessage(template) {
+  const registration = {
+    id: 'sample-registration',
+    program: 'Kannada Bharati Paata Shaale',
+    family_member: 'Sample Student',
+    student_name: 'Sample Student',
+    parent_name: 'Sample Parent',
+    email: adminEmail,
+    status: 'Submitted',
+    amount: 25,
+    paid: false,
+    payment_received: false
+  };
+  const donation = {
+    name: 'Sample Donor',
+    email: adminEmail,
+    cause_title: 'Kannada Bharati community programs',
+    amount: 101,
+    payment_status: 'Paid'
+  };
+  const messages = {
+    'confirm-email': {
+      subject: 'Confirm your Kannada Bharati account',
+      template: 'confirm-email',
+      payload: { confirmUrl: `${appBaseUrl}/login?confirmToken=sample-token` }
+    },
+    'forgot-password': {
+      subject: 'Reset your Kannada Bharati password',
+      template: 'forgot-password',
+      payload: { resetUrl: `${appBaseUrl}/login?resetToken=sample-token` }
+    },
+    registration: {
+      subject: 'Kannada Bharati registration received',
+      template: 'registration-update',
+      payload: { registration, payUrl: `${appBaseUrl}/events?openPayment=1&registrationId=sample-registration` }
+    },
+    'class-registration': {
+      subject: 'Kannada Bharati class registration received',
+      template: 'class-registration',
+      payload: { registration: { ...registration, registration_type: 'class' }, payUrl: `${appBaseUrl}/admin/profile?openPayment=1&registrationId=sample-registration` }
+    },
+    donation: {
+      subject: 'Kannada Bharati donation confirmation',
+      template: 'donation-confirmation',
+      payload: { donation }
+    }
+  };
+  return messages[template] || messages.registration;
 }
 
 async function sendEmailOrQueue(message) {
@@ -1424,6 +1756,19 @@ app.post('/api/auth/login', asyncHandler(async (req, res) => {
     user = created;
   }
 
+  if (booleanValue(user.two_factor_enabled, false) && email !== adminEmail) {
+    const providers = twoFactorProvidersFor(user);
+    if (!providers.length) {
+      return res.status(403).json({ error: 'Two-factor authentication is enabled, but no verified delivery method is available. Contact an administrator.' });
+    }
+    return res.json({
+      twoFactorRequired: true,
+      twoFactorToken: twoFactorTokenFor(user),
+      providers,
+      rememberMe: booleanValue(req.body.rememberMe || req.body.remember, false)
+    });
+  }
+
   await insertRecord('kb_logins', {
     email,
     role: user.role
@@ -1469,11 +1814,132 @@ app.post('/api/auth/google', asyncHandler(async (req, res) => {
   const { data: user, error: userError } = userResult;
   if (userError) throw userError;
 
+  await insertOptionalRecord('kb_external_logins', {
+    email: user.email,
+    provider: 'Google',
+    provider_key: googleProfile.sub || googleProfile.email,
+    display_name: googleProfile.name || user.name
+  });
+
+  if (booleanValue(user.two_factor_enabled, false) && user.email.toLowerCase() !== adminEmail) {
+    const providers = twoFactorProvidersFor(user);
+    if (!providers.length) {
+      return res.status(403).json({ error: 'Two-factor authentication is enabled, but no verified delivery method is available. Contact an administrator.' });
+    }
+    return res.json({
+      twoFactorRequired: true,
+      twoFactorToken: twoFactorTokenFor(user),
+      providers
+    });
+  }
+
   await insertRecord('kb_logins', {
     email: user.email,
     role: user.role
   });
 
+  res.json({ user: publicUser(user), token: tokenFor(user) });
+}));
+
+app.post('/api/auth/two-factor/send', asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
+  const token = String(req.body.twoFactorToken || req.body.token || '').trim();
+  const provider = String(req.body.provider || '').trim().toLowerCase();
+  const challenge = readTwoFactorToken(token);
+  if (!challenge) return res.status(401).json({ error: 'Two-factor session expired. Please log in again.' });
+  if (!['email', 'phone'].includes(provider)) return res.status(400).json({ error: 'Choose email or text message.' });
+  if (!challenge.providers?.includes(provider)) return res.status(400).json({ error: 'Selected two-factor provider is not available for this account.' });
+
+  const { data: user, error } = await supabase
+    .from('kb_users')
+    .select('*')
+    .eq('email', challenge.email)
+    .maybeSingle();
+  if (error) throw error;
+  if (!user || !booleanValue(user.two_factor_enabled, false)) return res.status(400).json({ error: 'Two-factor authentication is not enabled for this account.' });
+
+  const providers = twoFactorProvidersFor(user);
+  const selected = providers.find((item) => item.id === provider);
+  if (!selected) return res.status(400).json({ error: 'Selected two-factor provider is not verified for this account.' });
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const stored = await insertOptionalRecord('kb_two_factor_challenges', {
+    email: user.email,
+    provider,
+    code,
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    verified: false
+  });
+
+  if (provider === 'phone') {
+    await sendSmsOrStore({
+      to: user.phone,
+      body: `Your Kannada Bharati login code is: ${code}`,
+      payload: { email: user.email, purpose: 'two-factor', challengeId: stored?.id || null }
+    });
+  } else {
+    await sendEmailOrQueue({
+      to: user.email,
+      subject: 'Your Kannada Bharati login code',
+      template: 'two-factor-code',
+      payload: { code, email: user.email, challengeId: stored?.id || null }
+    });
+  }
+
+  res.json({
+    ok: true,
+    challengeId: stored?.id || '',
+    verificationToken: twoFactorVerificationTokenFor({ email: user.email, provider, code, challengeId: stored?.id || '' }),
+    provider,
+    destination: selected.destination,
+    devCode: process.env.NODE_ENV === 'production' ? undefined : code
+  });
+}));
+
+app.post('/api/auth/two-factor/verify', asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
+  const token = String(req.body.twoFactorToken || req.body.token || '').trim();
+  const verificationToken = String(req.body.verificationToken || '').trim();
+  const provider = String(req.body.provider || '').trim().toLowerCase();
+  const code = String(req.body.code || '').trim();
+  const challenge = readTwoFactorToken(token);
+  if (!challenge) return res.status(401).json({ error: 'Two-factor session expired. Please log in again.' });
+  if (!code) return res.status(400).json({ error: 'Verification code is required.' });
+
+  const { data: user, error: userError } = await supabase
+    .from('kb_users')
+    .select('*')
+    .eq('email', challenge.email)
+    .maybeSingle();
+  if (userError) throw userError;
+  if (!user) return res.status(401).json({ error: 'Account was not found.' });
+
+  let verified = false;
+  const signedCode = readTwoFactorVerificationToken(verificationToken);
+  if (signedCode
+    && signedCode.email === user.email
+    && signedCode.provider === provider
+    && signedCode.codeHash === codeHash(code)) {
+    verified = true;
+  }
+
+  if (!verified) {
+    const { data, error } = await supabase
+      .from('kb_two_factor_challenges')
+      .select('*')
+      .eq('email', user.email)
+      .eq('provider', provider)
+      .eq('code', code)
+      .eq('verified', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error && !['42P01', 'PGRST205'].includes(error.code)) throw error;
+    if (!data || new Date(data.expires_at) < new Date()) return res.status(400).json({ error: 'Verification code is invalid or expired.' });
+    await supabase.from('kb_two_factor_challenges').update({ verified: true }).eq('id', data.id);
+  }
+
+  await insertRecord('kb_logins', { email: user.email, role: user.role });
   res.json({ user: publicUser(user), token: tokenFor(user) });
 }));
 
@@ -1706,11 +2172,15 @@ app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (re
 app.patch('/api/admin/users/:id', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const user = await updateRecord('kb_users', req.params.id, req.body);
   if (req.body.isVolunteeringDefaulter !== undefined || req.body.is_volunteering_defaulter !== undefined) {
-    await insertOptionalRecord('kb_defaulter_history', {
+    const isDefaulter = booleanValue(req.body.isVolunteeringDefaulter ?? req.body.is_volunteering_defaulter, false);
+    await insertDefaulterHistory({
       user_email: user.email,
-      is_defaulter: booleanValue(req.body.isVolunteeringDefaulter ?? req.body.is_volunteering_defaulter, false),
+      is_defaulter: isDefaulter,
       notes: req.body.defaulterNotes || req.body.defaulter_notes || null,
-      set_by: req.user.email
+      set_by: isDefaulter ? req.user.email : null,
+      reset_by: isDefaulter ? null : req.user.email,
+      set_date: new Date().toISOString(),
+      reset_date: isDefaulter ? null : new Date().toISOString()
     });
   }
   res.json(user);
@@ -1772,7 +2242,7 @@ app.get('/api/auth/external-logins', authenticate, asyncHandler(async (req, res)
     email: req.user.email,
     logins: [
       user?.password_hash ? { provider: 'Local password', connected: true } : { provider: 'Local password', connected: false },
-      { provider: 'Google', connected: booleanValue(user?.email_confirmed, false) || linkedProviders.has('google') }
+      { provider: 'Google', connected: linkedProviders.has('google') }
     ]
   });
 }));
@@ -1781,12 +2251,26 @@ app.post('/api/auth/external-logins', authenticate, asyncHandler(async (req, res
   const provider = String(req.body.provider || '').trim() || 'Google';
   if (!provider) return res.status(400).json({ error: 'Provider is required.' });
   const supabase = requireSupabase();
+  let providerKey = req.user.email.toLowerCase();
+  let displayName = req.user.name || req.user.email;
+  if (provider.toLowerCase() === 'google') {
+    const googleProfile = await readGoogleProfile({
+      accessToken: req.body.accessToken,
+      credential: req.body.credential
+    });
+    if (googleProfile.email !== req.user.email.toLowerCase()) {
+      return res.status(400).json({ error: `This Google account belongs to ${googleProfile.email}. Sign in with ${req.user.email} to connect it.` });
+    }
+    providerKey = googleProfile.sub || googleProfile.email;
+    displayName = googleProfile.name || displayName;
+  }
   const { data, error } = await supabase
     .from('kb_external_logins')
     .upsert({
     email: req.user.email.toLowerCase(),
     provider,
-    provider_key: req.user.email.toLowerCase()
+    provider_key: providerKey,
+    display_name: displayName
     }, { onConflict: 'email,provider' })
     .select('*')
     .single();
@@ -1800,6 +2284,16 @@ app.delete('/api/auth/external-logins/:provider', authenticate, asyncHandler(asy
     return res.status(400).json({ error: 'Only external providers can be removed here.' });
   }
   const supabase = requireSupabase();
+  const [userResult, externalResult] = await Promise.all([
+    supabase.from('kb_users').select('password_hash').eq('email', req.user.email.toLowerCase()).maybeSingle(),
+    supabase.from('kb_external_logins').select('*').eq('email', req.user.email.toLowerCase())
+  ]);
+  if (userResult.error) throw userResult.error;
+  if (externalResult.error && !['42P01', 'PGRST205'].includes(externalResult.error.code)) throw externalResult.error;
+  const remainingExternal = (externalResult.data || []).filter((login) => String(login.provider || '').toLowerCase() !== provider.toLowerCase());
+  if (!userResult.data?.password_hash && remainingExternal.length === 0) {
+    return res.status(400).json({ error: 'Create a local password before removing your last external login.' });
+  }
   const { error } = await supabase
     .from('kb_external_logins')
     .delete()
@@ -1845,8 +2339,26 @@ app.post('/api/auth/verify-phone/confirm', authenticate, asyncHandler(async (req
   if (error) throw error;
   if (!data || new Date(data.expires_at) < new Date()) return res.status(400).json({ error: 'Verification code is invalid or expired.' });
   await supabase.from('kb_phone_verifications').update({ verified: true }).eq('id', data.id);
-  await supabase.from('kb_users').update({ phone, updated_at: new Date().toISOString() }).eq('email', req.user.email);
-  res.json({ ok: true });
+  const { data: user, error: updateError } = await supabase
+    .from('kb_users')
+    .update({ phone, phone_confirmed: true, updated_at: new Date().toISOString() })
+    .eq('email', req.user.email)
+    .select('*')
+    .single();
+  if (updateError) throw updateError;
+  res.json({ ok: true, user: publicUser(user), token: tokenFor(user) });
+}));
+
+app.delete('/api/auth/phone', authenticate, asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
+  const { data: user, error } = await supabase
+    .from('kb_users')
+    .update({ phone: null, phone_confirmed: false, updated_at: new Date().toISOString() })
+    .eq('email', req.user.email)
+    .select('*')
+    .single();
+  if (error) throw error;
+  res.json({ ok: true, user: publicUser(user), token: tokenFor(user) });
 }));
 
 app.post('/api/registrations/:id/action', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
@@ -2004,85 +2516,105 @@ app.post('/api/payments/paypal/orders/:orderId/capture', asyncHandler(async (req
   });
 }));
 
-app.post('/api/payments/:kind/create', asyncHandler(async (req, res) => {
-  const kind = String(req.params.kind || '').toLowerCase();
-  if (!['event', 'class', 'guest-event', 'guest'].includes(kind)) return res.status(404).json({ error: 'Unknown payment type.' });
-  const amount = numberValue(req.body.amount || req.body.fee, 0);
-  if (amount <= 0) return res.status(400).json({ error: 'Payment amount must be greater than zero.' });
+async function startRegistrationPaymentFlow(kind, body = {}) {
+  if (!['event', 'class', 'guest-event', 'guest'].includes(kind)) {
+    const error = new Error('Unknown payment type.');
+    error.status = 404;
+    throw error;
+  }
+  const amount = numberValue(body.amount || body.totalPrice || body.TotalPrice || body.fee, 0);
+  if (amount <= 0) {
+    const error = new Error('Payment amount must be greater than zero.');
+    error.status = 400;
+    throw error;
+  }
 
-  let registrationId = req.body.registrationId;
-  if (!registrationId && req.body.email) {
+  let registrationId = body.registrationId || body.invoiceId || body.InvoiceId;
+  if (!registrationId && body.email) {
     const calculated = await calculateRegistrationPayload({
-      parentName: req.body.parentName || req.body.name || req.body.email,
-      studentName: req.body.studentName || req.body.familyMember || req.body.name || '-',
-      familyMember: req.body.familyMember || req.body.studentName || req.body.name || '-',
-      email: String(req.body.email).toLowerCase(),
-      phone: req.body.phone || null,
-      program: req.body.program || req.body.eventTitle || req.body.classTitle || 'Guest registration',
-      eventId: req.body.eventId || null,
+      parentName: body.parentName || body.name || body.email,
+      studentName: body.studentName || body.familyMember || body.name || '-',
+      familyMember: body.familyMember || body.studentName || body.name || '-',
+      email: String(body.email).toLowerCase(),
+      phone: body.phone || null,
+      program: body.program || body.eventTitle || body.classTitle || 'Guest registration',
+      eventId: body.eventId || body.EventId || null,
       amount,
       paid: false,
       paymentReceived: false,
       registrationType: kind.includes('guest') ? 'guest' : kind,
       status: 'Submitted',
-      adults: req.body.adults,
-      kids: req.body.kids,
-      youngKids: req.body.youngKids,
-      seats: req.body.seats,
-      totalMembers: req.body.totalMembers,
-      priceSelection: req.body.priceSelection,
-      isVolunteer: req.body.isVolunteer,
-      isDefaulter: req.body.isDefaulter,
-      rsvp: req.body.rsvp
+      adults: body.adults,
+      kids: body.kids,
+      youngKids: body.youngKids,
+      seats: body.seats,
+      totalMembers: body.totalMembers || body.membersCount || body.MembersCount,
+      priceSelection: body.priceSelection,
+      isVolunteer: body.isVolunteer,
+      isDefaulter: body.isDefaulter,
+      rsvp: body.rsvp || body.Rsvp
     });
     const registration = await createRegistrationRecord(calculated);
     registrationId = registration.id;
   }
 
-  const token = await paypalAccessToken();
-  const returnUrl = req.body.returnUrl || `${appBaseUrl}/profile?payment=complete`;
-  const cancelUrl = req.body.cancelUrl || `${appBaseUrl}/profile?payment=cancel`;
-  const order = await fetchJson(`${paypalBaseUrl}/v2/checkout/orders`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      intent: 'CAPTURE',
-      purchase_units: [{
-        description: req.body.description || `Kannada Bharati ${kind} registration`,
-        custom_id: registrationId || undefined,
-        amount: {
-          currency_code: 'USD',
-          value: amount.toFixed(2)
-        }
-      }],
-      application_context: {
-        brand_name: 'Kannada Bharati',
-        landing_page: 'LOGIN',
-        user_action: 'PAY_NOW',
-        return_url: returnUrl,
-        cancel_url: cancelUrl
-      }
-    })
-  });
-
-  res.status(201).json({
+  const returnUrl = body.returnUrl || `${appBaseUrl}/profile?payment=complete`;
+  const cancelUrl = body.cancelUrl || `${appBaseUrl}/profile?payment=cancel`;
+  const created = await createPayPalRegistrationOrder({
+    kind,
     registrationId,
-    orderId: order.id,
-    approvalUrl: order.links?.find((link) => link.rel === 'approve')?.href
+    amount,
+    description: body.description || `Kannada Bharati ${kind} registration`,
+    returnUrl,
+    cancelUrl
   });
-}));
 
-app.post('/api/payments/:kind/complete', asyncHandler(async (req, res) => {
-  const kind = String(req.params.kind || '').toLowerCase();
-  if (!['event', 'class', 'guest-event', 'guest'].includes(kind)) return res.status(404).json({ error: 'Unknown payment type.' });
-  const orderId = req.body.orderId || req.body.token;
-  if (!orderId) return res.status(400).json({ error: 'PayPal order id is required.' });
+  if (registrationId) {
+    const existing = await getRegistrationById(registrationId);
+    if (existing) {
+      const fallbackDetails = paypalPaymentDetails({
+        kind,
+        order: created.order,
+        phase: 'Created',
+        amount,
+        registration: existing
+      });
+      await updateRegistrationPaymentState(registrationId, {
+        status: 'Created',
+        paymentStatus: 'Created',
+        invoiceId: existing.invoice_id || registrationId,
+        paypalOrderId: created.orderId,
+        paypalOrder: created.order,
+        priceMenu: mergePaymentDetails(existing.price_menu, fallbackDetails)
+      }, fallbackDetails);
+    }
+  }
 
+  return {
+    registrationId,
+    invoiceId: registrationId,
+    orderId: created.orderId,
+    approvalUrl: created.approvalUrl,
+    paypalOrder: created.order
+  };
+}
+
+async function completeRegistrationPaymentFlow(kind, body = {}) {
+  if (!['event', 'class', 'guest-event', 'guest'].includes(kind)) {
+    const error = new Error('Unknown payment type.');
+    error.status = 404;
+    throw error;
+  }
+  const orderId = body.orderId || body.token || body.PaypalOrder?.id || body.paypalOrder?.id;
+  if (!orderId) {
+    const error = new Error('PayPal order id is required.');
+    error.status = 400;
+    throw error;
+  }
+  const registrationId = body.registrationId || body.invoiceId || body.InvoiceId;
+  const existingRegistration = registrationId ? await getRegistrationById(registrationId) : null;
   const token = await paypalAccessToken();
-  const payment = await fetchJson(`${paypalBaseUrl}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {
+  const payment = body.paypalPayment || body.PaypalPayment || await fetchJson(`${paypalBaseUrl}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -2092,22 +2624,127 @@ app.post('/api/payments/:kind/complete', asyncHandler(async (req, res) => {
   const capture = payment.purchase_units?.[0]?.payments?.captures?.[0];
   const customId = payment.purchase_units?.[0]?.custom_id;
   const registration = await markRegistrationPaid({
-    registrationId: req.body.registrationId || customId,
-    orderId: payment.id,
-    captureId: capture?.id || null,
+    registrationId: registrationId || customId,
+    orderId: payment.id || orderId,
+    captureId: capture?.id || body.captureId || null,
     paymentPayload: payment,
-    status: req.body.status || 'Confirmed'
+    paypalOrder: body.paypalOrder || body.PaypalOrder || existingRegistration?.paypal_order || null,
+    kind,
+    status: body.status
   });
-  res.json({ paymentStatus: payment.status, orderId: payment.id, captureId: capture?.id || null, registration });
+  return { paymentStatus: payment.status || 'COMPLETED', orderId: payment.id || orderId, captureId: capture?.id || body.captureId || null, registration };
+}
+
+async function cancelRegistrationPaymentFlow(kind, body = {}) {
+  const registrationId = body.registrationId || body.invoiceId || body.InvoiceId;
+  let registration = null;
+  if (registrationId) {
+    const existing = await getRegistrationById(registrationId);
+    if (existing && String(existing.status || '').toLowerCase() === 'created') {
+      await deleteRecord('kb_registrations', registrationId);
+    } else if (existing) {
+      const fallbackDetails = paypalPaymentDetails({
+        kind,
+        order: body.paypalOrder || body.PaypalOrder || existing.paypal_order,
+        phase: 'Cancelled',
+        registration: existing
+      });
+      registration = await updateRegistrationPaymentState(registrationId, {
+        status: 'Payment Cancelled',
+        paymentStatus: 'Cancelled',
+        paymentReceived: false,
+        paymentCancelledAt: new Date().toISOString(),
+        priceMenu: mergePaymentDetails(existing.price_menu, fallbackDetails)
+      }, fallbackDetails);
+    }
+  }
+  return { ok: true, registration };
+}
+
+app.post('/api/payment/event/create', authenticate, asyncHandler(async (req, res) => {
+  res.status(201).json(await startRegistrationPaymentFlow('event', req.body));
+}));
+
+app.post('/api/payment/event/complete', authenticate, asyncHandler(async (req, res) => {
+  res.json(await completeRegistrationPaymentFlow('event', req.body));
+}));
+
+app.post('/api/payment/event/cancel', authenticate, asyncHandler(async (req, res) => {
+  res.json(await cancelRegistrationPaymentFlow('event', req.body));
+}));
+
+app.post('/api/payment/classevent/create', authenticate, asyncHandler(async (req, res) => {
+  res.status(201).json(await startRegistrationPaymentFlow('class', req.body));
+}));
+
+app.post('/api/payment/classevent/complete', authenticate, asyncHandler(async (req, res) => {
+  res.json(await completeRegistrationPaymentFlow('class', req.body));
+}));
+
+app.post('/api/payment/classevent/cancel', authenticate, asyncHandler(async (req, res) => {
+  res.json(await cancelRegistrationPaymentFlow('class', req.body));
+}));
+
+app.post('/api/guestpayment/guestevent/create', asyncHandler(async (req, res) => {
+  res.status(201).json(await startRegistrationPaymentFlow('guest-event', req.body));
+}));
+
+app.post('/api/guestpayment/guestevent/complete', asyncHandler(async (req, res) => {
+  res.json(await completeRegistrationPaymentFlow('guest-event', req.body));
+}));
+
+app.post('/api/guestpayment/guestevent/cancel', asyncHandler(async (req, res) => {
+  res.json(await cancelRegistrationPaymentFlow('guest-event', req.body));
+}));
+
+app.post('/payment/event/create', authenticate, asyncHandler(async (req, res) => {
+  res.status(201).json(await startRegistrationPaymentFlow('event', req.body));
+}));
+
+app.post('/payment/event/complete', authenticate, asyncHandler(async (req, res) => {
+  res.json(await completeRegistrationPaymentFlow('event', req.body));
+}));
+
+app.post('/payment/event/cancel', authenticate, asyncHandler(async (req, res) => {
+  res.json(await cancelRegistrationPaymentFlow('event', req.body));
+}));
+
+app.post('/payment/classevent/create', authenticate, asyncHandler(async (req, res) => {
+  res.status(201).json(await startRegistrationPaymentFlow('class', req.body));
+}));
+
+app.post('/payment/classevent/complete', authenticate, asyncHandler(async (req, res) => {
+  res.json(await completeRegistrationPaymentFlow('class', req.body));
+}));
+
+app.post('/payment/classevent/cancel', authenticate, asyncHandler(async (req, res) => {
+  res.json(await cancelRegistrationPaymentFlow('class', req.body));
+}));
+
+app.post('/guestpayment/guestevent/create', asyncHandler(async (req, res) => {
+  res.status(201).json(await startRegistrationPaymentFlow('guest-event', req.body));
+}));
+
+app.post('/guestpayment/guestevent/complete', asyncHandler(async (req, res) => {
+  res.json(await completeRegistrationPaymentFlow('guest-event', req.body));
+}));
+
+app.post('/guestpayment/guestevent/cancel', asyncHandler(async (req, res) => {
+  res.json(await cancelRegistrationPaymentFlow('guest-event', req.body));
+}));
+
+app.post('/api/payments/:kind/create', asyncHandler(async (req, res) => {
+  const kind = String(req.params.kind || '').toLowerCase();
+  res.status(201).json(await startRegistrationPaymentFlow(kind, req.body));
+}));
+
+app.post('/api/payments/:kind/complete', asyncHandler(async (req, res) => {
+  const kind = String(req.params.kind || '').toLowerCase();
+  res.json(await completeRegistrationPaymentFlow(kind, req.body));
 }));
 
 app.post('/api/payments/:kind/cancel', asyncHandler(async (req, res) => {
-  const registrationId = req.body.registrationId;
-  const registration = registrationId ? await updateRecord('kb_registrations', registrationId, {
-    status: 'Payment Cancelled',
-    paymentReceived: false
-  }) : null;
-  res.json({ ok: true, registration });
+  res.json(await cancelRegistrationPaymentFlow(String(req.params.kind || '').toLowerCase(), req.body));
 }));
 
 app.get('/api/eventmgmt/seats', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
@@ -2256,6 +2893,26 @@ app.post('/api/email-outbox/test', authenticate, requireAdmin, asyncHandler(asyn
     if (queued?.id) await updateRecord('kb_email_outbox', queued.id, { status: 'Failed' });
     throw sendError;
   }
+}));
+
+app.get('/api/developer/email-templates/:template', asyncHandler(async (req, res) => {
+  const message = sampleTemplateMessage(String(req.params.template || '').toLowerCase());
+  const rendered = renderEmail(message);
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>${message.subject}</title></head><body>${rendered.html}</body></html>`);
+}));
+
+app.get('/admin/developer/:template', asyncHandler(async (req, res) => {
+  const aliases = {
+    confirmemail: 'confirm-email',
+    forgotpassword: 'forgot-password',
+    registration: 'registration',
+    classregistration: 'class-registration',
+    donation: 'donation'
+  };
+  const key = aliases[String(req.params.template || '').toLowerCase()] || String(req.params.template || '').toLowerCase();
+  const message = sampleTemplateMessage(key);
+  const rendered = renderEmail(message);
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>${message.subject}</title></head><body>${rendered.html}</body></html>`);
 }));
 
 app.get('/api/submissions/:type', authenticate, requireAdmin, asyncHandler(async (req, res) => {

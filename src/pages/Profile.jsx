@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { Camera, CheckCircle2, ReceiptText, Plus, Trash2, X } from 'lucide-react';
-import { getCurrentUser, readJson, writeJson } from '../utils/storage.js';
+import { getCurrentUser, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
 import {
   apiAddProfileChild,
   apiAdminDashboard,
@@ -12,6 +12,7 @@ import {
   apiDeleteProfileChild,
   apiLinkExternalLogin,
   apiReadExternalLogins,
+  apiRemovePhone,
   apiReadProfile,
   apiRemoveExternalLogin,
   apiSaveProfile,
@@ -22,6 +23,7 @@ import {
 } from '../utils/api.js';
 import { cleanText, firstError, validateDateOrder, validateImageFile, validatePhone, validateRequired } from '../utils/validation.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import DatePicker from '../components/DatePicker.jsx';
 
 function profileKey(email) {
   return `kb-member-profile-${String(email || 'guest').toLowerCase()}`;
@@ -48,12 +50,36 @@ function scrollToProfileSection(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+function loadGoogleIdentityScript() {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
 export default function Profile() {
   const { tr } = useLanguage();
   const user = getCurrentUser();
   const [searchParams] = useSearchParams();
   if (!user) return <Navigate to="/login" replace />;
 
+  const [accountUser, setAccountUser] = useState(user);
   const [profile, setProfile] = useState(() => readJson(profileKey(user.email), {}));
   const [children, setChildren] = useState(() => readJson(childrenKey(user.email), []));
   const [error, setError] = useState('');
@@ -68,6 +94,7 @@ export default function Profile() {
   const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [paymentMessage, setPaymentMessage] = useState('');
   const [paymentError, setPaymentError] = useState('');
+  const googleTokenClientRef = useRef(null);
 
   useEffect(() => {
     apiReadProfile()
@@ -173,7 +200,11 @@ export default function Profile() {
     setAccountMessage('');
     const code = cleanText(new FormData(event.currentTarget).get('code'));
     try {
-      await apiConfirmPhoneVerification({ phone: phoneVerification.phone, code });
+      const result = await apiConfirmPhoneVerification({ phone: phoneVerification.phone, code });
+      if (result.user) {
+        setCurrentUser(result.user);
+        setAccountUser(result.user);
+      }
       setProfile((current) => ({ ...current, phone: phoneVerification.phone }));
       setPhoneVerification({ phone: '', code: '', sent: false, devCode: '' });
       setAccountMessage('Phone number verified.');
@@ -187,7 +218,9 @@ export default function Profile() {
     setTwoFactorEnabled(enabled);
     setAccountError('');
     try {
-      await apiSetTwoFactor(enabled);
+      const updatedUser = await apiSetTwoFactor(enabled);
+      setCurrentUser(updatedUser);
+      setAccountUser(updatedUser);
       setAccountMessage(enabled ? 'Two-factor authentication enabled.' : 'Two-factor authentication disabled.');
     } catch (error) {
       setTwoFactorEnabled(!enabled);
@@ -244,6 +277,25 @@ export default function Profile() {
       if (connected) {
         await apiRemoveExternalLogin(provider);
         setAccountMessage(`${provider} login removed.`);
+      } else if (provider.toLowerCase() === 'google') {
+        if (!googleClientId) {
+          setAccountError('Google login is not configured.');
+          return;
+        }
+        await loadGoogleIdentityScript();
+        const accessToken = await new Promise((resolve, reject) => {
+          googleTokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+            client_id: googleClientId,
+            scope: 'openid email profile',
+            callback: (response) => {
+              if (response.error) reject(new Error(response.error_description || 'Google login failed.'));
+              else resolve(response.access_token);
+            }
+          });
+          googleTokenClientRef.current.requestAccessToken();
+        });
+        await apiLinkExternalLogin(provider, { accessToken });
+        setAccountMessage(`${provider} login connected.`);
       } else {
         await apiLinkExternalLogin(provider);
         setAccountMessage(`${provider} login connected.`);
@@ -251,6 +303,23 @@ export default function Profile() {
       await refreshExternalLogins();
     } catch (error) {
       setAccountError(error.message || `${provider} login could not be updated.`);
+    }
+  }
+
+  async function handleRemovePhone() {
+    setAccountError('');
+    setAccountMessage('');
+    try {
+      const result = await apiRemovePhone();
+      if (result.user) {
+        setCurrentUser(result.user);
+        setAccountUser(result.user);
+      }
+      setProfile((current) => ({ ...current, phone: '' }));
+      setPhoneVerification({ phone: '', code: '', sent: false, devCode: '' });
+      setAccountMessage('Phone number removed.');
+    } catch (error) {
+      setAccountError(error.message || 'Phone number could not be removed.');
     }
   }
 
@@ -408,7 +477,7 @@ export default function Profile() {
               <label>Last name *<input name="lastName" defaultValue={profile.lastName || user.lastName || user.name?.split(' ').slice(1).join(' ') || ''} required /></label>
             </div>
             <div className="form-two">
-              <label>Date of birth *<input name="birthDate" type="date" defaultValue={profile.birthDate || ''} required /></label>
+              <label>Date of birth *<DatePicker name="birthDate" defaultValue={profile.birthDate || ''} required placeholder="Choose date of birth" /></label>
               <label>Phone number *<input name="phone" type="tel" defaultValue={profile.phone || user.phone || ''} required /></label>
             </div>
             <div className="form-two">
@@ -433,7 +502,7 @@ export default function Profile() {
               <label>First name<input name="spouseFirstName" defaultValue={profile.spouseFirstName || ''} /></label>
               <label>Last name<input name="spouseLastName" defaultValue={profile.spouseLastName || ''} /></label>
             </div>
-            <label>Date of birth<input name="spouseBirthDate" type="date" defaultValue={profile.spouseBirthDate || ''} /></label>
+            <label>Date of birth<DatePicker name="spouseBirthDate" defaultValue={profile.spouseBirthDate || ''} placeholder="Choose date of birth" /></label>
 
             {error && <p className="form-error">{error}</p>}
             {saved && <p className="success">Profile saved.</p>}
@@ -481,6 +550,9 @@ export default function Profile() {
                 <label>Verification code <input name="code" defaultValue={phoneVerification.devCode} required /></label>
                 <button className="button primary" type="submit">Verify Phone</button>
               </form>
+            )}
+            {(profile.phone || accountUser.phone) && (
+              <button className="mini-action-link danger" type="button" onClick={handleRemovePhone}>Remove phone number</button>
             )}
             <label id="two-factor" className="security-toggle">
               <span>
@@ -543,7 +615,7 @@ export default function Profile() {
                 <option>Female</option>
                 <option>Prefer not to say</option>
               </select>
-              <input name="birthDate" type="date" />
+              <DatePicker name="birthDate" placeholder="Child date of birth" />
               <button className="button compact" type="submit"><Plus size={16} /> Add child</button>
             </form>
             {childError && <p className="form-error">{childError}</p>}

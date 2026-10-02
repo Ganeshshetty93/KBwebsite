@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import PageHero from '../components/PageHero.jsx';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
+import DatePicker from '../components/DatePicker.jsx';
 import { culturalClasses, events, paataShaaleLevels } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { appendRecord, getCurrentUser, isAdmin, readJson } from '../utils/storage.js';
@@ -382,7 +383,15 @@ export default function AdminDashboard() {
             </label>
             <label>
               Expense date
-              <input name="expenseDate" type="date" required />
+              <DatePicker
+                name="expenseDate"
+                required
+                placeholder="Choose expense date"
+                quickOptions={[
+                  { label: 'Yesterday', offsetDays: -1 },
+                  { label: 'Last week', offsetDays: -7 }
+                ]}
+              />
             </label>
           </div>
           <label>

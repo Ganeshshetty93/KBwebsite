@@ -55,6 +55,7 @@ function normalizeRegistration(row) {
     || String(row.paid || '').toLowerCase() === 'paid'
     || String(row.payment_received || row.paymentReceived || '').toLowerCase() === 'true';
   const priceMenu = row.price_menu || row.priceMenu || null;
+  const paymentDetails = row.payment_details || row.paymentDetails || priceMenu?.paymentDetails || null;
   return {
     ...normalizeBase(row),
     parentName: row.parent_name || row.parentName || row.name,
@@ -78,7 +79,15 @@ function normalizeRegistration(row) {
     registrationType: row.registration_type || row.registrationType || 'member',
     rsvp: row.rsvp || null,
     priceMenu,
-    paymentDetails: row.payment_details || row.paymentDetails || priceMenu?.paymentDetails || null,
+    paymentStatus: row.payment_status || row.paymentStatus || paymentDetails?.status || (paid ? 'Paid' : 'Pending'),
+    invoiceId: row.invoice_id || row.invoiceId || paymentDetails?.invoiceId || '',
+    paypalOrderId: row.paypal_order_id || row.paypalOrderId || paymentDetails?.orderId || '',
+    paypalCaptureId: row.paypal_capture_id || row.paypalCaptureId || paymentDetails?.captureId || '',
+    paypalOrder: row.paypal_order || row.paypalOrder || null,
+    paypalPayment: row.paypal_payment || row.paypalPayment || null,
+    paymentCompletedAt: row.payment_completed_at || row.paymentCompletedAt || '',
+    paymentCancelledAt: row.payment_cancelled_at || row.paymentCancelledAt || '',
+    paymentDetails,
     paymentReceived: paid,
     checkedIn: row.checked_in ?? row.checkedIn ?? false,
     checkedInAt: row.checked_in_at || row.checkedInAt || '',
@@ -181,6 +190,8 @@ export function normalizeEvent(row) {
     price: Number(row.price || 0),
     isAllDay: row.is_all_day ?? row.isAllDay,
     isAgeRestricted: row.is_age_restricted ?? row.isAgeRestricted,
+    minAge: row.min_age ?? row.minAge ?? '',
+    maxAge: row.max_age ?? row.maxAge ?? '',
     isPaymentRequired: row.is_payment_required ?? row.isPaymentRequired,
     enableDefaulterFine: row.enable_defaulter_fine ?? row.enableDefaulterFine,
     isOpenForRegistration: row.is_open_for_registration ?? row.isOpenForRegistration,
@@ -192,6 +203,8 @@ export function normalizeEvent(row) {
     enableVolunteerDiscount: row.enable_volunteer_discount ?? row.enableVolunteerDiscount,
     volunteerDiscountPercentage: Number(row.volunteer_discount_percentage || row.volunteerDiscountPercentage || 0),
     defaulterFineAmount: Number(row.defaulter_fine_amount || row.defaulterFineAmount || 0),
+    registrationInfo: row.registration_info || row.registrationInfo || null,
+    teachers: row.teachers || [],
     rsvp: row.rsvp || null,
     priceMenu: row.price_menu || row.priceMenu || null,
     photo: row.photo
@@ -551,12 +564,31 @@ export async function apiLogin(payload) {
     body: JSON.stringify(payload)
   });
 
+  if (data.twoFactorRequired) return data;
   localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
   return data.user;
 }
 
 export async function apiGoogleLogin(payload) {
   const data = await request('/auth/google', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  if (data.twoFactorRequired) return data;
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
+export async function apiSendTwoFactorCode(payload) {
+  return request('/auth/two-factor/send', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiVerifyTwoFactorCode(payload) {
+  const data = await request('/auth/two-factor/verify', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
@@ -626,10 +658,10 @@ export async function apiReadExternalLogins() {
   return request('/auth/external-logins');
 }
 
-export async function apiLinkExternalLogin(provider) {
+export async function apiLinkExternalLogin(provider, payload = {}) {
   return request('/auth/external-logins', {
     method: 'POST',
-    body: JSON.stringify({ provider })
+    body: JSON.stringify({ provider, ...payload })
   });
 }
 
@@ -647,10 +679,22 @@ export async function apiStartPhoneVerification(phone) {
 }
 
 export async function apiConfirmPhoneVerification(payload) {
-  return request('/auth/verify-phone/confirm', {
+  const data = await request('/auth/verify-phone/confirm', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
+
+  if (data.token) localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data;
+}
+
+export async function apiRemovePhone() {
+  const data = await request('/auth/phone', {
+    method: 'DELETE'
+  });
+
+  if (data.token) localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data;
 }
 
 export async function apiReadProfile() {

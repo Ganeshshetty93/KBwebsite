@@ -205,6 +205,7 @@ export default function ClassCard({ item, registerSignal = 0 }) {
       && registration.program === item.title
       && (registration.studentName === member.name || registration.familyMember === member.name)
       && registration.status !== 'Deleted'
+      && registration.enabled !== false
     ));
     if (existing) {
       setMemberError('This member is already registered for this class.');
