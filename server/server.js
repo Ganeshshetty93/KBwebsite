@@ -12,7 +12,14 @@ import { submissionTables } from './tableMap.js';
 const app = express();
 const port = process.env.PORT || 4000;
 const adminEmail = (process.env.ADMIN_EMAIL || 'ganeshshetty93@gmail.com').toLowerCase();
-const jwtSecret = process.env.JWT_SECRET || 'dev-only-change-this-secret';
+const configuredJwtSecret = process.env.JWT_SECRET || '';
+if (process.env.NODE_ENV === 'production' && configuredJwtSecret.length < 32) {
+  throw new Error('JWT_SECRET must be set to at least 32 characters in production.');
+}
+const jwtSecret = configuredJwtSecret || crypto.randomBytes(48).toString('hex');
+if (!configuredJwtSecret) {
+  console.warn('JWT_SECRET is not set. A temporary development secret was generated; existing logins will expire when the server restarts.');
+}
 const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '';
 const paypalClientId = process.env.PAYPAL_CLIENT_ID || '';
 const paypalClientSecret = process.env.PAYPAL_CLIENT_SECRET || '';
@@ -34,6 +41,7 @@ const paypalBaseUrl = (process.env.PAYPAL_ENV || 'live').toLowerCase() === 'sand
 const appBaseUrl = process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'http://localhost:5174';
 const kbPaypalDonateUrl = process.env.KB_PAYPAL_DONATE_URL || 'https://www.paypal.com/donate?token=yXa3TfA1QxdZl-dL-PRMtJzuNTDf_55QcI_FQp48Twwc1UBYepRrXg79VpA_BqL2NoCnFjuGg9CrKgMJ';
 const roleNames = ['member', 'admin', 'superadmin', 'receptionist', 'teacher', 'volunteer', 'treasurer'];
+const isProduction = process.env.NODE_ENV === 'production';
 const allowedOrigins = new Set([
   process.env.CLIENT_ORIGIN,
   'http://127.0.0.1:5173',
@@ -42,7 +50,7 @@ const allowedOrigins = new Set([
 
 app.use(cors({
   origin(origin, callback) {
-    const isLocalDevOrigin = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin || '');
+    const isLocalDevOrigin = !isProduction && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin || '');
     if (!origin || allowedOrigins.has(origin) || isLocalDevOrigin) {
       callback(null, true);
       return;
@@ -52,6 +60,38 @@ app.use(cors({
   }
 }));
 app.use(express.json({ limit: '12mb' }));
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+const rateLimitBuckets = new Map();
+
+function rateLimit({ windowMs = 15 * 60 * 1000, max = 20 } = {}) {
+  return (req, res, next) => {
+    const key = `${req.ip || req.socket.remoteAddress || 'unknown'}:${req.path}`;
+    const now = Date.now();
+    const bucket = rateLimitBuckets.get(key) || { count: 0, resetAt: now + windowMs };
+    if (bucket.resetAt <= now) {
+      bucket.count = 0;
+      bucket.resetAt = now + windowMs;
+    }
+    bucket.count += 1;
+    rateLimitBuckets.set(key, bucket);
+    res.setHeader('RateLimit-Limit', String(max));
+    res.setHeader('RateLimit-Remaining', String(Math.max(0, max - bucket.count)));
+    res.setHeader('RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+    if (bucket.count > max) {
+      return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+    }
+    return next();
+  };
+}
+
+const authRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 
 function asyncHandler(handler) {
   return async (req, res, next) => {
@@ -187,6 +227,32 @@ function requireRole(...allowedRoles) {
 
     return next();
   };
+}
+
+function requireSubmissionCreateAccess(req, res, next) {
+  const type = String(req.params.type || '').toLowerCase();
+  if (['registration', 'donation', 'volunteer', 'contact'].includes(type)) return next();
+  if (type === 'expense') return authenticate(req, res, () => requireRole('volunteer', 'treasurer')(req, res, next));
+  if (type === 'attendance') return authenticate(req, res, () => requireRole('teacher')(req, res, next));
+  if (type === 'checkin') return authenticate(req, res, () => requireRole('receptionist')(req, res, next));
+  if (['event', 'class', 'fundraiser', 'announcement'].includes(type)) return authenticate(req, res, () => requireAdmin(req, res, next));
+  return res.status(403).json({ error: 'This submission type cannot be created directly.' });
+}
+
+function canManagePayment(user) {
+  return hasAnyRole(user, ['admin', 'superadmin', 'receptionist', 'treasurer']);
+}
+
+function canAccessRegistrationPayment(user, registration) {
+  if (!user || !registration) return false;
+  if (canManagePayment(user)) return true;
+  return String(user.email || '').toLowerCase() === String(registration.email || '').toLowerCase();
+}
+
+function requirePaymentKindAccess(req, res, next) {
+  const kind = String(req.params.kind || req.body.kind || '').toLowerCase();
+  if (['guest', 'guest-event'].includes(kind)) return next();
+  return authenticate(req, res, next);
 }
 
 function normalizeRoles(value) {
@@ -1388,9 +1454,19 @@ async function queueEmail({ to, subject, template, payload }) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function renderEmail({ subject, template, payload = {} }) {
   const registration = payload.registration || {};
   const donation = payload.donation || {};
+  const bulkMessage = payload.message || {};
   const amountDue = Number(registration.amount || 0);
   const registrationPaid = registration.paid === true || registration.payment_received === true;
   const payUrl = amountDue > 0 && !registrationPaid ? payload.payUrl || '' : '';
@@ -1418,27 +1494,34 @@ function renderEmail({ subject, template, payload = {} }) {
     'two-factor-code': `Use this code to finish signing in: ${payload.code || ''}`,
     'registration-update': 'Your Kannada Bharati registration has been updated.',
     'class-registration': 'Your class registration details are below.',
+    'bulk-message': bulkMessage.intro || 'Kannada Bharati has sent you an update.',
     'payment-confirmation': 'Thank you. Your payment has been received.',
     'donation-confirmation': 'Thank you for supporting Kannada Bharati.'
   };
   const intro = introByTemplate[template] || 'Kannada Bharati notification.';
+  const bodyText = template === 'bulk-message' ? String(bulkMessage.body || '').trim() : '';
+  const footerText = template === 'bulk-message' ? String(bulkMessage.footer || '').trim() : '';
   const text = [
     subject,
     '',
     intro,
+    bodyText,
     cta ? `Link: ${cta}` : '',
     payUrl ? `Pay online: ${cta}` : '',
     ...rows.map(([label, value]) => `${label}: ${value}`),
+    footerText,
     '',
     'Kannada Bharati'
   ].filter(Boolean).join('\n');
   const html = `
     <div style="font-family:Arial,sans-serif;color:#102a26;line-height:1.5;max-width:680px">
-      <h2 style="color:#004d46">${subject}</h2>
-      <p>${intro}</p>
+      <h2 style="color:#004d46">${escapeHtml(subject)}</h2>
+      <p>${escapeHtml(intro)}</p>
+      ${bodyText ? `<div style="white-space:pre-line;margin:16px 0">${escapeHtml(bodyText)}</div>` : ''}
       ${payUrl ? `<p style="margin:16px 0 8px"><strong>Payment is pending.</strong> Use the button below to open your account and pay this registration fee.</p>` : ''}
-      ${cta ? `<p><a style="display:inline-block;background:#edae13;color:#111;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700" href="${cta}">${ctaLabel}</a></p>` : ''}
-      ${rows.length ? `<table style="border-collapse:collapse;width:100%;margin-top:16px">${rows.map(([label, value]) => `<tr><th style="text-align:left;background:#f4f7f2;border:1px solid #d7dfda;padding:8px">${label}</th><td style="border:1px solid #d7dfda;padding:8px">${String(value).replace(/</g, '&lt;')}</td></tr>`).join('')}</table>` : ''}
+      ${cta ? `<p><a style="display:inline-block;background:#edae13;color:#111;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700" href="${escapeHtml(cta)}">${escapeHtml(ctaLabel)}</a></p>` : ''}
+      ${rows.length ? `<table style="border-collapse:collapse;width:100%;margin-top:16px">${rows.map(([label, value]) => `<tr><th style="text-align:left;background:#f4f7f2;border:1px solid #d7dfda;padding:8px">${escapeHtml(label)}</th><td style="border:1px solid #d7dfda;padding:8px">${escapeHtml(value)}</td></tr>`).join('')}</table>` : ''}
+      ${footerText ? `<p style="margin-top:18px;color:#51615d">${escapeHtml(footerText)}</p>` : ''}
       <p style="margin-top:18px">Kannada Bharati</p>
     </div>
   `;
@@ -1554,6 +1637,51 @@ async function sendEmailNow(message) {
   };
 }
 
+function uniqueEmailRows(rows = []) {
+  const seen = new Set();
+  return rows
+    .map((row) => ({
+      email: String(row.email || row.to_email || '').trim().toLowerCase(),
+      name: row.name || row.parent_name || row.family_member || row.student_name || row.email || ''
+    }))
+    .filter((row) => {
+      if (!/.+@.+\..+/.test(row.email) || seen.has(row.email)) return false;
+      seen.add(row.email);
+      return true;
+    });
+}
+
+function matchesProgram(row, target) {
+  const value = String(target || '').trim().toLowerCase();
+  if (!value) return false;
+  return [row.program, row.event_id, row.eventId, row.class_key, row.className]
+    .some((item) => String(item || '').trim().toLowerCase() === value);
+}
+
+async function resolveBulkEmailRecipients({ audience, target }) {
+  const scope = String(audience || '').toLowerCase();
+  if (scope === 'all-users') {
+    return uniqueEmailRows(await listTable('kb_users'));
+  }
+
+  if (scope === 'event' || scope === 'class') {
+    const registrations = await listOptionalTable('kb_registrations');
+    return uniqueEmailRows(registrations.filter((row) => {
+      const enabled = row.enabled !== false;
+      const notDeleted = String(row.status || '').toLowerCase() !== 'deleted';
+      const type = String(row.registration_type || row.registrationType || '').toLowerCase();
+      const typeMatches = scope === 'class'
+        ? type === 'class' || /class|paata|shaale|guitar|dance|music|kannada/i.test(row.program || '')
+        : type !== 'class';
+      return enabled && notDeleted && typeMatches && matchesProgram(row, target);
+    }));
+  }
+
+  const error = new Error('Choose all users, an event, or a class audience.');
+  error.status = 400;
+  throw error;
+}
+
 function attachSmtpDelivery(payload = {}, smtp = {}) {
   return {
     ...payload,
@@ -1636,7 +1764,7 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'Kannada Bharati API' });
 });
 
-app.post('/api/auth/register', asyncHandler(async (req, res) => {
+app.post('/api/auth/register', authRateLimit, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
@@ -1703,7 +1831,7 @@ app.post('/api/auth/register', asyncHandler(async (req, res) => {
   res.status(201).json({ user: cleanUser, token: tokenFor(user) });
 }));
 
-app.post('/api/auth/login', asyncHandler(async (req, res) => {
+app.post('/api/auth/login', authRateLimit, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
@@ -1722,10 +1850,12 @@ app.post('/api/auth/login', asyncHandler(async (req, res) => {
 
   let user = existing;
 
-  if (user?.password_hash && email !== adminEmail) {
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) return res.status(401).json({ error: 'Invalid email or password.' });
+  if (!user || !user.password_hash) {
+    return res.status(401).json({ error: 'Invalid email or password.' });
   }
+
+  const ok = await bcrypt.compare(password, user.password_hash);
+  if (!ok) return res.status(401).json({ error: 'Invalid email or password.' });
 
   if (user && email === adminEmail && user.role !== 'admin') {
     const { data: updatedUser, error: updateError } = await supabase
@@ -1737,23 +1867,6 @@ app.post('/api/auth/login', asyncHandler(async (req, res) => {
 
     if (updateError) throw updateError;
     user = updatedUser;
-  }
-
-  if (!user) {
-    const { data: created, error: createError } = await supabase
-      .from('kb_users')
-      .insert({
-        email,
-        name: email === adminEmail ? 'Admin' : email.split('@')[0],
-        role: email === adminEmail ? 'admin' : 'member',
-        roles: normalizeRoles(email === adminEmail ? ['admin', 'superadmin'] : ['member']),
-        password_hash: password ? await bcrypt.hash(password, 10) : null
-      })
-      .select('*')
-      .single();
-
-    if (createError) throw createError;
-    user = created;
   }
 
   if (booleanValue(user.two_factor_enabled, false) && email !== adminEmail) {
@@ -1777,7 +1890,7 @@ app.post('/api/auth/login', asyncHandler(async (req, res) => {
   res.json({ user: publicUser(user), token: tokenFor(user) });
 }));
 
-app.post('/api/auth/google', asyncHandler(async (req, res) => {
+app.post('/api/auth/google', authRateLimit, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const googleProfile = await readGoogleProfile({
     accessToken: req.body.accessToken,
@@ -1841,7 +1954,7 @@ app.post('/api/auth/google', asyncHandler(async (req, res) => {
   res.json({ user: publicUser(user), token: tokenFor(user) });
 }));
 
-app.post('/api/auth/two-factor/send', asyncHandler(async (req, res) => {
+app.post('/api/auth/two-factor/send', authRateLimit, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const token = String(req.body.twoFactorToken || req.body.token || '').trim();
   const provider = String(req.body.provider || '').trim().toLowerCase();
@@ -1896,7 +2009,7 @@ app.post('/api/auth/two-factor/send', asyncHandler(async (req, res) => {
   });
 }));
 
-app.post('/api/auth/two-factor/verify', asyncHandler(async (req, res) => {
+app.post('/api/auth/two-factor/verify', authRateLimit, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const token = String(req.body.twoFactorToken || req.body.token || '').trim();
   const verificationToken = String(req.body.verificationToken || '').trim();
@@ -1943,7 +2056,7 @@ app.post('/api/auth/two-factor/verify', asyncHandler(async (req, res) => {
   res.json({ user: publicUser(user), token: tokenFor(user) });
 }));
 
-app.post('/api/auth/forgot-password', asyncHandler(async (req, res) => {
+app.post('/api/auth/forgot-password', authRateLimit, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!email) return res.status(400).json({ error: 'Email is required.' });
@@ -2010,7 +2123,7 @@ app.post('/api/auth/set-password', authenticate, asyncHandler(async (req, res) =
   res.json({ user: publicUser(updatedUser), token: tokenFor(updatedUser) });
 }));
 
-app.post('/api/auth/reset-password', asyncHandler(async (req, res) => {
+app.post('/api/auth/reset-password', authRateLimit, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const token = String(req.body.token || '').trim();
   const password = String(req.body.password || '');
@@ -2041,7 +2154,7 @@ app.post('/api/auth/reset-password', asyncHandler(async (req, res) => {
   res.json({ user: publicUser(updatedUser), token: tokenFor(updatedUser) });
 }));
 
-app.post('/api/auth/confirm-email', asyncHandler(async (req, res) => {
+app.post('/api/auth/confirm-email', authRateLimit, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const token = String(req.body.token || '').trim();
   if (!token) return res.status(400).json({ error: 'Confirmation token is required.' });
@@ -2303,7 +2416,7 @@ app.delete('/api/auth/external-logins/:provider', authenticate, asyncHandler(asy
   res.json({ ok: true });
 }));
 
-app.post('/api/auth/verify-phone/start', authenticate, asyncHandler(async (req, res) => {
+app.post('/api/auth/verify-phone/start', authRateLimit, authenticate, asyncHandler(async (req, res) => {
   const phone = String(req.body.phone || '').trim();
   if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
   const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -2322,7 +2435,7 @@ app.post('/api/auth/verify-phone/start', authenticate, asyncHandler(async (req, 
   res.json({ ok: true, message: 'Verification code generated.', devCode: process.env.NODE_ENV === 'production' ? undefined : code });
 }));
 
-app.post('/api/auth/verify-phone/confirm', authenticate, asyncHandler(async (req, res) => {
+app.post('/api/auth/verify-phone/confirm', authRateLimit, authenticate, asyncHandler(async (req, res) => {
   const phone = String(req.body.phone || '').trim();
   const code = String(req.body.code || '').trim();
   const supabase = requireSupabase();
@@ -2516,12 +2629,13 @@ app.post('/api/payments/paypal/orders/:orderId/capture', asyncHandler(async (req
   });
 }));
 
-async function startRegistrationPaymentFlow(kind, body = {}) {
+async function startRegistrationPaymentFlow(kind, body = {}, actor = null) {
   if (!['event', 'class', 'guest-event', 'guest'].includes(kind)) {
     const error = new Error('Unknown payment type.');
     error.status = 404;
     throw error;
   }
+  const isGuestPayment = ['guest-event', 'guest'].includes(kind);
   const amount = numberValue(body.amount || body.totalPrice || body.TotalPrice || body.fee, 0);
   if (amount <= 0) {
     const error = new Error('Payment amount must be greater than zero.');
@@ -2530,7 +2644,17 @@ async function startRegistrationPaymentFlow(kind, body = {}) {
   }
 
   let registrationId = body.registrationId || body.invoiceId || body.InvoiceId;
+  if (!isGuestPayment && !actor) {
+    const error = new Error('Login required to start this payment.');
+    error.status = 401;
+    throw error;
+  }
   if (!registrationId && body.email) {
+    if (!isGuestPayment && !canManagePayment(actor) && String(actor?.email || '').toLowerCase() !== String(body.email || '').toLowerCase()) {
+      const error = new Error('You can only create payments for your own registration.');
+      error.status = 403;
+      throw error;
+    }
     const calculated = await calculateRegistrationPayload({
       parentName: body.parentName || body.name || body.email,
       studentName: body.studentName || body.familyMember || body.name || '-',
@@ -2572,6 +2696,11 @@ async function startRegistrationPaymentFlow(kind, body = {}) {
   if (registrationId) {
     const existing = await getRegistrationById(registrationId);
     if (existing) {
+      if (!isGuestPayment && !canAccessRegistrationPayment(actor, existing)) {
+        const error = new Error('You can only pay for your own registration.');
+        error.status = 403;
+        throw error;
+      }
       const fallbackDetails = paypalPaymentDetails({
         kind,
         order: created.order,
@@ -2599,10 +2728,16 @@ async function startRegistrationPaymentFlow(kind, body = {}) {
   };
 }
 
-async function completeRegistrationPaymentFlow(kind, body = {}) {
+async function completeRegistrationPaymentFlow(kind, body = {}, actor = null) {
   if (!['event', 'class', 'guest-event', 'guest'].includes(kind)) {
     const error = new Error('Unknown payment type.');
     error.status = 404;
+    throw error;
+  }
+  const isGuestPayment = ['guest-event', 'guest'].includes(kind);
+  if (!isGuestPayment && !actor) {
+    const error = new Error('Login required to complete this payment.');
+    error.status = 401;
     throw error;
   }
   const orderId = body.orderId || body.token || body.PaypalOrder?.id || body.paypalOrder?.id;
@@ -2613,6 +2748,11 @@ async function completeRegistrationPaymentFlow(kind, body = {}) {
   }
   const registrationId = body.registrationId || body.invoiceId || body.InvoiceId;
   const existingRegistration = registrationId ? await getRegistrationById(registrationId) : null;
+  if (existingRegistration && !isGuestPayment && !canAccessRegistrationPayment(actor, existingRegistration)) {
+    const error = new Error('You can only complete payment for your own registration.');
+    error.status = 403;
+    throw error;
+  }
   const token = await paypalAccessToken();
   const payment = body.paypalPayment || body.PaypalPayment || await fetchJson(`${paypalBaseUrl}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {
     method: 'POST',
@@ -2623,8 +2763,14 @@ async function completeRegistrationPaymentFlow(kind, body = {}) {
   });
   const capture = payment.purchase_units?.[0]?.payments?.captures?.[0];
   const customId = payment.purchase_units?.[0]?.custom_id;
+  const effectiveRegistrationId = registrationId || customId;
+  if (!customId || String(customId) !== String(effectiveRegistrationId)) {
+    const error = new Error('PayPal order does not match this registration.');
+    error.status = 403;
+    throw error;
+  }
   const registration = await markRegistrationPaid({
-    registrationId: registrationId || customId,
+    registrationId: effectiveRegistrationId,
     orderId: payment.id || orderId,
     captureId: capture?.id || body.captureId || null,
     paymentPayload: payment,
@@ -2635,11 +2781,17 @@ async function completeRegistrationPaymentFlow(kind, body = {}) {
   return { paymentStatus: payment.status || 'COMPLETED', orderId: payment.id || orderId, captureId: capture?.id || body.captureId || null, registration };
 }
 
-async function cancelRegistrationPaymentFlow(kind, body = {}) {
+async function cancelRegistrationPaymentFlow(kind, body = {}, actor = null) {
+  const isGuestPayment = ['guest-event', 'guest'].includes(kind);
   const registrationId = body.registrationId || body.invoiceId || body.InvoiceId;
   let registration = null;
   if (registrationId) {
     const existing = await getRegistrationById(registrationId);
+    if (existing && !isGuestPayment && !canAccessRegistrationPayment(actor, existing)) {
+      const error = new Error('You can only cancel payment for your own registration.');
+      error.status = 403;
+      throw error;
+    }
     if (existing && String(existing.status || '').toLowerCase() === 'created') {
       await deleteRecord('kb_registrations', registrationId);
     } else if (existing) {
@@ -2662,27 +2814,27 @@ async function cancelRegistrationPaymentFlow(kind, body = {}) {
 }
 
 app.post('/api/payment/event/create', authenticate, asyncHandler(async (req, res) => {
-  res.status(201).json(await startRegistrationPaymentFlow('event', req.body));
+  res.status(201).json(await startRegistrationPaymentFlow('event', req.body, req.user));
 }));
 
 app.post('/api/payment/event/complete', authenticate, asyncHandler(async (req, res) => {
-  res.json(await completeRegistrationPaymentFlow('event', req.body));
+  res.json(await completeRegistrationPaymentFlow('event', req.body, req.user));
 }));
 
 app.post('/api/payment/event/cancel', authenticate, asyncHandler(async (req, res) => {
-  res.json(await cancelRegistrationPaymentFlow('event', req.body));
+  res.json(await cancelRegistrationPaymentFlow('event', req.body, req.user));
 }));
 
 app.post('/api/payment/classevent/create', authenticate, asyncHandler(async (req, res) => {
-  res.status(201).json(await startRegistrationPaymentFlow('class', req.body));
+  res.status(201).json(await startRegistrationPaymentFlow('class', req.body, req.user));
 }));
 
 app.post('/api/payment/classevent/complete', authenticate, asyncHandler(async (req, res) => {
-  res.json(await completeRegistrationPaymentFlow('class', req.body));
+  res.json(await completeRegistrationPaymentFlow('class', req.body, req.user));
 }));
 
 app.post('/api/payment/classevent/cancel', authenticate, asyncHandler(async (req, res) => {
-  res.json(await cancelRegistrationPaymentFlow('class', req.body));
+  res.json(await cancelRegistrationPaymentFlow('class', req.body, req.user));
 }));
 
 app.post('/api/guestpayment/guestevent/create', asyncHandler(async (req, res) => {
@@ -2698,27 +2850,27 @@ app.post('/api/guestpayment/guestevent/cancel', asyncHandler(async (req, res) =>
 }));
 
 app.post('/payment/event/create', authenticate, asyncHandler(async (req, res) => {
-  res.status(201).json(await startRegistrationPaymentFlow('event', req.body));
+  res.status(201).json(await startRegistrationPaymentFlow('event', req.body, req.user));
 }));
 
 app.post('/payment/event/complete', authenticate, asyncHandler(async (req, res) => {
-  res.json(await completeRegistrationPaymentFlow('event', req.body));
+  res.json(await completeRegistrationPaymentFlow('event', req.body, req.user));
 }));
 
 app.post('/payment/event/cancel', authenticate, asyncHandler(async (req, res) => {
-  res.json(await cancelRegistrationPaymentFlow('event', req.body));
+  res.json(await cancelRegistrationPaymentFlow('event', req.body, req.user));
 }));
 
 app.post('/payment/classevent/create', authenticate, asyncHandler(async (req, res) => {
-  res.status(201).json(await startRegistrationPaymentFlow('class', req.body));
+  res.status(201).json(await startRegistrationPaymentFlow('class', req.body, req.user));
 }));
 
 app.post('/payment/classevent/complete', authenticate, asyncHandler(async (req, res) => {
-  res.json(await completeRegistrationPaymentFlow('class', req.body));
+  res.json(await completeRegistrationPaymentFlow('class', req.body, req.user));
 }));
 
 app.post('/payment/classevent/cancel', authenticate, asyncHandler(async (req, res) => {
-  res.json(await cancelRegistrationPaymentFlow('class', req.body));
+  res.json(await cancelRegistrationPaymentFlow('class', req.body, req.user));
 }));
 
 app.post('/guestpayment/guestevent/create', asyncHandler(async (req, res) => {
@@ -2733,18 +2885,18 @@ app.post('/guestpayment/guestevent/cancel', asyncHandler(async (req, res) => {
   res.json(await cancelRegistrationPaymentFlow('guest-event', req.body));
 }));
 
-app.post('/api/payments/:kind/create', asyncHandler(async (req, res) => {
+app.post('/api/payments/:kind/create', requirePaymentKindAccess, asyncHandler(async (req, res) => {
   const kind = String(req.params.kind || '').toLowerCase();
-  res.status(201).json(await startRegistrationPaymentFlow(kind, req.body));
+  res.status(201).json(await startRegistrationPaymentFlow(kind, req.body, req.user));
 }));
 
-app.post('/api/payments/:kind/complete', asyncHandler(async (req, res) => {
+app.post('/api/payments/:kind/complete', requirePaymentKindAccess, asyncHandler(async (req, res) => {
   const kind = String(req.params.kind || '').toLowerCase();
-  res.json(await completeRegistrationPaymentFlow(kind, req.body));
+  res.json(await completeRegistrationPaymentFlow(kind, req.body, req.user));
 }));
 
-app.post('/api/payments/:kind/cancel', asyncHandler(async (req, res) => {
-  res.json(await cancelRegistrationPaymentFlow(String(req.params.kind || '').toLowerCase(), req.body));
+app.post('/api/payments/:kind/cancel', requirePaymentKindAccess, asyncHandler(async (req, res) => {
+  res.json(await cancelRegistrationPaymentFlow(String(req.params.kind || '').toLowerCase(), req.body, req.user));
 }));
 
 app.get('/api/eventmgmt/seats', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
@@ -2895,6 +3047,51 @@ app.post('/api/email-outbox/test', authenticate, requireAdmin, asyncHandler(asyn
   }
 }));
 
+app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, asyncHandler(async (req, res) => {
+  const audience = String(req.body.audience || '').trim();
+  const target = String(req.body.target || '').trim();
+  const subject = String(req.body.subject || '').trim();
+  const body = String(req.body.body || '').trim();
+  const intro = String(req.body.intro || '').trim();
+  const footer = String(req.body.footer || '').trim();
+
+  if (!subject || subject.length < 4) return res.status(400).json({ error: 'Subject is required.' });
+  if (!body || body.length < 10) return res.status(400).json({ error: 'Message body is required.' });
+
+  const recipients = await resolveBulkEmailRecipients({ audience, target });
+  if (!recipients.length) return res.status(400).json({ error: 'No recipients found for the selected audience.' });
+
+  const results = [];
+  for (const recipient of recipients) {
+    const queued = await sendEmailOrQueue({
+      to: recipient.email,
+      subject,
+      template: 'bulk-message',
+      payload: {
+        message: {
+          intro: intro || `Hello ${recipient.name || 'Kannada Bharati member'},`,
+          body,
+          footer,
+          audience,
+          target,
+          sentBy: req.user.email
+        }
+      }
+    });
+    results.push({ email: recipient.email, outboxId: queued?.id || null, status: queued?.status || 'Sent' });
+  }
+
+  res.status(201).json({
+    ok: true,
+    audience,
+    target,
+    count: recipients.length,
+    sent: results.filter((item) => item.status === 'Sent').length,
+    queued: results.filter((item) => item.status !== 'Sent').length,
+    recipients: results
+  });
+}));
+
 app.get('/api/developer/email-templates/:template', asyncHandler(async (req, res) => {
   const message = sampleTemplateMessage(String(req.params.template || '').toLowerCase());
   const rendered = renderEmail(message);
@@ -2921,7 +3118,7 @@ app.get('/api/submissions/:type', authenticate, requireAdmin, asyncHandler(async
   res.json(await listTable(table));
 }));
 
-app.post('/api/submissions/:type', asyncHandler(async (req, res) => {
+app.post('/api/submissions/:type', requireSubmissionCreateAccess, asyncHandler(async (req, res) => {
   const table = submissionTables[req.params.type];
   if (!table) return res.status(404).json({ error: 'Unknown submission type.' });
   const payload = table === 'kb_registrations' ? await calculateRegistrationPayload(req.body) : req.body;
@@ -2958,6 +3155,14 @@ app.get('/api/events', asyncHandler(async (req, res) => {
 
 app.post('/api/events', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   res.status(201).json(await insertRecord('kb_events', req.body));
+}));
+
+app.get('/api/announcements', asyncHandler(async (req, res) => {
+  res.json(await listOptionalTable('kb_announcements'));
+}));
+
+app.post('/api/announcements', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  res.status(201).json(await insertRecord('kb_announcements', req.body));
 }));
 
 app.get('/api/fundraisers', asyncHandler(async (req, res) => {

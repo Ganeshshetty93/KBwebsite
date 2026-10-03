@@ -20,6 +20,7 @@ import {
   apiRegistrationAction,
   apiSaveAttendance,
   apiSaveSiteSetting,
+  apiSendBulkEmail,
   apiSendOutboxEmail,
   apiSendTestEmail,
   apiUploadFile,
@@ -1336,6 +1337,7 @@ export default function AdminSectionPage({ view }) {
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [emailOutboxNotice, setEmailOutboxNotice] = useState('');
   const [emailOutboxError, setEmailOutboxError] = useState('');
+  const [bulkEmail, setBulkEmail] = useState({ audience: 'all-users', target: '', sending: false, notice: '', error: '' });
   const [userSearchResult, setUserSearchResult] = useState(null);
   const [userSearchError, setUserSearchError] = useState('');
   const [seatError, setSeatError] = useState('');
@@ -1427,6 +1429,26 @@ export default function AdminSectionPage({ view }) {
     : volunteerGoogleFormSaved.enabled
       ? 'Needs URL'
       : 'Disabled';
+  const bulkEventOptions = uniqueOptions(registrations.filter((row) => row.registrationType !== 'class'), 'program');
+  const bulkClassOptions = uniqueOptions(registrations.filter((row) => (
+    row.registrationType === 'class'
+    || programs.some((program) => program.title === row.program)
+    || /class|paata|shaale|guitar|dance|music|kannada/i.test(row.program || '')
+  )), 'program');
+  const bulkRecipientCount = (() => {
+    if (bulkEmail.audience === 'all-users') {
+      return new Set(registeredUsers.map((row) => String(row.email || '').toLowerCase()).filter(Boolean)).size;
+    }
+    const rows = registrations.filter((row) => {
+      const enabled = row.enabled !== false;
+      const notDeleted = String(row.status || '').toLowerCase() !== 'deleted';
+      const typeMatches = bulkEmail.audience === 'class'
+        ? (row.registrationType === 'class' || programs.some((program) => program.title === row.program) || /class|paata|shaale|guitar|dance|music|kannada/i.test(row.program || ''))
+        : row.registrationType !== 'class';
+      return enabled && notDeleted && typeMatches && row.program === bulkEmail.target;
+    });
+    return new Set(rows.map((row) => String(row.email || '').toLowerCase()).filter(Boolean)).size;
+  })();
 
   useEffect(() => {
     if (view !== 'seats') return;
@@ -1758,6 +1780,44 @@ export default function AdminSectionPage({ view }) {
       refresh();
     } catch (error) {
       setEmailOutboxError(error.message || 'Could not send test email. Check SMTP settings.');
+    }
+  }
+
+  async function handleBulkEmailSubmit(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    const audience = cleanText(payload.audience);
+    const target = cleanText(payload.target);
+    const validationError = firstError([
+      validateRequired(audience, 'Audience'),
+      audience !== 'all-users' ? validateRequired(target, 'Target') : '',
+      validateRequired(payload.subject, 'Subject'),
+      cleanText(payload.subject).length < 4 ? 'Subject must be at least 4 characters.' : '',
+      validateRequired(payload.body, 'Message'),
+      cleanText(payload.body).length < 10 ? 'Message must be at least 10 characters.' : ''
+    ]);
+
+    if (validationError) {
+      setBulkEmail((current) => ({ ...current, notice: '', error: validationError }));
+      return;
+    }
+
+    setBulkEmail((current) => ({ ...current, sending: true, notice: '', error: '' }));
+    try {
+      const result = await apiSendBulkEmail({
+        audience,
+        target,
+        subject: cleanText(payload.subject),
+        intro: cleanText(payload.intro),
+        body: cleanText(payload.body),
+        footer: cleanText(payload.footer)
+      });
+      form.reset();
+      setBulkEmail({ audience: 'all-users', target: '', sending: false, notice: `Message prepared for ${result.count} recipient(s). Sent: ${result.sent}. Queued/stored: ${result.queued}.`, error: '' });
+      refresh();
+    } catch (error) {
+      setBulkEmail((current) => ({ ...current, sending: false, notice: '', error: error.message || 'Could not send group email.' }));
     }
   }
 
@@ -2585,9 +2645,69 @@ export default function AdminSectionPage({ view }) {
   }
 
   if (view === 'messages') {
+    const targetOptions = bulkEmail.audience === 'class' ? bulkClassOptions : bulkEventOptions;
     return (
       <>
-        <PageHeader area="Messages" title="Contact messages" />
+        <PageHeader area="Messages" title="Group email and contact messages" />
+        <form className="admin-page-panel bulk-email-composer" onSubmit={handleBulkEmailSubmit}>
+          <div className="admin-page-panel-heading">
+            <h2>Send group email</h2>
+            <span>{bulkRecipientCount} recipient(s)</span>
+          </div>
+          <div className="bulk-email-grid">
+            <label>
+              Audience
+              <select
+                name="audience"
+                value={bulkEmail.audience}
+                onChange={(event) => setBulkEmail((current) => ({ ...current, audience: event.target.value, target: '', notice: '', error: '' }))}
+              >
+                <option value="all-users">All users</option>
+                <option value="event">Specific event registrations</option>
+                <option value="class">Specific class registrations</option>
+              </select>
+            </label>
+            {bulkEmail.audience !== 'all-users' && (
+              <label>
+                {bulkEmail.audience === 'class' ? 'Class' : 'Event'}
+                <select
+                  name="target"
+                  value={bulkEmail.target}
+                  onChange={(event) => setBulkEmail((current) => ({ ...current, target: event.target.value, notice: '', error: '' }))}
+                  required
+                >
+                  <option value="" disabled>Choose {bulkEmail.audience === 'class' ? 'class' : 'event'}</option>
+                  {targetOptions.map((option) => <option key={option}>{option}</option>)}
+                </select>
+              </label>
+            )}
+            {bulkEmail.audience === 'all-users' && <input type="hidden" name="target" value="" />}
+            <label className="bulk-email-wide">
+              Subject
+              <input name="subject" minLength="4" maxLength="140" required placeholder="Kannada Bharati update" />
+            </label>
+            <label className="bulk-email-wide">
+              Greeting / intro
+              <input name="intro" maxLength="160" placeholder="Hello Kannada Bharati family," />
+            </label>
+            <label className="bulk-email-wide">
+              Message
+              <textarea name="body" minLength="10" maxLength="4000" required placeholder="Type the message that should be sent to the selected group." />
+            </label>
+            <label className="bulk-email-wide">
+              Footer note
+              <input name="footer" maxLength="220" placeholder="Optional closing note" />
+            </label>
+          </div>
+          <div className="bulk-email-actions">
+            <span>Emails are sent through SMTP when configured; otherwise they are stored in the Email Outbox.</span>
+            <button className="button primary" type="submit" disabled={bulkEmail.sending || bulkRecipientCount === 0}>
+              {bulkEmail.sending ? 'Sending...' : 'Send group email'}
+            </button>
+          </div>
+          {bulkEmail.notice && <p className="success">{bulkEmail.notice}</p>}
+          {bulkEmail.error && <p className="form-error">{bulkEmail.error}</p>}
+        </form>
         <AdminTable
           title="Contact messages"
           rows={contacts}

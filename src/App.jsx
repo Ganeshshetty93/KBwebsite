@@ -2,7 +2,7 @@ import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-do
 import { Gauge, Globe2, HeartHandshake, LogIn, LogOut, Megaphone, Menu, UserCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
-import { getCurrentUser, readJson, setCurrentUser } from './utils/storage.js';
+import { getCurrentUser, readJson, setCurrentUser, writeJson } from './utils/storage.js';
 import { apiReadRecords } from './utils/api.js';
 import PageLoader from './components/PageLoader.jsx';
 
@@ -23,6 +23,17 @@ function getAnnouncementHref(item) {
     return `${url}${url.includes('?') ? '&' : '?'}register=1`;
   }
   return url;
+}
+
+function isEnabledValue(value) {
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  return ['true', 'yes', '1', 'on', 'enabled'].includes(String(value).trim().toLowerCase());
+}
+
+function dateOnly(value) {
+  return value ? String(value).slice(0, 10) : '';
 }
 
 export default function App() {
@@ -59,6 +70,7 @@ export default function App() {
     apiReadRecords('kb-announcement-submissions')
       .then((records) => {
         if (!ignore && records.length) {
+          writeJson('kb-announcement-submissions', records);
           setAnnouncements(records);
         }
       })
@@ -95,9 +107,11 @@ export default function App() {
 
   const today = new Date().toISOString().slice(0, 10);
   const activeAnnouncements = announcements.filter((item) => {
-    const enabled = item.enabled === true || item.enabled === 'Yes' || item.enabled === 'yes';
-    const starts = !item.startOn || item.startOn <= today;
-    const ends = !item.endOn || item.endOn >= today;
+    const enabled = isEnabledValue(item.enabled);
+    const startOn = dateOnly(item.startOn);
+    const endOn = dateOnly(item.endOn);
+    const starts = !startOn || startOn <= today;
+    const ends = !endOn || endOn >= today;
     return enabled && starts && ends;
   });
 

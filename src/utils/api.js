@@ -12,7 +12,7 @@ const storageMap = {
   'kb-admin-classes': { path: '/classes', normalize: normalizeClass },
   'kb-admin-events': { path: '/events', normalize: normalizeEvent },
   'kb-admin-fundraisers': { path: '/fundraisers', normalize: normalizeFundraiser },
-  'kb-announcement-submissions': { path: '/submissions/announcement', normalize: normalizeAnnouncement },
+  'kb-announcement-submissions': { path: '/announcements', normalize: normalizeAnnouncement },
   'kb-expense-submissions': { path: '/submissions/expense', normalize: normalizeExpense },
   'kb-attendance-records': { path: '/attendance', normalize: normalizeAttendance }
 };
@@ -524,6 +524,14 @@ export async function apiSendTestEmail(to) {
   return request('/email-outbox/test', {
     method: 'POST',
     body: JSON.stringify({ to })
+  });
+}
+
+export async function apiSendBulkEmail(payload) {
+  await ensureAdminToken();
+  return request('/email-outbox/bulk', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   });
 }
 
