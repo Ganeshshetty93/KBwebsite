@@ -334,7 +334,8 @@ async function request(path, options = {}) {
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(payload?.error || 'API request failed.');
+    const details = Array.isArray(payload?.details) ? payload.details.filter(Boolean).join(' ') : '';
+    throw new Error([payload?.error, details].filter(Boolean).join(' ') || 'Request failed. Please check the form and try again.');
   }
 
   return payload;
