@@ -42,10 +42,17 @@ const appBaseUrl = process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'htt
 const kbPaypalDonateUrl = process.env.KB_PAYPAL_DONATE_URL || 'https://www.paypal.com/donate?token=yXa3TfA1QxdZl-dL-PRMtJzuNTDf_55QcI_FQp48Twwc1UBYepRrXg79VpA_BqL2NoCnFjuGg9CrKgMJ';
 const roleNames = ['member', 'admin', 'superadmin', 'receptionist', 'teacher', 'volunteer', 'treasurer'];
 const isProduction = process.env.NODE_ENV === 'production';
+const configuredAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const allowedOrigins = new Set([
   process.env.CLIENT_ORIGIN,
+  process.env.APP_BASE_URL,
+  'https://k-bwebsite-two.vercel.app',
   'http://127.0.0.1:5173',
-  'http://localhost:5173'
+  'http://localhost:5173',
+  ...configuredAllowedOrigins
 ].filter(Boolean));
 
 app.use(cors({
@@ -299,6 +306,54 @@ function normalizeRoles(value) {
     .map((role) => String(role || '').trim().toLowerCase())
     .filter((role) => roleNames.includes(role));
   return [...new Set(roles.length ? roles : ['member'])];
+}
+
+function normalizeProvider(value) {
+  const provider = String(value || '').trim();
+  if (!provider) return '';
+  if (provider.toLowerCase() === 'google') return 'Google';
+  return provider.slice(0, 1).toUpperCase() + provider.slice(1).toLowerCase();
+}
+
+function friendlyConstraintError(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  const details = String(error?.details || '');
+  const text = `${message} ${details}`.toLowerCase();
+
+  if (code === '23505' || /duplicate key value|unique constraint/i.test(message)) {
+    if (text.includes('kb_external_logins') || text.includes('external_logins') || text.includes('email_provider')) {
+      return { status: 409, message: 'This external login is already connected to your account.' };
+    }
+    if (text.includes('kb_users') || text.includes('email')) {
+      return { status: 409, message: 'An account already exists for this email. Please log in or reset your password.' };
+    }
+    if (text.includes('kb_seats')) {
+      return { status: 409, message: 'This seat already exists for the selected event.' };
+    }
+    if (text.includes('kb_attendance')) {
+      return { status: 409, message: 'Attendance for this student has already been saved for the selected class and date.' };
+    }
+    return { status: 409, message: 'This record already exists. Please update the existing record instead.' };
+  }
+
+  if (code === '23502' || /null value in column/i.test(message)) {
+    return { status: 400, message: 'Please fill all required fields before saving.' };
+  }
+
+  if (code === '23503' || /foreign key constraint/i.test(message)) {
+    return { status: 400, message: 'The selected related record no longer exists. Refresh and try again.' };
+  }
+
+  if (code === '23514' || /check constraint/i.test(message)) {
+    return { status: 400, message: 'One or more values are outside the allowed range.' };
+  }
+
+  if (/invalid input syntax for type uuid/i.test(message)) {
+    return { status: 400, message: 'A selected record id is invalid. Refresh the page and try again.' };
+  }
+
+  return null;
 }
 
 function primaryRole(roles) {
@@ -643,6 +698,15 @@ function normalizePayload(table, payload) {
       assigned_to: payload.assigned_to || payload.assignedTo || null,
       status: payload.status || (payload.registration_id || payload.registrationId ? 'Assigned' : 'Available'),
       updated_at: payload.updated_at || payload.updatedAt || new Date().toISOString()
+    };
+  }
+
+  if (table === 'kb_external_logins') {
+    return {
+      email: String(payload.email || '').trim().toLowerCase(),
+      provider: normalizeProvider(payload.provider),
+      provider_key: payload.provider_key || payload.providerKey || null,
+      display_name: payload.display_name || payload.displayName || null
     };
   }
 
@@ -1511,6 +1575,52 @@ async function insertOptionalRecord(table, payload) {
   }
 }
 
+async function saveExternalLogin(payload) {
+  const supabase = requireSupabase();
+  const record = normalizePayload('kb_external_logins', payload);
+  if (!record.email) {
+    const error = new Error('Email is required to connect an external login.');
+    error.status = 400;
+    throw error;
+  }
+  if (!record.provider) {
+    const error = new Error('Provider is required to connect an external login.');
+    error.status = 400;
+    throw error;
+  }
+
+  const existing = await supabase
+    .from('kb_external_logins')
+    .select('id')
+    .eq('email', record.email)
+    .ilike('provider', record.provider)
+    .maybeSingle();
+  if (existing.error && !['42P01', 'PGRST205', 'PGRST116'].includes(existing.error.code)) throw existing.error;
+
+  if (existing.data?.id) {
+    const { data, error } = await supabase
+      .from('kb_external_logins')
+      .update({
+        provider: record.provider,
+        provider_key: record.provider_key,
+        display_name: record.display_name
+      })
+      .eq('id', existing.data.id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  const { data, error } = await supabase
+    .from('kb_external_logins')
+    .insert({ ...record, created_at: new Date().toISOString() })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 async function insertDefaulterHistory(payload) {
   const saved = await insertOptionalRecord('kb_defaulter_history', payload);
   if (saved) return saved;
@@ -2020,7 +2130,7 @@ app.post('/api/auth/google', authRateLimit, asyncHandler(async (req, res) => {
   const { data: user, error: userError } = userResult;
   if (userError) throw userError;
 
-  await insertOptionalRecord('kb_external_logins', {
+  await saveExternalLogin({
     email: user.email,
     provider: 'Google',
     provider_key: googleProfile.sub || googleProfile.email,
@@ -2476,9 +2586,8 @@ app.get('/api/auth/external-logins', authenticate, asyncHandler(async (req, res)
 }));
 
 app.post('/api/auth/external-logins', authenticate, asyncHandler(async (req, res) => {
-  const provider = String(req.body.provider || '').trim() || 'Google';
+  const provider = normalizeProvider(req.body.provider || 'Google');
   if (!provider) return res.status(400).json({ error: 'Provider is required.' });
-  const supabase = requireSupabase();
   let providerKey = req.user.email.toLowerCase();
   let displayName = req.user.name || req.user.email;
   if (provider.toLowerCase() === 'google') {
@@ -2492,17 +2601,12 @@ app.post('/api/auth/external-logins', authenticate, asyncHandler(async (req, res
     providerKey = googleProfile.sub || googleProfile.email;
     displayName = googleProfile.name || displayName;
   }
-  const { data, error } = await supabase
-    .from('kb_external_logins')
-    .upsert({
+  const data = await saveExternalLogin({
     email: req.user.email.toLowerCase(),
     provider,
     provider_key: providerKey,
     display_name: displayName
-    }, { onConflict: 'email,provider' })
-    .select('*')
-    .single();
-  if (error && !['42P01', 'PGRST205'].includes(error.code)) throw error;
+  });
   res.status(201).json(data || { provider, connected: true });
 }));
 
@@ -3410,8 +3514,10 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
 
 app.use((error, req, res, next) => {
   console.error(error);
-  res.status(error.status || 500).json({
-    error: error.message || 'Server error.'
+  const friendly = friendlyConstraintError(error);
+  const status = error.status || friendly?.status || 500;
+  res.status(status).json({
+    error: friendly?.message || (status >= 500 ? 'Server error. Please try again later.' : error.message || 'Request failed.')
   });
 });
 
