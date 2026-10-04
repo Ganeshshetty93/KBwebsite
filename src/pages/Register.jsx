@@ -1,16 +1,52 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Mail, ShieldCheck, UsersRound } from 'lucide-react';
-import { appendRecord, setCurrentUser } from '../utils/storage.js';
+import { setCurrentUser } from '../utils/storage.js';
 import { apiRegister } from '../utils/api.js';
 import { cleanText, firstError, validateEmail, validatePassword, validatePhone, validateRequired } from '../utils/validation.js';
+
+const recaptchaSiteKey = import.meta.env.VITE_GOOGLE_RECAPTCHA_SITE_KEY || '';
 
 export default function Register() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [recaptchaToken, setRecaptchaToken] = useState('');
+  const recaptchaRef = useRef(null);
   const selectedProgram = params.get('program') || 'General membership';
+
+  useEffect(() => {
+    if (!recaptchaSiteKey || !recaptchaRef.current) return undefined;
+    let cancelled = false;
+    const scriptId = 'google-recaptcha-script';
+    const renderCaptcha = () => {
+      if (cancelled || !window.grecaptcha || !recaptchaRef.current || recaptchaRef.current.dataset.rendered) return;
+      window.grecaptcha.render(recaptchaRef.current, {
+        sitekey: recaptchaSiteKey,
+        callback: (token) => setRecaptchaToken(token),
+        'expired-callback': () => setRecaptchaToken('')
+      });
+      recaptchaRef.current.dataset.rendered = 'true';
+    };
+
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://www.google.com/recaptcha/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.onload = renderCaptcha;
+      document.body.appendChild(script);
+    } else {
+      window.grecaptcha?.ready?.(renderCaptcha);
+      renderCaptcha();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -40,7 +76,12 @@ export default function Register() {
       return;
     }
 
-    if (!payload.captcha) {
+    if (recaptchaSiteKey && !recaptchaToken) {
+      setError('Please complete the reCAPTCHA security check.');
+      return;
+    }
+
+    if (!recaptchaSiteKey && !payload.captcha) {
       setError('Please confirm the security check.');
       return;
     }
@@ -60,16 +101,13 @@ export default function Register() {
       const savedUser = await apiRegister({
         ...user,
         name: user.parentName,
-        password: payload.password
+        password: payload.password,
+        recaptchaToken
       });
       setCurrentUser(savedUser);
-    } catch {
-      appendRecord('kb-registration-submissions', user);
-      setCurrentUser({
-        email: user.email,
-        name: user.parentName,
-        role: 'member'
-      });
+    } catch (registerError) {
+      setError(registerError.message || 'Account could not be created. Please check your details and try again.');
+      return;
     }
     event.currentTarget.reset();
     setSaved(true);
@@ -87,7 +125,7 @@ export default function Register() {
           <div className="register-benefits">
             <span><UsersRound size={18} /> Family and student registration</span>
             <span><Mail size={18} /> Event and class updates</span>
-            <span><ShieldCheck size={18} /> Simple local demo login</span>
+            <span><ShieldCheck size={18} /> Secure account access</span>
           </div>
         </aside>
 
@@ -128,12 +166,16 @@ export default function Register() {
               <input name="phone" type="tel" autoComplete="tel" placeholder="425 555 0100" />
             </label>
 
-            <label className="captcha-box">
-              <input name="captcha" type="checkbox" />
-              <span className="captcha-check" aria-hidden="true" />
-              <span>I'm not a robot</span>
-              <span className="captcha-mark">reCAPTCHA</span>
-            </label>
+            {recaptchaSiteKey ? (
+              <div className="captcha-widget" ref={recaptchaRef} />
+            ) : (
+              <label className="captcha-box">
+                <input name="captcha" type="checkbox" />
+                <span className="captcha-check" aria-hidden="true" />
+                <span>I'm not a robot</span>
+                <span className="captcha-mark">reCAPTCHA</span>
+              </label>
+            )}
 
             {error && <p className="form-error">{error}</p>}
             {saved && <p className="success">Account created. Opening classes...</p>}

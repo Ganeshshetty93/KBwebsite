@@ -1,8 +1,9 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Gauge, Globe2, HeartHandshake, LogIn, LogOut, Menu, X } from 'lucide-react';
+import { BellRing, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Megaphone, Menu, UserCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
-import { getCurrentUser, isAdmin, setCurrentUser } from './utils/storage.js';
+import { getCurrentUser, readJson, setCurrentUser, writeJson } from './utils/storage.js';
+import { apiReadRecords, apiReadSiteSetting } from './utils/api.js';
 import PageLoader from './components/PageLoader.jsx';
 
 const nav = [
@@ -15,9 +16,37 @@ const nav = [
   ['navContact', '/contact']
 ];
 
+function getAnnouncementHref(item) {
+  const url = item.ctaUrl || '';
+  const isRegistrationCta = /register/i.test(`${item.ctaText || ''} ${item.text || ''}`);
+  if (isRegistrationCta && /kannada-shaale/i.test(url) && !/[?&]register=/.test(url)) {
+    return `${url}${url.includes('?') ? '&' : '?'}register=1`;
+  }
+  return url;
+}
+
+function isEnabledValue(value) {
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  return ['true', 'yes', '1', 'on', 'enabled'].includes(String(value).trim().toLowerCase());
+}
+
+function dateOnly(value) {
+  return value ? String(value).slice(0, 10) : '';
+}
+
 export default function App() {
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUser] = useState(() => getCurrentUser());
+  const [memberProfile, setMemberProfile] = useState(() => {
+    const current = getCurrentUser();
+    return current?.email ? readJson(`kb-member-profile-${current.email.toLowerCase()}`, {}) : {};
+  });
+  const [announcements, setAnnouncements] = useState(() => readJson('kb-announcement-submissions', []));
+  const [siteMessage, setSiteMessage] = useState(() => readJson('kb-site-message', { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
+  const [messageOpen, setMessageOpen] = useState(false);
   const [routeLoading, setRouteLoading] = useState(true);
   const { t, toggleLanguage } = useLanguage();
   const navigate = useNavigate();
@@ -25,7 +54,9 @@ export default function App() {
 
   useEffect(() => {
     function syncUser() {
-      setUser(getCurrentUser());
+      const current = getCurrentUser();
+      setUser(current);
+      setMemberProfile(current?.email ? readJson(`kb-member-profile-${current.email.toLowerCase()}`, {}) : {});
     }
 
     window.addEventListener('kb-auth-change', syncUser);
@@ -37,7 +68,43 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let ignore = false;
+    apiReadRecords('kb-announcement-submissions')
+      .then((records) => {
+        if (!ignore && records.length) {
+          writeJson('kb-announcement-submissions', records);
+          setAnnouncements(records);
+        }
+      })
+      .catch(() => {});
+    apiReadSiteSetting('site-message')
+      .then((setting) => {
+        if (ignore) return;
+        const nextMessage = setting || { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' };
+        writeJson('kb-site-message', nextMessage);
+        setSiteMessage(nextMessage);
+      })
+      .catch(() => {});
+
+    function syncData() {
+      setAnnouncements(readJson('kb-announcement-submissions', []));
+      setSiteMessage(readJson('kb-site-message', { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
+      const current = getCurrentUser();
+      setMemberProfile(current?.email ? readJson(`kb-member-profile-${current.email.toLowerCase()}`, {}) : {});
+    }
+
+    window.addEventListener('kb-data-change', syncData);
+    window.addEventListener('storage', syncData);
+    return () => {
+      ignore = true;
+      window.removeEventListener('kb-data-change', syncData);
+      window.removeEventListener('storage', syncData);
+    };
+  }, []);
+
+  useEffect(() => {
     setRouteLoading(true);
+    setProfileOpen(false);
     const timer = window.setTimeout(() => setRouteLoading(false), 520);
     return () => window.clearTimeout(timer);
   }, [location.pathname]);
@@ -45,11 +112,25 @@ export default function App() {
   function handleLogout() {
     setCurrentUser(null);
     setOpen(false);
+    setProfileOpen(false);
     navigate('/');
   }
 
+  const today = new Date().toISOString().slice(0, 10);
+  const activeAnnouncements = announcements.filter((item) => {
+    const enabled = isEnabledValue(item.enabled);
+    const startOn = dateOnly(item.startOn);
+    const endOn = dateOnly(item.endOn);
+    const starts = !startOn || startOn <= today;
+    const ends = !endOn || endOn >= today;
+    return enabled && starts && ends;
+  });
+
+  const isAdminRoute = location.pathname.startsWith('/admin');
+  const showSiteMessage = !isAdminRoute && isEnabledValue(siteMessage.enabled) && siteMessage.title && siteMessage.message;
+
   return (
-    <div className="site-shell">
+    <div className={isAdminRoute ? 'site-shell is-admin-route' : 'site-shell'}>
       <PageLoader active={routeLoading} />
       <header className="site-header">
         <Link className="brand" to="/" onClick={() => setOpen(false)}>
@@ -76,7 +157,7 @@ export default function App() {
               {t(label)}
             </NavLink>
           ))}
-          {isAdmin(user) && (
+          {user && (
             <NavLink className="nav-login" to="/admin" onClick={() => setOpen(false)}>
               <Gauge size={17} /> {t('navDashboard')}
             </NavLink>
@@ -85,9 +166,27 @@ export default function App() {
             <Globe2 size={17} /> {t('langToggle')}
           </button>
           {user ? (
-            <button className="nav-tool" type="button" onClick={handleLogout}>
-              <LogOut size={17} /> {t('navLogout')}
-            </button>
+            <div className="nav-profile-menu">
+              <button
+                className="nav-profile-button"
+                type="button"
+                aria-label="Open profile menu"
+                aria-expanded={profileOpen}
+                onClick={() => setProfileOpen((value) => !value)}
+              >
+                {memberProfile.photo ? <img src={memberProfile.photo} alt="" /> : <UserCircle size={24} />}
+              </button>
+              {profileOpen && (
+                <div className="nav-profile-dropdown">
+                  <Link to="/admin/profile" onClick={() => { setOpen(false); setProfileOpen(false); }}>
+                    <UserCircle size={17} /> Profile
+                  </Link>
+                  <button type="button" onClick={handleLogout}>
+                    <LogOut size={17} /> {t('navLogout')}
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <NavLink className="nav-login" to="/login" onClick={() => setOpen(false)}>
               <LogIn size={17} /> {t('navLogin')}
@@ -96,21 +195,83 @@ export default function App() {
         </nav>
       </header>
 
+      {!isAdminRoute && activeAnnouncements.length > 0 && (
+        <section className="announcement-strip" aria-label="Kannada Bharati announcements">
+          <div className="announcement-viewport">
+            <div className="announcement-track">
+              {[...activeAnnouncements, ...activeAnnouncements].map((item, index) => {
+                const duplicate = index >= activeAnnouncements.length;
+                return (
+                  <article className="announcement-card" key={`${item.id || item.text}-${index}`} aria-hidden={duplicate}>
+                    <span className="announcement-kicker"><Megaphone size={16} /> Update</span>
+                    <strong>{item.text}</strong>
+                    {item.ctaUrl && <Link to={getAnnouncementHref(item)} tabIndex={duplicate ? -1 : 0}>{item.ctaText || 'Learn more'}</Link>}
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
+
       <main>
         <Outlet />
       </main>
+
+      {showSiteMessage && (
+        <div className={messageOpen ? 'site-message-widget is-open' : 'site-message-widget'}>
+          <button
+            className="site-message-button"
+            type="button"
+            aria-label={messageOpen ? 'Close message' : 'Open site message'}
+            aria-expanded={messageOpen}
+            onClick={() => setMessageOpen((value) => !value)}
+          >
+            {messageOpen ? <X size={20} /> : <BellRing size={21} />}
+            <span />
+          </button>
+          {messageOpen && (
+            <aside className="site-message-popup" aria-label="Kannada Bharati message">
+              <div>
+                <span className="announcement-kicker"><Megaphone size={15} /> Message</span>
+                <button type="button" aria-label="Close message" onClick={() => setMessageOpen(false)}><X size={18} /></button>
+              </div>
+              <h2>{siteMessage.title}</h2>
+              <p>{siteMessage.message}</p>
+              {siteMessage.ctaUrl && (
+                <Link className="button compact" to={getAnnouncementHref({ ctaUrl: siteMessage.ctaUrl, ctaText: siteMessage.ctaText, text: siteMessage.title })} onClick={() => setMessageOpen(false)}>
+                  {siteMessage.ctaText || 'Learn more'}
+                </Link>
+              )}
+            </aside>
+          )}
+        </div>
+      )}
 
       <footer className="footer">
         <div>
           <strong>ಕನ್ನಡ ಭಾರತಿ</strong>
           <p>{t('footerLine')}</p>
+          <div className="footer-social">
+            <span>Connect with Kannada Bharati</span>
+            <div>
+              <a href="https://www.facebook.com/KannadaBharati" target="_blank" rel="noreferrer" aria-label="Kannada Bharati Facebook">f</a>
+              <a href="https://www.youtube.com" target="_blank" rel="noreferrer" aria-label="Kannada Bharati YouTube">▶</a>
+              <a href="https://www.linkedin.com" target="_blank" rel="noreferrer" aria-label="Kannada Bharati LinkedIn">in</a>
+            </div>
+          </div>
         </div>
         <div className="footer-actions">
           <Link className="footer-link" to="/volunteer">
             <HeartHandshake size={18} /> {t('navVolunteer')}
           </Link>
           <Link className="footer-link" to="/donate">{t('navDonate')}</Link>
-          {isAdmin(user) && <Link className="footer-link" to="/admin">{t('navDashboard')}</Link>}
+          <Link className="footer-link" to="/kannada-literature">Kannada Literature</Link>
+          <Link className="footer-link" to="/calendar">Calendar</Link>
+          <Link className="footer-link" to="/sportsdayrules">Sports Rules</Link>
+          <Link className="footer-link" to="/webrequirements">Web Requirements</Link>
+          <Link className="footer-link" to="/privacy">Privacy</Link>
+          {user && <Link className="footer-link" to="/admin">{t('navDashboard')}</Link>}
           <Link className="footer-link" to="/login">{t('memberLogin')}</Link>
         </div>
       </footer>

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, HeartPulse, HandHeart, Landmark, ShieldAlert, UsersRound } from 'lucide-react';
+import { BookOpen, CreditCard, HeartPulse, HandHeart, Landmark, ShieldAlert, UsersRound } from 'lucide-react';
 import PageHero from '../components/PageHero.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
-import { appendRecord, readJson } from '../utils/storage.js';
-import { apiReadRecords } from '../utils/api.js';
+import { appendRecordAsync, readJson, writeJson } from '../utils/storage.js';
+import { apiCapturePayPalOrder, apiCreatePayPalOrder, apiGetPayPalDonateLink, apiReadRecords } from '../utils/api.js';
 import { cleanText, firstError, validateAmount, validateEmail, validateRequired } from '../utils/validation.js';
 
 const amounts = [50, 80, 100, 250];
-const paypalHostedButtonId = 'EY5YVURQPDWEE';
+const fallbackDonateLink = 'https://www.paypal.com/donate?token=yXa3TfA1QxdZl-dL-PRMtJzuNTDf_55QcI_FQp48Twwc1UBYepRrXg79VpA_BqL2NoCnFjuGg9CrKgMJ';
 const defaultFundraiser = {
   id: 'default-kb-paata-shaale',
   title: 'KB Paata Shaale',
@@ -30,6 +30,17 @@ const causeIcons = {
   Other: HandHeart
 };
 
+const donationNotes = {
+  en: {
+    body: 'We strive to make sure that almost 100% of all donations get spent on projects for promoting and preserving language, arts and cultural traditions of India in USA. Our administrative expenses are kept to a bare minimum with the support and help from our amazing volunteers.',
+    tax: 'Donations made to Kannada Bharati are tax-deductible in the US under Section 501(c)(3) of the IRS Code.'
+  },
+  kn: {
+    body: 'ನಿಮ್ಮ ದೇಣಿಗೆಯ ಬಹುಪಾಲು ಅಮೆರಿಕಾದಲ್ಲಿ ಭಾರತೀಯ ಭಾಷೆ, ಕಲೆ ಮತ್ತು ಸಾಂಸ್ಕೃತಿಕ ಪರಂಪರೆಯನ್ನು ಉತ್ತೇಜಿಸುವ ಯೋಜನೆಗಳಿಗೆ ಬಳಸಲಾಗುತ್ತದೆ.',
+    tax: 'ಕನ್ನಡ ಭಾರತಿಗೆ ನೀಡುವ ದೇಣಿಗೆಗಳು US Section 501(c)(3) ಅಡಿಯಲ್ಲಿ ತೆರಿಗೆ ವಿನಾಯಿತಿಗೆ ಅರ್ಹವಾಗಿವೆ.'
+  }
+};
+
 function withDefaultFundraiser(records) {
   const activeRecords = Array.isArray(records) ? records : [];
   if (activeRecords.some((record) => record.id === defaultFundraiser.id || record.title === defaultFundraiser.title)) {
@@ -39,17 +50,6 @@ function withDefaultFundraiser(records) {
   return [defaultFundraiser, ...activeRecords];
 }
 
-function paypalDonateUrl(amount, causeTitle) {
-  const params = new URLSearchParams({
-    hosted_button_id: paypalHostedButtonId,
-    amount: amount.toFixed(2),
-    currency_code: 'USD',
-    item_name: causeTitle || 'Kannada Bharati Donation'
-  });
-
-  return `https://www.paypal.com/donate?${params.toString()}`;
-}
-
 export default function Donate() {
   const [selected, setSelected] = useState(80);
   const [custom, setCustom] = useState('');
@@ -57,6 +57,8 @@ export default function Donate() {
   const [selectedCause, setSelectedCause] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [hostedPayment, setHostedPayment] = useState({ donateUrl: fallbackDonateLink });
   const donationFormRef = useRef(null);
   const { language, t } = useLanguage();
   const causes = useMemo(() => fundraisers.filter((cause) => cause.status !== 'Completed'), [fundraisers]);
@@ -91,17 +93,118 @@ export default function Donate() {
     };
   }, [selectedCause]);
 
-  function handleDonate(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  useEffect(() => {
+    let ignore = false;
+    apiGetPayPalDonateLink()
+      .then((config) => {
+        if (!ignore && config?.donateUrl) setHostedPayment(config);
+      })
+      .catch(() => {
+        if (!ignore) setHostedPayment({ donateUrl: fallbackDonateLink });
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isDonationReturn = params.get('paypalDonation') === '1';
+    const isDonationCancel = params.get('paypalCancel') === '1';
+    const orderId = params.get('token') || params.get('orderId');
+    const donationId = params.get('donationId');
+
+    if (isDonationCancel) {
+      setMessage('');
+      setError(language === 'kn' ? 'PayPal ಪಾವತಿ ರದ್ದುಪಡಿಸಲಾಗಿದೆ.' : 'PayPal payment was cancelled.');
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
+
+    if (!isDonationReturn || !orderId) return;
+
+    let ignore = false;
+    setPaymentProcessing(true);
+    setMessage(language === 'kn' ? 'PayPal ಪಾವತಿ ದೃಢೀಕರಿಸಲಾಗುತ್ತಿದೆ...' : 'Confirming PayPal payment...');
+    setError('');
+
+    apiCapturePayPalOrder(orderId, { donationId })
+      .then((result) => {
+        if (ignore) return;
+        const existing = readJson('kb-donation-submissions', []);
+        writeJson('kb-donation-submissions', existing.map((item) => (
+          item.id === donationId
+            ? {
+                ...item,
+                paymentStatus: 'Paid',
+                paypalOrderId: result.orderId,
+                paypalCaptureId: result.captureId
+              }
+            : item
+        )));
+        window.dispatchEvent(new Event('kb-data-change'));
+        setMessage(language === 'kn' ? 'ದೇಣಿಗೆ ಪಾವತಿ ಯಶಸ್ವಿಯಾಗಿದೆ.' : 'Donation payment completed successfully.');
+        window.history.replaceState(null, '', window.location.pathname);
+      })
+      .catch((captureError) => {
+        if (!ignore) setError(captureError.message || 'PayPal payment could not be confirmed.');
+      })
+      .finally(() => {
+        if (!ignore) setPaymentProcessing(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [language]);
+
+  function openPayPalCheckout(url) {
+    const width = Math.min(620, window.screen?.availWidth || 620);
+    const height = Math.min(820, window.screen?.availHeight || 820);
+    const left = Math.max(0, ((window.screen?.availWidth || width) - width) / 2);
+    const top = Math.max(0, ((window.screen?.availHeight || height) - height) / 2);
+    const popup = window.open(
+      url,
+      'kb-paypal-checkout',
+      `popup=yes,width=${Math.round(width)},height=${Math.round(height)},left=${Math.round(left)},top=${Math.round(top)},resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup) {
+      window.location.assign(url);
+      return false;
+    }
+
+    popup.focus();
+    return true;
+  }
+
+  function checkoutUrlForMode(url, paymentMode) {
+    if (paymentMode !== 'card') return url;
+    try {
+      const checkoutUrl = new URL(url);
+      checkoutUrl.searchParams.set('fundingSource', 'card');
+      checkoutUrl.searchParams.set('payment_source', 'card');
+      return checkoutUrl.toString();
+    } catch {
+      const separator = String(url).includes('?') ? '&' : '?';
+      return `${url}${separator}fundingSource=card&payment_source=card`;
+    }
+  }
+
+  async function startDonationPayment(form, paymentMode = 'paypal') {
+    if (!form) return;
+    const payload = Object.fromEntries(new FormData(form).entries());
     const amount = Number(custom || selected);
+    const customCause = cleanText(payload.causeDetails);
+    const cause = selectedCauseRecord;
+    const causeTitle = customCause || cause?.title || '';
     setMessage('');
     setError('');
     const validationError = firstError([
       validateRequired(payload.name, 'Name'),
       validateEmail(payload.email),
-      validateRequired(payload.causeId, 'Donation cause'),
+      validateRequired(causeTitle, 'Donation cause'),
       validateAmount(amount, 'Donation amount', { min: 1 })
     ]);
 
@@ -110,25 +213,62 @@ export default function Donate() {
       return;
     }
 
-    const cause = selectedCauseRecord;
-    if (!cause) {
-      setError(language === 'kn' ? 'ದಯವಿಟ್ಟು ದೇಣಿಗೆ ಉದ್ದೇಶವನ್ನು ಆಯ್ಕೆಮಾಡಿ.' : 'Please select a fundraising cause.');
+    if (!causeTitle) {
+      setError(language === 'kn' ? 'ದಯವಿಟ್ಟು ದೇಣಿಗೆ ಉದ್ದೇಶವನ್ನು ಆಯ್ಕೆಮಾಡಿ ಅಥವಾ ಬರೆಯಿರಿ.' : 'Please select or type a donation cause.');
       return;
     }
 
-    appendRecord('kb-donation-submissions', {
-      ...Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, cleanText(value)])),
-      causeId: cause.id,
-      cause: cause?.title || selectedCause,
-      paymentStatus: 'PayPal opened',
-      amount
-    });
+    setPaymentProcessing(true);
 
-    setMessage(language === 'kn' ? `PayPal ಗೆ ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ: $${amount}.` : `Opening PayPal for $${amount}.`);
-    window.location.assign(paypalDonateUrl(amount, cause?.title));
+    try {
+      const donationRecord = await appendRecordAsync('kb-donation-submissions', {
+        ...Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, cleanText(value)])),
+        causeId: cause?.id || null,
+        cause: causeTitle,
+        paymentStatus: 'Pending payment',
+        amount
+      });
+      const returnParams = new URLSearchParams({ paypalDonation: '1' });
+      const cancelParams = new URLSearchParams({ paypalCancel: '1' });
 
-    form.reset();
-    setCustom('');
+      if (donationRecord?.id) {
+        returnParams.set('donationId', donationRecord.id);
+        cancelParams.set('donationId', donationRecord.id);
+      }
+
+      const returnUrl = `${window.location.origin}${window.location.pathname}?${returnParams.toString()}`;
+      const cancelUrl = `${window.location.origin}${window.location.pathname}?${cancelParams.toString()}`;
+      const order = await apiCreatePayPalOrder({
+        donationId: donationRecord?.id,
+        amount,
+        cause: causeTitle,
+        name: payload.name,
+        email: payload.email,
+        landingPage: paymentMode === 'card' ? 'BILLING' : 'LOGIN',
+        returnUrl,
+        cancelUrl
+      });
+
+      if (!order.approvalUrl) {
+        throw new Error('PayPal approval link was not returned.');
+      }
+
+      setMessage(language === 'kn' ? `PayPal ಗೆ ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ: $${amount}.` : `Opening PayPal for $${amount}.`);
+      openPayPalCheckout(checkoutUrlForMode(order.approvalUrl, paymentMode));
+      form.reset();
+      setCustom('');
+      setPaymentProcessing(false);
+    } catch (paymentError) {
+      const hostedUrl = hostedPayment?.donateUrl || fallbackDonateLink;
+      setMessage(language === 'kn' ? 'PayPal hosted donation ಪುಟವನ್ನು ತೆರೆಯಲಾಗುತ್ತಿದೆ.' : 'Opening the Kannada Bharati hosted PayPal donation page.');
+      openPayPalCheckout(hostedUrl);
+      setPaymentProcessing(false);
+    }
+  }
+
+  async function handleDonate(event) {
+    event.preventDefault();
+    await startDonationPayment(event.currentTarget, 'paypal');
   }
 
   function chooseCause(causeId) {
@@ -203,6 +343,10 @@ export default function Donate() {
           </ul>
         </div>
         <form className="donation-panel" onSubmit={handleDonate} ref={donationFormRef}>
+          <div className="donation-purpose-note">
+            <p>{donationNotes[language].body}</p>
+            <strong>{donationNotes[language].tax}</strong>
+          </div>
           <label>
             {t('donationName')}
             <input name="name" placeholder="Your name" required />
@@ -213,12 +357,16 @@ export default function Donate() {
           </label>
           <label>
             {language === 'kn' ? 'ದೇಣಿಗೆ ಉದ್ದೇಶ' : 'Donation cause'}
-            <select name="causeId" value={selectedCauseRecord?.id || ''} onChange={(event) => setSelectedCause(event.target.value)} required>
+            <select name="causeId" value={selectedCauseRecord?.id || ''} onChange={(event) => setSelectedCause(event.target.value)}>
               <option value="" disabled>{language === 'kn' ? 'ಉದ್ದೇಶ ಆಯ್ಕೆಮಾಡಿ' : 'Select a cause'}</option>
               {causes.map((cause) => (
                 <option key={cause.id} value={cause.id}>{cause.title}</option>
               ))}
             </select>
+          </label>
+          <label>
+            {language === 'kn' ? 'ಉದ್ದೇಶವನ್ನು ಬರೆಯಿರಿ' : 'Type cause / details'}
+            <textarea name="causeDetails" placeholder={language === 'kn' ? 'ದೇಣಿಗೆ ಉದ್ದೇಶವನ್ನು ಬರೆಯಿರಿ' : 'Type a custom cause or details'} />
           </label>
           <div className="amount-row">
             {amounts.map((amount) => (
@@ -246,7 +394,36 @@ export default function Donate() {
               placeholder="Enter amount"
             />
           </label>
-          <button className="button primary" type="submit">{t('continueDonation')}</button>
+          <div className="paypal-smart-buttons" aria-label={language === 'kn' ? 'PayPal ಪಾವತಿ ಆಯ್ಕೆಗಳು' : 'PayPal payment options'}>
+            <button className="paypal-smart-button paypal-smart-button-primary" type="submit" disabled={paymentProcessing}>
+              {paymentProcessing ? (
+                <span>{language === 'kn' ? 'ತೆರೆಯಲಾಗುತ್ತಿದೆ...' : 'Opening...'}</span>
+              ) : (
+                <span>{language === 'kn' ? 'ಉಳಿಸಿ ಮತ್ತು ಪಾವತಿಸಿ' : 'Save and Pay'}</span>
+              )}
+            </button>
+            <button
+              className="paypal-smart-button paypal-smart-button-card"
+              type="button"
+              disabled={paymentProcessing}
+              onClick={() => startDonationPayment(donationFormRef.current, 'card')}
+            >
+              <CreditCard size={26} />
+              <span>{language === 'kn' ? 'ಡೆಬಿಟ್ ಅಥವಾ ಕ್ರೆಡಿಟ್ ಕಾರ್ಡ್' : 'Debit or Credit Card'}</span>
+            </button>
+            <small className="paypal-powered">
+              Powered by <strong>PayPal</strong>
+            </small>
+          </div>
+          <a
+            className="paypal-hosted-link"
+            href={hostedPayment?.donateUrl || fallbackDonateLink}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <span>{language === 'kn' ? 'Hosted PayPal ದೇಣಿಗೆ' : 'Hosted PayPal donation'}</span>
+            <small>{language === 'kn' ? 'ಹಳೆಯ Kannada Bharati PayPal ಬಟನ್' : `Legacy button ${hostedPayment?.legacyHostedButtonId || 'EY5YVURQPDWEE'}`}</small>
+          </a>
           {error && <p className="form-error">{error}</p>}
           {message && <p className="success">{message}</p>}
         </form>

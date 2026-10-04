@@ -16,11 +16,18 @@ export function LanguageProvider({ children }) {
       return translations[language]?.[key] || translations.en[key] || key;
     }
 
+    function tr(text) {
+      if (text === null || text === undefined) return text;
+      const value = String(text);
+      return translations[language]?.phrases?.[value] || translations.en?.phrases?.[value] || t(value);
+    }
+
     return {
       language,
       setLanguage,
       toggleLanguage: () => setLanguage((current) => (current === 'en' ? 'kn' : 'en')),
-      t
+      t,
+      tr
     };
   }, [language]);
 

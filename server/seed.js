@@ -70,7 +70,7 @@ await seedTable('kb_events', events.map(eventRow));
 await supabase
   .from('kb_admins')
   .upsert({
-    email: process.env.ADMIN_EMAIL || 'test@gmail.com',
+    email: process.env.ADMIN_EMAIL || 'ganeshshetty93@gmail.com',
     name: 'Kannada Bharati Admin',
     active: true
   }, { onConflict: 'email' });
