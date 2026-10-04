@@ -345,6 +345,10 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
     setDraft((current) => ({ ...current, ...nextDraft }));
   }
 
+  function clearNotes() {
+    setDraft((current) => Object.fromEntries(Object.entries(current).map(([key, value]) => [key, { ...value, notes: '' }])));
+  }
+
   async function handleSave() {
     setSaving(true);
     setNotice('');
@@ -403,6 +407,7 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
           <div className="attendance-quick-actions">
             <button type="button" onClick={() => markAll('Present')} disabled={!classRows.length}>{tr('Mark all present')}</button>
             <button type="button" onClick={() => markAll('Absent')} disabled={!classRows.length}>{tr('Mark all absent')}</button>
+            <button type="button" onClick={clearNotes} disabled={!classRows.length}>{tr('Clear notes')}</button>
           </div>
         </div>
         <div className="attendance-class-strip">
@@ -429,6 +434,9 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
             {tr('Date')}
             <DatePicker value={attendanceDate} onChange={setAttendanceDate} placeholder={tr('Choose date')} />
           </label>
+          <button className="mini-action-link secondary attendance-today-button" type="button" onClick={() => setAttendanceDate(today)}>
+            {tr('Today')}
+          </button>
           <button className="button primary" type="button" onClick={handleSave} disabled={!classRows.length || saving}>
             {saving ? tr('Saving...') : tr(savedForSelection.length ? 'Update attendance' : 'Save attendance')}
           </button>
@@ -441,6 +449,15 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
         </div>
       </section>
       {notice && <p className="animated-form-message">{tr(notice)}</p>}
+      <div className="attendance-mobile-save">
+        <div>
+          <strong>{presentCount}/{classRows.length}</strong>
+          <span>{tr('present or late')}</span>
+        </div>
+        <button className="button primary" type="button" onClick={handleSave} disabled={!classRows.length || saving}>
+          {saving ? tr('Saving...') : tr(savedForSelection.length ? 'Update' : 'Save')}
+        </button>
+      </div>
       <section className="attendance-roster">
         {classRows.length ? classRows.map((row, index) => {
           const key = getRegistrationKey(row, index);

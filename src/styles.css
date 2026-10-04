@@ -7193,6 +7193,12 @@ td {
   text-decoration: none;
 }
 
+.admin-route-content {
+  min-width: 0;
+  overflow-x: clip;
+  padding: clamp(16px, 3vw, 26px);
+}
+
 .admin-app-shell {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
@@ -11249,5 +11255,615 @@ td {
   .footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+/* Responsive admin and teacher attendance refinements */
+.admin-route-content {
+  min-width: 0;
+  overflow-x: clip;
+  padding: clamp(16px, 3vw, 26px);
+}
+
+.attendance-today-button {
+  align-self: end;
+  min-height: 46px;
+}
+
+.attendance-mobile-save {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  .admin-app-shell,
+  .admin-app-shell.side-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-side-menu {
+    position: sticky;
+    top: 76px;
+    z-index: 95;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    align-items: stretch;
+    min-height: 0;
+    max-width: 100vw;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding: 0 10px 8px;
+    scrollbar-width: thin;
+  }
+
+  .admin-kannada-motto {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    min-width: 168px;
+    min-height: 48px;
+    padding: 7px 50px 7px 14px;
+  }
+
+  .admin-side-collapse {
+    position: sticky;
+    left: 126px;
+    top: 8px;
+    align-self: center;
+    flex: 0 0 auto;
+  }
+
+  .admin-side-root,
+  .admin-nav-group-toggle,
+  .admin-app-shell.side-collapsed .admin-side-root,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle {
+    grid-template-columns: 20px minmax(0, 1fr) 16px;
+    place-items: initial;
+    width: auto;
+    min-height: 48px;
+    margin: 6px 0 0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  .admin-nav-group {
+    min-width: max-content;
+  }
+
+  .admin-app-shell.side-collapsed .admin-side-root .admin-nav-label,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle .admin-nav-label {
+    width: auto;
+    opacity: 1;
+  }
+
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle > svg:last-child {
+    display: block;
+  }
+
+  .admin-nav-group .admin-nav-links,
+  .admin-app-shell.side-collapsed .admin-nav-links.is-open,
+  .admin-app-shell.side-collapsed .admin-nav-group:hover .admin-nav-links,
+  .admin-app-shell.side-collapsed .admin-nav-group:focus-within .admin-nav-links {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: 138px;
+    z-index: 110;
+    display: grid;
+    min-width: 0;
+    max-height: min(62vh, 440px);
+    overflow-y: auto;
+    border: 1px solid rgba(7, 63, 60, 0.14);
+    border-radius: 14px;
+    padding: 10px;
+    background: #fff;
+    box-shadow: 0 24px 60px rgba(11, 43, 39, 0.22);
+  }
+
+  .admin-nav-links.is-collapsed,
+  .admin-app-shell.side-collapsed .admin-nav-links.is-collapsed {
+    display: none;
+  }
+
+  .admin-side-menu nav a,
+  .admin-app-shell.side-collapsed .admin-nav-group:hover .admin-nav-links a,
+  .admin-app-shell.side-collapsed .admin-nav-group:focus-within .admin-nav-links a {
+    margin: 0;
+    color: var(--ink);
+    background: #f8faf2;
+  }
+
+  .admin-side-menu nav a.active,
+  .admin-side-menu nav a:hover {
+    color: var(--teal);
+    background: #eaf5f1;
+  }
+
+  .admin-app-shell.side-collapsed .admin-nav-group::after,
+  .admin-app-shell.side-collapsed .admin-side-root::after {
+    display: none;
+  }
+
+  .attendance-hero,
+  .workflow-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.7fr) auto auto;
+  }
+
+  .attendance-row {
+    grid-template-columns: minmax(180px, 0.75fr) minmax(280px, 1fr);
+  }
+
+  .attendance-row input {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-route-content {
+    padding: 12px;
+    overflow-x: hidden;
+  }
+
+  .admin-side-menu {
+    top: 68px;
+    padding-inline: 8px;
+  }
+
+  .admin-kannada-motto {
+    min-width: 128px;
+    padding-right: 42px;
+  }
+
+  .admin-kannada-motto span {
+    font-size: 0.78rem;
+  }
+
+  .admin-side-collapse {
+    left: 92px;
+    width: 34px;
+    height: 34px;
+  }
+
+  .admin-side-root {
+    min-width: 120px;
+  }
+
+  .admin-nav-group-toggle {
+    min-width: 138px;
+  }
+
+  .admin-side-root,
+  .admin-nav-group-toggle,
+  .admin-app-shell.side-collapsed .admin-side-root,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle {
+    grid-template-columns: 18px minmax(0, 1fr) 14px;
+    min-height: 44px;
+    padding: 9px 10px;
+    font-size: 0.9rem;
+  }
+
+  .admin-nav-group .admin-nav-links,
+  .admin-app-shell.side-collapsed .admin-nav-group:hover .admin-nav-links,
+  .admin-app-shell.side-collapsed .admin-nav-group:focus-within .admin-nav-links {
+    top: 126px;
+  }
+
+  .admin-page-header,
+  .workflow-hero,
+  .admin-page-panel,
+  .attendance-command-center {
+    padding: 16px;
+  }
+
+  .admin-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-page-header h1 {
+    font-size: clamp(1.65rem, 8vw, 2.35rem);
+    line-height: 1.05;
+  }
+
+  .attendance-command-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .attendance-quick-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .attendance-quick-actions button {
+    min-width: 0;
+    padding-inline: 8px;
+    font-size: 0.82rem;
+  }
+
+  .attendance-class-strip {
+    display: flex;
+    gap: 10px;
+    margin-inline: -16px;
+    padding: 0 16px 4px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+  }
+
+  .attendance-class-strip button {
+    flex: 0 0 min(78vw, 280px);
+    scroll-snap-align: start;
+  }
+
+  .attendance-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-toolbar .button,
+  .attendance-today-button {
+    width: 100%;
+  }
+
+  .attendance-status-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .attendance-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 14px 12px;
+  }
+
+  .attendance-status-picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .attendance-status-picker button {
+    min-height: 46px;
+    font-size: 0.9rem;
+  }
+
+  .attendance-mobile-save {
+    position: sticky;
+    bottom: 10px;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 12px 0;
+    border: 1px solid rgba(7, 63, 60, 0.13);
+    border-radius: 14px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 18px 45px rgba(11, 43, 39, 0.18);
+    backdrop-filter: blur(12px);
+  }
+
+  .attendance-mobile-save div {
+    display: grid;
+    gap: 2px;
+  }
+
+  .attendance-mobile-save strong {
+    color: var(--teal);
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  .attendance-mobile-save span {
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 850;
+    text-transform: uppercase;
+  }
+
+  .attendance-mobile-save .button {
+    flex: 0 0 auto;
+    min-width: 112px;
+  }
+
+  .attendance-history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-history-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+
+@media (max-width: 520px) {
+  .attendance-status-summary,
+  .attendance-quick-actions,
+  .attendance-status-picker {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Final mobile admin nav correction: keep the panel compact and horizontally scrollable. */
+@media (max-width: 1180px) {
+  .admin-side-menu,
+  .admin-app-shell.side-collapsed .admin-side-menu {
+    position: sticky;
+    top: 66px;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    min-height: 0;
+    max-width: 100vw;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding: 0 8px 8px;
+    background: #303941;
+    scrollbar-width: thin;
+  }
+
+  .admin-kannada-motto,
+  .admin-side-collapse,
+  .admin-side-root,
+  .admin-nav-group,
+  .admin-nav-group-toggle,
+  .admin-app-shell.side-collapsed .admin-side-root,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle {
+    grid-column: auto;
+    flex: 0 0 auto;
+  }
+
+  .admin-kannada-motto {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    width: 148px;
+    min-width: 148px;
+    min-height: 46px;
+    border-radius: 0 0 10px 0;
+    padding: 7px 38px 7px 12px;
+  }
+
+  .admin-kannada-motto span {
+    display: block;
+    font-size: 0.76rem;
+    line-height: 1.12;
+  }
+
+  .admin-kannada-motto::after {
+    right: 18px;
+    width: 28px;
+  }
+
+  .admin-side-collapse,
+  .admin-app-shell.side-collapsed .admin-side-collapse {
+    position: sticky;
+    left: 106px;
+    z-index: 4;
+    width: 34px;
+    height: 34px;
+    margin: 0 4px 0 -42px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .admin-side-root,
+  .admin-nav-group-toggle,
+  .admin-app-shell.side-collapsed .admin-side-root,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle {
+    width: max-content;
+    min-width: 118px;
+    min-height: 42px;
+    margin: 0;
+    border-radius: 10px;
+    padding: 9px 11px;
+    font-size: 0.9rem;
+  }
+
+  .admin-side-root.active {
+    min-width: 132px;
+  }
+
+  .admin-nav-group {
+    min-width: 0;
+    padding: 0;
+  }
+}
+
+@media (max-width: 460px) {
+  .admin-side-menu,
+  .admin-app-shell.side-collapsed .admin-side-menu {
+    top: 60px;
+    gap: 5px;
+    padding-inline: 5px;
+  }
+
+  .admin-kannada-motto {
+    width: 126px;
+    min-width: 126px;
+    min-height: 42px;
+    padding: 6px 34px 6px 10px;
+  }
+
+  .admin-kannada-motto span {
+    font-size: 0.68rem;
+  }
+
+  .admin-side-collapse,
+  .admin-app-shell.side-collapsed .admin-side-collapse {
+    left: 88px;
+    width: 32px;
+    height: 32px;
+    margin-left: -38px;
+  }
+
+  .admin-side-root,
+  .admin-nav-group-toggle,
+  .admin-app-shell.side-collapsed .admin-side-root,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle {
+    min-width: 104px;
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 0.86rem;
+  }
+
+  .admin-side-root.active {
+    min-width: 118px;
+  }
+}
+
+/* Phone admin nav: remove decorative controls and keep only useful navigation tabs. */
+@media (max-width: 640px) {
+  .admin-side-menu,
+  .admin-app-shell.side-collapsed .admin-side-menu {
+    top: 78px;
+    gap: 7px;
+    padding: 7px 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 10px 24px rgba(10, 28, 31, 0.16);
+  }
+
+  .admin-side-menu::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-kannada-motto,
+  .admin-side-collapse,
+  .admin-app-shell.side-collapsed .admin-side-collapse {
+    display: none;
+  }
+
+  .admin-side-root,
+  .admin-nav-group-toggle,
+  .admin-app-shell.side-collapsed .admin-side-root,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle {
+    min-width: auto;
+    min-height: 40px;
+    grid-template-columns: 18px max-content 14px;
+    gap: 8px;
+    border-radius: 9px;
+    padding: 8px 11px;
+    font-size: 0.86rem;
+    line-height: 1;
+  }
+
+  .admin-side-root {
+    grid-template-columns: 18px max-content;
+  }
+
+  .admin-side-root.active {
+    min-width: auto;
+  }
+
+  .admin-nav-label,
+  .admin-app-shell.side-collapsed .admin-side-root .admin-nav-label,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle .admin-nav-label {
+    width: auto;
+    max-width: 96px;
+    opacity: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-nav-group .admin-nav-links,
+  .admin-app-shell.side-collapsed .admin-nav-links.is-open,
+  .admin-app-shell.side-collapsed .admin-nav-group:hover .admin-nav-links,
+  .admin-app-shell.side-collapsed .admin-nav-group:focus-within .admin-nav-links {
+    top: 130px;
+  }
+}
+
+@media (max-width: 380px) {
+  .admin-side-root,
+  .admin-nav-group-toggle,
+  .admin-app-shell.side-collapsed .admin-side-root,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle {
+    padding-inline: 9px;
+    font-size: 0.82rem;
+  }
+
+  .admin-nav-label,
+  .admin-app-shell.side-collapsed .admin-side-root .admin-nav-label,
+  .admin-app-shell.side-collapsed .admin-nav-group-toggle .admin-nav-label {
+    max-width: 78px;
+  }
+}
+
+/* Phone header alignment on admin pages. */
+@media (max-width: 760px) {
+  .site-header,
+  .is-admin-route .site-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 12px;
+    min-height: 78px;
+    padding: 12px 18px;
+  }
+
+  .brand,
+  .is-admin-route .brand {
+    display: inline-grid;
+    grid-template-columns: 54px minmax(0, max-content);
+    align-items: center;
+    justify-content: start;
+    gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .brand-logo {
+    width: 54px;
+    height: 38px;
+  }
+
+  .brand strong {
+    font-size: clamp(1rem, 5vw, 1.22rem);
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .menu-button {
+    justify-self: end;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+  }
+
+  .main-nav {
+    grid-column: 1 / -1;
+    top: 78px;
+    left: 12px;
+    right: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .site-header,
+  .is-admin-route .site-header {
+    grid-template-columns: minmax(0, 1fr) 42px;
+    gap: 10px;
+    padding-inline: 14px;
+  }
+
+  .brand,
+  .is-admin-route .brand {
+    grid-template-columns: 50px minmax(0, max-content);
+    gap: 8px;
+  }
+
+  .brand-logo {
+    width: 50px;
+    height: 36px;
+  }
+
+  .menu-button {
+    width: 42px;
+    height: 42px;
   }
 }
