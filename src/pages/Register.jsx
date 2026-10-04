@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Mail, ShieldCheck, UsersRound } from 'lucide-react';
-import { appendRecord, setCurrentUser } from '../utils/storage.js';
+import { setCurrentUser } from '../utils/storage.js';
 import { apiRegister } from '../utils/api.js';
 import { cleanText, firstError, validateEmail, validatePassword, validatePhone, validateRequired } from '../utils/validation.js';
 
@@ -105,13 +105,9 @@ export default function Register() {
         recaptchaToken
       });
       setCurrentUser(savedUser);
-    } catch {
-      appendRecord('kb-registration-submissions', user);
-      setCurrentUser({
-        email: user.email,
-        name: user.parentName,
-        role: 'member'
-      });
+    } catch (registerError) {
+      setError(registerError.message || 'Account could not be created. Please check your details and try again.');
+      return;
     }
     event.currentTarget.reset();
     setSaved(true);
@@ -129,7 +125,7 @@ export default function Register() {
           <div className="register-benefits">
             <span><UsersRound size={18} /> Family and student registration</span>
             <span><Mail size={18} /> Event and class updates</span>
-            <span><ShieldCheck size={18} /> Simple local demo login</span>
+            <span><ShieldCheck size={18} /> Secure account access</span>
           </div>
         </aside>
 

@@ -1,9 +1,9 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Gauge, Globe2, HeartHandshake, LogIn, LogOut, Megaphone, Menu, UserCircle, X } from 'lucide-react';
+import { BellRing, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Megaphone, Menu, UserCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
 import { getCurrentUser, readJson, setCurrentUser, writeJson } from './utils/storage.js';
-import { apiReadRecords } from './utils/api.js';
+import { apiReadRecords, apiReadSiteSetting } from './utils/api.js';
 import PageLoader from './components/PageLoader.jsx';
 
 const nav = [
@@ -45,6 +45,8 @@ export default function App() {
     return current?.email ? readJson(`kb-member-profile-${current.email.toLowerCase()}`, {}) : {};
   });
   const [announcements, setAnnouncements] = useState(() => readJson('kb-announcement-submissions', []));
+  const [siteMessage, setSiteMessage] = useState(() => readJson('kb-site-message', { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
+  const [messageOpen, setMessageOpen] = useState(false);
   const [routeLoading, setRouteLoading] = useState(true);
   const { t, toggleLanguage } = useLanguage();
   const navigate = useNavigate();
@@ -75,9 +77,18 @@ export default function App() {
         }
       })
       .catch(() => {});
+    apiReadSiteSetting('site-message')
+      .then((setting) => {
+        if (ignore) return;
+        const nextMessage = setting || { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' };
+        writeJson('kb-site-message', nextMessage);
+        setSiteMessage(nextMessage);
+      })
+      .catch(() => {});
 
     function syncData() {
       setAnnouncements(readJson('kb-announcement-submissions', []));
+      setSiteMessage(readJson('kb-site-message', { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
       const current = getCurrentUser();
       setMemberProfile(current?.email ? readJson(`kb-member-profile-${current.email.toLowerCase()}`, {}) : {});
     }
@@ -116,6 +127,7 @@ export default function App() {
   });
 
   const isAdminRoute = location.pathname.startsWith('/admin');
+  const showSiteMessage = !isAdminRoute && isEnabledValue(siteMessage.enabled) && siteMessage.title && siteMessage.message;
 
   return (
     <div className={isAdminRoute ? 'site-shell is-admin-route' : 'site-shell'}>
@@ -185,19 +197,56 @@ export default function App() {
 
       {!isAdminRoute && activeAnnouncements.length > 0 && (
         <section className="announcement-strip" aria-label="Kannada Bharati announcements">
-          {activeAnnouncements.slice(0, 2).map((item, index) => (
-            <article key={`${item.text}-${index}`}>
-              <span className="announcement-kicker"><Megaphone size={16} /> Registration</span>
-              <strong>{item.text}</strong>
-              {item.ctaUrl && <Link to={getAnnouncementHref(item)}>{item.ctaText || 'Learn more'}</Link>}
-            </article>
-          ))}
+          <div className="announcement-viewport">
+            <div className="announcement-track">
+              {[...activeAnnouncements, ...activeAnnouncements].map((item, index) => {
+                const duplicate = index >= activeAnnouncements.length;
+                return (
+                  <article className="announcement-card" key={`${item.id || item.text}-${index}`} aria-hidden={duplicate}>
+                    <span className="announcement-kicker"><Megaphone size={16} /> Update</span>
+                    <strong>{item.text}</strong>
+                    {item.ctaUrl && <Link to={getAnnouncementHref(item)} tabIndex={duplicate ? -1 : 0}>{item.ctaText || 'Learn more'}</Link>}
+                  </article>
+                );
+              })}
+            </div>
+          </div>
         </section>
       )}
 
       <main>
         <Outlet />
       </main>
+
+      {showSiteMessage && (
+        <div className={messageOpen ? 'site-message-widget is-open' : 'site-message-widget'}>
+          <button
+            className="site-message-button"
+            type="button"
+            aria-label={messageOpen ? 'Close message' : 'Open site message'}
+            aria-expanded={messageOpen}
+            onClick={() => setMessageOpen((value) => !value)}
+          >
+            {messageOpen ? <X size={20} /> : <BellRing size={21} />}
+            <span />
+          </button>
+          {messageOpen && (
+            <aside className="site-message-popup" aria-label="Kannada Bharati message">
+              <div>
+                <span className="announcement-kicker"><Megaphone size={15} /> Message</span>
+                <button type="button" aria-label="Close message" onClick={() => setMessageOpen(false)}><X size={18} /></button>
+              </div>
+              <h2>{siteMessage.title}</h2>
+              <p>{siteMessage.message}</p>
+              {siteMessage.ctaUrl && (
+                <Link className="button compact" to={getAnnouncementHref({ ctaUrl: siteMessage.ctaUrl, ctaText: siteMessage.ctaText, text: siteMessage.title })} onClick={() => setMessageOpen(false)}>
+                  {siteMessage.ctaText || 'Learn more'}
+                </Link>
+              )}
+            </aside>
+          )}
+        </div>
+      )}
 
       <footer className="footer">
         <div>
@@ -217,6 +266,7 @@ export default function App() {
             <HeartHandshake size={18} /> {t('navVolunteer')}
           </Link>
           <Link className="footer-link" to="/donate">{t('navDonate')}</Link>
+          <Link className="footer-link" to="/kannada-literature">Kannada Literature</Link>
           <Link className="footer-link" to="/calendar">Calendar</Link>
           <Link className="footer-link" to="/sportsdayrules">Sports Rules</Link>
           <Link className="footer-link" to="/webrequirements">Web Requirements</Link>

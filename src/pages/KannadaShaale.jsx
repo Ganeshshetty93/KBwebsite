@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { BookOpenCheck, Mail, Phone, UsersRound } from 'lucide-react';
 import PageHero from '../components/PageHero.jsx';
 import ClassCard from '../components/ClassCard.jsx';
 import { paataShaaleLevels } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { apiReadSiteSetting } from '../utils/api.js';
+import { defaultPaataTeachers, normalizePaataTeachers } from '../utils/paataTeachers.js';
+import { readJson, writeJson } from '../utils/storage.js';
 
 const paataShaaleFaqs = [
   {
@@ -93,6 +97,7 @@ export default function KannadaShaale() {
   const [searchParams] = useSearchParams();
   const shouldOpenRegistration = searchParams.get('register') === '1';
   const [registerSignals, setRegisterSignals] = useState([0, 0]);
+  const [teachers, setTeachers] = useState(() => normalizePaataTeachers(readJson('kb-paata-teachers', defaultPaataTeachers)));
 
   const paataClasses = paataShaaleLevels.map((level) => ({
     ...level,
@@ -113,6 +118,21 @@ export default function KannadaShaale() {
       openRegistration(0);
     }
   }, [shouldOpenRegistration]);
+
+  useEffect(() => {
+    let ignore = false;
+    apiReadSiteSetting('paata-teachers')
+      .then((rows) => {
+        if (ignore) return;
+        const normalized = normalizePaataTeachers(rows);
+        setTeachers(normalized);
+        writeJson('kb-paata-teachers', normalized);
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   return (
     <>
@@ -138,6 +158,38 @@ export default function KannadaShaale() {
         {paataClasses.map((level, index) => (
           <ClassCard key={level.title} item={level} registerSignal={registerSignals[index] || 0} />
         ))}
+      </section>
+      <section className="section paata-teacher-section" aria-labelledby="paata-teacher-title">
+        <div className="paata-teacher-heading">
+          <p className="eyebrow">Teachers</p>
+          <h2 id="paata-teacher-title">Meet the Paata Shaale teachers</h2>
+          <p>Our trained volunteer teachers make Kannada approachable with structured lessons, speaking practice, homework guidance, and personal attention.</p>
+          <div className="paata-teacher-stats">
+            <article><UsersRound size={19} /><strong>{teachers.length}</strong><span>Teachers</span></article>
+            <article><BookOpenCheck size={19} /><strong>1:5</strong><span>Target ratio</span></article>
+          </div>
+        </div>
+        <div className="paata-teacher-carousel" aria-label="Auto-scrolling Paata Shaale teacher cards">
+          <div className="paata-teacher-grid">
+            {[...teachers, ...teachers].map((teacher, index) => (
+              <article className="paata-teacher-card" key={`${teacher.id}-${index}`}>
+                <div className="paata-teacher-photo">
+                  {teacher.photo ? <img src={teacher.photo} alt={teacher.name} /> : <UsersRound size={36} />}
+                </div>
+                <div className="paata-teacher-copy">
+                  <span>{teacher.level || 'Paata Shaale'}</span>
+                  <h3>{teacher.name}</h3>
+                  <strong>{teacher.role || 'Teacher'}</strong>
+                  {teacher.bio && <p>{teacher.bio}</p>}
+                  <div className="paata-teacher-contact">
+                    {teacher.email && <a href={`mailto:${teacher.email}`}><Mail size={15} /> {teacher.email}</a>}
+                    {teacher.phone && <a href={`tel:${teacher.phone}`}><Phone size={15} /> {teacher.phone}</a>}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
       </section>
       <section className="section two-column band">
         <div>

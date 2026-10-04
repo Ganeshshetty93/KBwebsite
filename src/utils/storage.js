@@ -14,6 +14,14 @@ export function writeJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+export function getAuthToken() {
+  try {
+    return JSON.parse(localStorage.getItem('kb-auth-token') || 'null');
+  } catch {
+    return null;
+  }
+}
+
 function saveLocalRecord(key, payload) {
   const existing = readJson(key, []);
   const record = { ...payload, createdAt: new Date().toISOString() };
@@ -78,6 +86,10 @@ export async function appendAdminRecordAsync(key, payload) {
 }
 
 export function getCurrentUser() {
+  if (!getAuthToken()) {
+    localStorage.removeItem('kb-current-user');
+    return null;
+  }
   return readJson('kb-current-user', null);
 }
 
@@ -116,6 +128,8 @@ const adminOnlyPaths = [
   '/admin/events',
   '/admin/event-settings',
   '/admin/announcements',
+  '/admin/about',
+  '/admin/paata-teachers',
   '/admin/fundraising',
   '/admin/donations',
   '/admin/messages',

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
-import { BookOpen, CalendarDays, Eye, HandCoins, Megaphone, Plus, ReceiptText, UsersRound, X } from 'lucide-react';
+import { BookOpen, CalendarDays, Edit3, Eye, GraduationCap, HandCoins, ImagePlus, Mail, Megaphone, Phone, Plus, ReceiptText, Save, Trash2, UserPlus, UsersRound, X } from 'lucide-react';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { culturalClasses, events, paataShaaleLevels } from '../data/siteData.js';
 import { appendRecord, canAccessAdminPath, defaultAdminPath, getCurrentUser, hasAnyRole, isAdmin, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
+import { defaultAboutContent, normalizeAboutContent } from '../utils/aboutContent.js';
+import { defaultPaataTeachers, normalizePaataTeachers } from '../utils/paataTeachers.js';
 import {
   apiAdminDashboard,
   apiAppendRecord,
@@ -1053,7 +1055,17 @@ function UserRoleEditor({ row, onChange }) {
 
 function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose, onSave }) {
   const [error, setError] = useState('');
-  const title = kind === 'event' ? 'Edit event' : kind === 'announcement' ? 'Edit announcement' : 'Edit registration';
+  const titleByKind = {
+    event: 'Edit event',
+    announcement: 'Edit announcement',
+    registration: 'Edit registration',
+    fundraiser: 'Edit fundraising cause',
+    donation: 'Edit donation',
+    contact: 'Edit contact message',
+    volunteer: 'Edit volunteer submission',
+    expense: 'Edit expense'
+  };
+  const title = titleByKind[kind] || 'Edit record';
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -1115,7 +1127,7 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
         endOn: data.endOn,
         enabled: Boolean(data.enabled)
       };
-    } else {
+    } else if (kind === 'registration') {
       if (!cleanText(data.email) || !cleanText(data.program)) {
         setError('Email and program are required.');
         return;
@@ -1138,6 +1150,76 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
         rsvp: cleanText(data.rsvp),
         priceSelection: cleanText(data.priceSelection),
         emailStatus: cleanText(data.emailStatus)
+      };
+    } else if (kind === 'fundraiser') {
+      if (!cleanText(data.title)) {
+        setError('Cause title is required.');
+        return;
+      }
+      patch = {
+        title: cleanText(data.title),
+        category: cleanText(data.category),
+        beneficiary: cleanText(data.beneficiary),
+        purpose: cleanText(data.purpose),
+        goal: Number(data.goal || 0),
+        raised: Number(data.raised || 0),
+        deadline: data.deadline,
+        status: cleanText(data.status) || 'Active',
+        photo: cleanText(data.photo)
+      };
+    } else if (kind === 'donation') {
+      if (!cleanText(data.email)) {
+        setError('Donor email is required.');
+        return;
+      }
+      patch = {
+        name: cleanText(data.name),
+        email: cleanText(data.email).toLowerCase(),
+        cause: cleanText(data.cause),
+        causeId: cleanText(data.causeId),
+        amount: Number(data.amount || 0),
+        paymentStatus: cleanText(data.paymentStatus) || 'Submitted',
+        paymentReference: cleanText(data.paymentReference)
+      };
+    } else if (kind === 'contact') {
+      if (!cleanText(data.email) || !cleanText(data.message)) {
+        setError('Email and message are required.');
+        return;
+      }
+      patch = {
+        name: cleanText(data.name),
+        email: cleanText(data.email).toLowerCase(),
+        topic: cleanText(data.topic),
+        message: cleanText(data.message)
+      };
+    } else if (kind === 'volunteer') {
+      if (!cleanText(data.email)) {
+        setError('Volunteer email is required.');
+        return;
+      }
+      patch = {
+        name: cleanText(data.name),
+        email: cleanText(data.email).toLowerCase(),
+        interest: cleanText(data.interest),
+        message: cleanText(data.message)
+      };
+    } else if (kind === 'expense') {
+      if (!cleanText(data.title)) {
+        setError('Expense title is required.');
+        return;
+      }
+      patch = {
+        title: cleanText(data.title),
+        category: cleanText(data.category),
+        amount: Number(data.amount || 0),
+        expenseDate: data.expenseDate,
+        vendor: cleanText(data.vendor),
+        paymentMethod: cleanText(data.paymentMethod),
+        reimbursementTo: cleanText(data.reimbursementTo),
+        description: cleanText(data.description),
+        receiptUrl: cleanText(data.receiptUrl),
+        status: cleanText(data.status) || 'Submitted',
+        submittedBy: cleanText(data.submittedBy)
       };
     }
 
@@ -1232,11 +1314,524 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
               </div>
             </>
           )}
+          {kind === 'fundraiser' && (
+            <>
+              <div className="admin-form-grid">
+                <label>Cause title<input name="title" defaultValue={row.title || ''} required /></label>
+                <label>Category<input name="category" defaultValue={row.category || ''} /></label>
+                <label>Beneficiary<input name="beneficiary" defaultValue={row.beneficiary || ''} /></label>
+                <label>Status<select name="status" defaultValue={row.status || 'Active'}><option>Active</option><option>Paused</option><option>Completed</option></select></label>
+                <label>Raised<input name="raised" type="number" min="0" step="0.01" defaultValue={row.raised || 0} /></label>
+                <label>Goal<input name="goal" type="number" min="0" step="0.01" defaultValue={row.goal || 0} /></label>
+                <label>Needed by<DatePicker name="deadline" defaultValue={String(row.deadline || '').slice(0, 10)} placeholder="Choose deadline" /></label>
+                <label>Image URL<input name="photo" defaultValue={row.photo || ''} /></label>
+              </div>
+              <label>Details<textarea name="purpose" defaultValue={row.purpose || ''} rows={4} /></label>
+            </>
+          )}
+          {kind === 'donation' && (
+            <div className="admin-form-grid">
+              <label>Name<input name="name" defaultValue={row.name || ''} /></label>
+              <label>Email<input name="email" type="email" defaultValue={row.email || ''} required /></label>
+              <label>Donation cause<input name="cause" defaultValue={row.cause || ''} /></label>
+              <label>Cause ID<input name="causeId" defaultValue={row.causeId || ''} /></label>
+              <label>Amount<input name="amount" type="number" min="0" step="0.01" defaultValue={row.amount || 0} /></label>
+              <label>Payment status<input name="paymentStatus" defaultValue={row.paymentStatus || ''} /></label>
+              <label>Payment reference<input name="paymentReference" defaultValue={row.paymentReference || ''} /></label>
+            </div>
+          )}
+          {kind === 'contact' && (
+            <>
+              <div className="admin-form-grid">
+                <label>Name<input name="name" defaultValue={row.name || ''} /></label>
+                <label>Email<input name="email" type="email" defaultValue={row.email || ''} required /></label>
+                <label>Topic<input name="topic" defaultValue={row.topic || ''} /></label>
+              </div>
+              <label>Message<textarea name="message" defaultValue={row.message || ''} rows={5} required /></label>
+            </>
+          )}
+          {kind === 'volunteer' && (
+            <>
+              <div className="admin-form-grid">
+                <label>Name<input name="name" defaultValue={row.name || ''} /></label>
+                <label>Email<input name="email" type="email" defaultValue={row.email || ''} required /></label>
+                <label>Volunteer interest<input name="interest" defaultValue={row.interest || ''} /></label>
+              </div>
+              <label>Message<textarea name="message" defaultValue={row.message || ''} rows={5} /></label>
+            </>
+          )}
+          {kind === 'expense' && (
+            <>
+              <div className="admin-form-grid">
+                <label>Title<input name="title" defaultValue={row.title || ''} required /></label>
+                <label>Category<input name="category" defaultValue={row.category || ''} /></label>
+                <label>Amount<input name="amount" type="number" min="0" step="0.01" defaultValue={row.amount || 0} /></label>
+                <label>Expense date<DatePicker name="expenseDate" defaultValue={String(row.expenseDate || row.expense_date || '').slice(0, 10)} placeholder="Choose expense date" /></label>
+                <label>Vendor<input name="vendor" defaultValue={row.vendor || ''} /></label>
+                <label>Payment method<input name="paymentMethod" defaultValue={row.paymentMethod || ''} /></label>
+                <label>Reimburse to<input name="reimbursementTo" defaultValue={row.reimbursementTo || ''} /></label>
+                <label>Submitted by<input name="submittedBy" defaultValue={row.submittedBy || ''} /></label>
+                <label>Status<select name="status" defaultValue={row.status || 'Submitted'}><option>Submitted</option><option>Approved</option><option>Paid</option><option>Rejected</option></select></label>
+                <label>Receipt URL<input name="receiptUrl" defaultValue={row.receiptUrl || ''} /></label>
+              </div>
+              <label>Description<textarea name="description" defaultValue={row.description || ''} rows={4} /></label>
+            </>
+          )}
           <button className="button primary" type="submit">Save changes</button>
           {error && <p className="form-error">{error}</p>}
         </form>
       </div>
     </div>
+  );
+}
+
+function makeAboutRow(section) {
+  const id = `${section}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  if (section === 'currentCommittee') {
+    return { id, name: '', role: '', email: '', phone: '', bio: '', photo: '' };
+  }
+  if (section === 'sponsors') {
+    return { id, name: '', level: '', website: '', note: '', photo: '' };
+  }
+  return { id, term: '', title: '', members: '', photo: '' };
+}
+
+function AboutContentEditor({ content, setContent, onSave, saving, notice, error }) {
+  const { tr } = useLanguage();
+  const [editor, setEditor] = useState(null);
+  const [draftError, setDraftError] = useState('');
+  const sections = [
+    {
+      key: 'currentCommittee',
+      title: 'Current Committee',
+      description: 'Add committee members with role, contact details, short bio, and profile photo.',
+      addLabel: 'Add member',
+      fields: [
+        ['name', 'Name', 'text'],
+        ['role', 'Role / title', 'text'],
+        ['email', 'Email', 'email'],
+        ['phone', 'Phone', 'tel'],
+        ['bio', 'Short bio', 'textarea']
+      ]
+    },
+    {
+      key: 'sponsors',
+      title: 'Our Sponsors',
+      description: 'Add sponsor logos, sponsor level, website, and recognition text.',
+      addLabel: 'Add sponsor',
+      fields: [
+        ['name', 'Sponsor name', 'text'],
+        ['level', 'Level', 'text'],
+        ['website', 'Website', 'url'],
+        ['note', 'Recognition note', 'textarea']
+      ]
+    },
+    {
+      key: 'pastCommittees',
+      title: 'Past Committees',
+      description: 'Add previous committee terms, group photos, and member details.',
+      addLabel: 'Add past committee',
+      fields: [
+        ['term', 'Term / year', 'text'],
+        ['title', 'Committee title', 'text'],
+        ['members', 'Members / notes', 'textarea']
+      ]
+    }
+  ];
+
+  const activeSection = editor ? sections.find((section) => section.key === editor.sectionKey) : null;
+
+  function getRowTitle(sectionKey, row) {
+    if (sectionKey === 'pastCommittees') return row.title || row.term || 'Past committee';
+    return row.name || 'Untitled';
+  }
+
+  function getRowMeta(sectionKey, row) {
+    if (sectionKey === 'currentCommittee') return [row.role, row.email, row.phone].filter(Boolean).join(' · ') || 'Committee member';
+    if (sectionKey === 'sponsors') return [row.level, row.website].filter(Boolean).join(' · ') || 'Sponsor';
+    return row.term || 'Past committee';
+  }
+
+  function getRowNote(sectionKey, row) {
+    if (sectionKey === 'currentCommittee') return row.bio;
+    if (sectionKey === 'sponsors') return row.note;
+    return row.members;
+  }
+
+  function openAdd(sectionKey) {
+    setDraftError('');
+    setEditor({ mode: 'add', sectionKey, draft: makeAboutRow(sectionKey) });
+  }
+
+  function openEdit(sectionKey, row) {
+    setDraftError('');
+    setEditor({ mode: 'edit', sectionKey, rowId: row.id, draft: { ...makeAboutRow(sectionKey), ...row } });
+  }
+
+  function updateDraft(field, value) {
+    setDraftError('');
+    setEditor((current) => ({ ...current, draft: { ...current.draft, [field]: value } }));
+  }
+
+  function saveDraft(event) {
+    event.preventDefault();
+    if (!editor) return;
+    const sectionKey = editor.sectionKey;
+    const draft = { ...editor.draft };
+    if (sectionKey === 'currentCommittee' && !cleanText(draft.name)) {
+      setDraftError('Name is required.');
+      return;
+    }
+    if (sectionKey === 'sponsors' && !cleanText(draft.name)) {
+      setDraftError('Sponsor name is required.');
+      return;
+    }
+    if (sectionKey === 'pastCommittees' && !cleanText(draft.term) && !cleanText(draft.title)) {
+      setDraftError('Term or committee title is required.');
+      return;
+    }
+    const cleaned = Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, key === 'id' ? value : cleanText(value)]));
+    setContent((current) => ({
+      ...current,
+      [sectionKey]: editor.mode === 'edit'
+        ? current[sectionKey].map((row) => (row.id === editor.rowId ? cleaned : row))
+        : [...current[sectionKey], cleaned]
+    }));
+    setEditor(null);
+  }
+
+  function removeRow(sectionKey, rowId) {
+    const confirmed = window.confirm('Remove this item from the About page?');
+    if (!confirmed) return;
+    setContent((current) => ({
+      ...current,
+      [sectionKey]: current[sectionKey].filter((row) => row.id !== rowId)
+    }));
+  }
+
+  async function uploadDraftPhoto(file) {
+    if (!file || file.size === 0) return;
+    const imageError = validateImageFile(file);
+    if (imageError) {
+      setDraftError(imageError);
+      return;
+    }
+
+    const dataUrl = await readFileAsDataUrl(file);
+    let photo = dataUrl;
+    try {
+      const uploaded = await apiUploadFile({
+        dataUrl,
+        fileName: file.name,
+        container: 'assets',
+        directory: 'about'
+      });
+      photo = uploaded.url || dataUrl;
+    } catch {
+      photo = dataUrl;
+    }
+    updateDraft('photo', photo);
+  }
+
+  return (
+    <>
+      <section className="about-admin-hero">
+        <div>
+          <p className="eyebrow">{tr('About Us')}</p>
+          <h2>{tr('Manage public About page')}</h2>
+          <p>{tr('Upload committee photos, sponsor logos, and past committee details. The public About page updates after saving.')}</p>
+        </div>
+        <button className="button" type="button" onClick={onSave} disabled={saving}>
+          <Save size={17} /> {saving ? tr('Saving...') : tr('Save About Page')}
+        </button>
+      </section>
+      {error && <p className="form-error admin-floating-message">{error}</p>}
+      {notice && <p className="success admin-floating-message">{notice}</p>}
+      <div className="about-admin-grid">
+        {sections.map((section) => (
+          <section className="admin-page-panel about-admin-section" key={section.key}>
+            <div className="admin-page-panel-heading">
+              <div>
+                <h2>{tr(section.title)}</h2>
+                <p>{tr(section.description)}</p>
+              </div>
+              <div className="about-admin-heading-actions">
+                <span>{content[section.key].length}</span>
+                <button className="mini-action-link secondary" type="button" onClick={() => openAdd(section.key)}>
+                  <Plus size={14} /> {tr(section.addLabel)}
+                </button>
+              </div>
+            </div>
+            <div className="about-admin-directory-table">
+              {content[section.key].map((row) => (
+                <article className="about-admin-directory-row" key={row.id}>
+                  <div className="about-admin-directory-photo">
+                    {row.photo ? <img src={row.photo} alt={getRowTitle(section.key, row)} /> : <ImagePlus size={24} />}
+                  </div>
+                  <div className="about-admin-directory-main">
+                    <strong>{getRowTitle(section.key, row)}</strong>
+                    <span>{getRowMeta(section.key, row)}</span>
+                    {getRowNote(section.key, row) && <p>{getRowNote(section.key, row)}</p>}
+                  </div>
+                  <div className="about-admin-directory-actions">
+                    <button className="icon-button table-icon-button" type="button" onClick={() => openEdit(section.key, row)} title={tr('Edit')} aria-label={tr('Edit')}>
+                      <Edit3 size={15} />
+                    </button>
+                    <button className="icon-button table-icon-button danger" type="button" onClick={() => removeRow(section.key, row.id)} title={tr('Remove')} aria-label={tr('Remove')}>
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+            {content[section.key].length === 0 && (
+              <button className="button secondary about-add-button" type="button" onClick={() => openAdd(section.key)}>
+                <Plus size={16} /> {tr(section.addLabel)}
+              </button>
+            )}
+          </section>
+        ))}
+      </div>
+      {editor && activeSection && (
+        <div className="popup-backdrop" role="presentation">
+          <div className="popup-panel about-admin-modal" role="dialog" aria-modal="true" aria-label={editor.mode === 'edit' ? `Edit ${activeSection.title}` : activeSection.addLabel}>
+            <button className="popup-close" type="button" aria-label="Close popup" onClick={() => setEditor(null)}>
+              <X size={20} />
+            </button>
+            <form className="about-admin-modal-form" onSubmit={saveDraft}>
+              <div className="paata-admin-section-title">
+                <span>{editor.mode === 'edit' ? <Edit3 size={18} /> : <Plus size={18} />}</span>
+                <div>
+                  <h2>{editor.mode === 'edit' ? tr(`Edit ${activeSection.title}`) : tr(activeSection.addLabel)}</h2>
+                  <p>{tr(activeSection.description)}</p>
+                </div>
+              </div>
+              <div className="about-admin-modal-layout">
+                <div className="about-admin-photo-editor">
+                  <div className="about-admin-photo-preview">
+                    {editor.draft.photo ? <img src={editor.draft.photo} alt={getRowTitle(editor.sectionKey, editor.draft)} /> : <ImagePlus size={34} />}
+                  </div>
+                  <label>
+                    <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => uploadDraftPhoto(event.target.files?.[0])} />
+                    <ImagePlus size={15} /> {tr('Upload photo')}
+                  </label>
+                </div>
+                <div className="about-admin-fields about-admin-modal-fields">
+                  {activeSection.fields.map(([field, label, type]) => (
+                    <label key={field}>
+                      <span>{tr(label)}</span>
+                      {type === 'textarea' ? (
+                        <textarea value={editor.draft[field] || ''} onChange={(event) => updateDraft(field, event.target.value)} rows={4} />
+                      ) : (
+                        <input type={type} value={editor.draft[field] || ''} onChange={(event) => updateDraft(field, event.target.value)} />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="paata-teacher-form-actions">
+                <button className="button primary" type="submit">
+                  <Save size={16} /> {editor.mode === 'edit' ? tr('Update') : tr('Add')}
+                </button>
+                <button className="button secondary" type="button" onClick={() => setEditor(null)}>
+                  <X size={16} /> {tr('Cancel')}
+                </button>
+              </div>
+              {draftError && <p className="form-error">{draftError}</p>}
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function makePaataTeacher() {
+  return {
+    id: `paata-teacher-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name: '',
+    role: '',
+    level: '',
+    email: '',
+    phone: '',
+    bio: '',
+    photo: ''
+  };
+}
+
+function PaataTeacherEditor({ teachers, setTeachers, onSave, saving, notice, error }) {
+  const { tr } = useLanguage();
+  const [editingId, setEditingId] = useState('');
+  const [draft, setDraft] = useState(() => makePaataTeacher());
+  const [draftError, setDraftError] = useState('');
+
+  function updateDraft(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+    setDraftError('');
+  }
+
+  function resetDraft() {
+    setEditingId('');
+    setDraft(makePaataTeacher());
+    setDraftError('');
+  }
+
+  function saveDraft(event) {
+    event.preventDefault();
+    const cleaned = normalizePaataTeachers([{ ...draft, id: editingId || draft.id || makePaataTeacher().id }])[0];
+    if (!cleaned?.name) {
+      setDraftError('Teacher name is required.');
+      return;
+    }
+    if (cleaned.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned.email)) {
+      setDraftError('Enter a valid teacher email.');
+      return;
+    }
+
+    setTeachers((current) => {
+      if (editingId) {
+        return current.map((teacher) => (teacher.id === editingId ? { ...cleaned, id: editingId } : teacher));
+      }
+      return [...current, { ...cleaned, id: cleaned.id || makePaataTeacher().id }];
+    });
+    resetDraft();
+  }
+
+  function editTeacher(teacher) {
+    setEditingId(teacher.id);
+    setDraft({ ...makePaataTeacher(), ...teacher });
+    setDraftError('');
+  }
+
+  function removeTeacher(id) {
+    setTeachers((current) => current.filter((teacher) => teacher.id !== id));
+    if (editingId === id) resetDraft();
+  }
+
+  async function uploadTeacherPhoto(file) {
+    if (!file || file.size === 0) return;
+    const imageError = validateImageFile(file);
+    if (imageError) {
+      setDraftError(imageError);
+      return;
+    }
+
+    const dataUrl = await readFileAsDataUrl(file);
+    let photo = dataUrl;
+    try {
+      const uploaded = await apiUploadFile({
+        dataUrl,
+        fileName: file.name,
+        container: 'assets',
+        directory: 'paata-teachers'
+      });
+      photo = uploaded.url || dataUrl;
+    } catch {
+      photo = dataUrl;
+    }
+    updateDraft('photo', photo);
+  }
+
+  return (
+    <>
+      <section className="about-admin-hero paata-admin-hero">
+        <div>
+          <p className="eyebrow">{tr('Kannada Paata Shaale')}</p>
+          <h2>{tr('Manage teacher details')}</h2>
+          <p>{tr('Upload teacher photos and update role, level, contact, and short bio shown on the public Paata Shaale page.')}</p>
+        </div>
+        <button className="button" type="button" onClick={onSave} disabled={saving}>
+          <Save size={17} /> {saving ? tr('Saving...') : tr('Save Teachers')}
+        </button>
+      </section>
+      {error && <p className="form-error admin-floating-message">{error}</p>}
+      {notice && <p className="success admin-floating-message">{notice}</p>}
+      <div className="paata-admin-workspace">
+        <section className="admin-page-panel paata-teacher-form-panel">
+          <div className="paata-admin-section-title">
+            <span><UserPlus size={18} /></span>
+            <div>
+              <h2>{editingId ? tr('Edit teacher') : tr('Add teacher')}</h2>
+              <p>{tr('Fill teacher details once, then add or update the saved teacher list.')}</p>
+            </div>
+          </div>
+          {draftError && <p className="form-error">{draftError}</p>}
+          <form className="paata-teacher-admin-form" onSubmit={saveDraft}>
+            <div className="paata-teacher-photo-editor">
+              <div className="paata-teacher-photo-preview">
+                {draft.photo ? <img src={draft.photo} alt={draft.name || 'Teacher'} /> : <ImagePlus size={34} />}
+              </div>
+              <label>
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => uploadTeacherPhoto(event.target.files?.[0])} />
+                <ImagePlus size={16} /> {tr('Upload photo')}
+              </label>
+            </div>
+            <div className="paata-teacher-form-grid">
+              <label><span>{tr('Teacher name')}</span><input value={draft.name || ''} onChange={(event) => updateDraft('name', event.target.value)} placeholder="Teacher name" /></label>
+              <label><span>{tr('Role / title')}</span><input value={draft.role || ''} onChange={(event) => updateDraft('role', event.target.value)} placeholder="Lead teacher" /></label>
+              <label><span>{tr('Class level')}</span><input value={draft.level || ''} onChange={(event) => updateDraft('level', event.target.value)} placeholder="Level 1" /></label>
+              <label><span>{tr('Email')}</span><input type="email" value={draft.email || ''} onChange={(event) => updateDraft('email', event.target.value)} placeholder="teacher@example.com" /></label>
+              <label><span>{tr('Phone')}</span><input type="tel" value={draft.phone || ''} onChange={(event) => updateDraft('phone', event.target.value)} placeholder="Phone number" /></label>
+              <label className="paata-teacher-bio-field"><span>{tr('Short bio')}</span><textarea rows={4} value={draft.bio || ''} onChange={(event) => updateDraft('bio', event.target.value)} placeholder="Short teacher profile for public page" /></label>
+            </div>
+            <div className="paata-teacher-form-actions">
+              <button className="button" type="submit">
+                {editingId ? <Save size={16} /> : <Plus size={16} />} {editingId ? tr('Update teacher') : tr('Add teacher')}
+              </button>
+              <button className="button secondary" type="button" onClick={resetDraft}>
+                <X size={16} /> {tr('Clear')}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="admin-page-panel paata-teacher-list-panel">
+          <div className="admin-page-panel-heading">
+            <div>
+              <h2>{tr('Saved teachers')}</h2>
+              <p>{tr('These teacher cards appear on the Kannada Paata Shaale page after saving.')}</p>
+            </div>
+            <span>{teachers.length}</span>
+          </div>
+          <div className="paata-admin-teacher-list">
+            {teachers.map((teacher) => (
+              <article className={editingId === teacher.id ? 'paata-admin-teacher-row is-editing' : 'paata-admin-teacher-row'} key={teacher.id}>
+                <div className="paata-admin-teacher-avatar">
+                  {teacher.photo ? <img src={teacher.photo} alt={teacher.name || 'Teacher'} /> : <GraduationCap size={26} />}
+                </div>
+                <div className="paata-admin-teacher-summary">
+                  <strong>{teacher.name || tr('Unnamed teacher')}</strong>
+                  <span>{teacher.role || tr('Teacher')} · {teacher.level || tr('Level not set')}</span>
+                  {teacher.bio && <p>{teacher.bio}</p>}
+                  <div>
+                    {teacher.email && <small><Mail size={13} /> {teacher.email}</small>}
+                    {teacher.phone && <small><Phone size={13} /> {teacher.phone}</small>}
+                  </div>
+                </div>
+                <div className="paata-admin-teacher-actions">
+                  <button className="icon-button" type="button" onClick={() => editTeacher(teacher)} title={tr('Edit teacher')} aria-label={tr('Edit teacher')}>
+                    <Edit3 size={16} />
+                  </button>
+                  <button className="icon-button danger" type="button" onClick={() => removeTeacher(teacher.id)} title={tr('Delete teacher')} aria-label={tr('Delete teacher')}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </article>
+            ))}
+            {teachers.length === 0 && (
+              <div className="empty-state compact-empty-state">
+                <GraduationCap size={28} />
+                <strong>{tr('No teachers added yet')}</strong>
+                <p>{tr('Use the form to add teacher details and photos.')}</p>
+              </div>
+            )}
+          </div>
+          <button className="button paata-save-list-button" type="button" onClick={onSave} disabled={saving}>
+            <Save size={17} /> {saving ? tr('Saving...') : tr('Save teacher list')}
+          </button>
+        </section>
+      </div>
+    </>
   );
 }
 
@@ -1317,6 +1912,9 @@ export default function AdminSectionPage({ view }) {
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [announcementError, setAnnouncementError] = useState('');
   const [announcementSaved, setAnnouncementSaved] = useState(false);
+  const [siteMessage, setSiteMessage] = useState(() => readJson('kb-site-message', { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
+  const [siteMessageError, setSiteMessageError] = useState('');
+  const [siteMessageSaved, setSiteMessageSaved] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileSaved, setProfileSaved] = useState(false);
   const [registrationError, setRegistrationError] = useState('');
@@ -1333,6 +1931,14 @@ export default function AdminSectionPage({ view }) {
   const [eventTypes, setEventTypes] = useState(() => readJson('kb-event-types', defaultEventTypes));
   const [recurrences, setRecurrences] = useState(() => readJson('kb-recurrence-options', defaultRecurrences));
   const [volunteerGoogleForm, setVolunteerGoogleForm] = useState(() => readJson('kb-volunteer-google-form', defaultVolunteerGoogleForm));
+  const [aboutContent, setAboutContent] = useState(() => normalizeAboutContent(readJson('kb-about-content', defaultAboutContent)));
+  const [aboutSaving, setAboutSaving] = useState(false);
+  const [aboutNotice, setAboutNotice] = useState('');
+  const [aboutError, setAboutError] = useState('');
+  const [paataTeachers, setPaataTeachers] = useState(() => normalizePaataTeachers(readJson('kb-paata-teachers', defaultPaataTeachers)));
+  const [paataTeachersSaving, setPaataTeachersSaving] = useState(false);
+  const [paataTeachersNotice, setPaataTeachersNotice] = useState('');
+  const [paataTeachersError, setPaataTeachersError] = useState('');
   const [settingsError, setSettingsError] = useState('');
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [emailOutboxNotice, setEmailOutboxNotice] = useState('');
@@ -1485,6 +2091,56 @@ export default function AdminSectionPage({ view }) {
     };
   }, [view]);
 
+  useEffect(() => {
+    if (view !== 'about') return;
+    let ignore = false;
+    apiReadSiteSetting('about-content')
+      .then((setting) => {
+        if (ignore) return;
+        const normalized = normalizeAboutContent(setting);
+        setAboutContent(normalized);
+        writeJson('kb-about-content', normalized);
+        window.dispatchEvent(new Event('kb-data-change'));
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, [view]);
+
+  useEffect(() => {
+    if (view !== 'paata-teachers') return;
+    let ignore = false;
+    apiReadSiteSetting('paata-teachers')
+      .then((rows) => {
+        if (ignore) return;
+        const normalized = normalizePaataTeachers(rows);
+        setPaataTeachers(normalized);
+        writeJson('kb-paata-teachers', normalized);
+        window.dispatchEvent(new Event('kb-data-change'));
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, [view]);
+
+  useEffect(() => {
+    if (view !== 'announcements') return;
+    let ignore = false;
+    apiReadSiteSetting('site-message')
+      .then((setting) => {
+        if (ignore) return;
+        const nextMessage = setting || { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' };
+        setSiteMessage(nextMessage);
+        writeJson('kb-site-message', nextMessage);
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, [view]);
+
   if (!canAccessAdminPath(user, location.pathname)) {
     return <Navigate to={defaultAdminPath(user)} replace />;
   }
@@ -1613,18 +2269,45 @@ export default function AdminSectionPage({ view }) {
   }
 
   async function saveEditedRecord(kind, row, patch) {
-    const idMatches = (item) => (item.id && row.id && item.id === row.id) || item.createdAt === row.createdAt || item.title === row.title || item.text === row.text;
+    const idMatches = (item) => (
+      (item.id && row.id && item.id === row.id)
+      || (item.createdAt && row.createdAt && item.createdAt === row.createdAt)
+      || (item.created_at && row.created_at && item.created_at === row.created_at)
+      || (item.title && row.title && item.title === row.title)
+      || (item.text && row.text && item.text === row.text)
+      || (item.email && row.email && item.email === row.email && item.message === row.message)
+    );
     const storageKeyByKind = {
       event: 'kb-admin-events',
       announcement: 'kb-announcement-submissions',
-      registration: 'kb-registration-submissions'
+      registration: 'kb-registration-submissions',
+      fundraiser: 'kb-admin-fundraisers',
+      donation: 'kb-donation-submissions',
+      volunteer: 'kb-volunteer-submissions',
+      contact: 'kb-contact-submissions',
+      expense: 'kb-expense-submissions'
     };
     const dashboardKeyByKind = {
       event: 'events',
       announcement: 'announcements',
-      registration: 'registrations'
+      registration: 'registrations',
+      fundraiser: 'fundraisers',
+      donation: 'donations',
+      volunteer: 'volunteers',
+      contact: 'contacts',
+      expense: 'expenses'
     };
-    const currentRows = kind === 'event' ? allEvents : kind === 'announcement' ? announcements : registrations;
+    const currentRowsByKind = {
+      event: allEvents,
+      announcement: announcements,
+      registration: registrations,
+      fundraiser: fundraisers,
+      donation: donations,
+      volunteer: volunteers,
+      contact: contacts,
+      expense: expenses
+    };
+    const currentRows = currentRowsByKind[kind] || [];
     const optimisticRow = { ...row, ...patch };
     const nextRows = currentRows.map((item) => (idMatches(item) ? optimisticRow : item));
     writeJson(storageKeyByKind[kind], nextRows);
@@ -1647,6 +2330,78 @@ export default function AdminSectionPage({ view }) {
     } finally {
       setEditRecord(null);
     }
+  }
+
+  async function deleteAdminRecord(kind, row) {
+    const confirmed = window.confirm(`Delete this ${kind} record?`);
+    if (!confirmed) return;
+    const idMatches = (item) => (
+      (item.id && row.id && item.id === row.id)
+      || (item.createdAt && row.createdAt && item.createdAt === row.createdAt)
+      || (item.created_at && row.created_at && item.created_at === row.created_at)
+      || (item.title && row.title && item.title === row.title)
+      || (item.text && row.text && item.text === row.text)
+      || (item.email && row.email && item.email === row.email && item.message === row.message)
+    );
+    const storageKeyByKind = {
+      event: 'kb-admin-events',
+      announcement: 'kb-announcement-submissions',
+      registration: 'kb-registration-submissions',
+      fundraiser: 'kb-admin-fundraisers',
+      donation: 'kb-donation-submissions',
+      volunteer: 'kb-volunteer-submissions',
+      contact: 'kb-contact-submissions',
+      expense: 'kb-expense-submissions'
+    };
+    const dashboardKeyByKind = {
+      event: 'events',
+      announcement: 'announcements',
+      registration: 'registrations',
+      fundraiser: 'fundraisers',
+      donation: 'donations',
+      volunteer: 'volunteers',
+      contact: 'contacts',
+      expense: 'expenses'
+    };
+    const currentRowsByKind = {
+      event: allEvents,
+      announcement: announcements,
+      registration: registrations,
+      fundraiser: fundraisers,
+      donation: donations,
+      volunteer: volunteers,
+      contact: contacts,
+      expense: expenses
+    };
+    const currentRows = currentRowsByKind[kind] || [];
+    const nextRows = currentRows.filter((item) => !idMatches(item));
+    writeJson(storageKeyByKind[kind], nextRows);
+    setDashboard((current) => ({ ...current, [dashboardKeyByKind[kind]]: nextRows }));
+    window.dispatchEvent(new Event('kb-data-change'));
+
+    if (!row.id) return;
+    try {
+      await apiDeleteSubmission(kind, row.id);
+    } catch {
+      // Keep optimistic delete for local/demo mode when the API is unavailable.
+    }
+  }
+
+  function AdminRecordActions({ kind, row, canEdit = true, canDelete = true }) {
+    return (
+      <div className="admin-row-actions compact-actions">
+        {canEdit && (
+          <button className="icon-button table-icon-button" type="button" onClick={() => setEditRecord({ kind, row })} title={`Edit ${kind}`} aria-label={`Edit ${kind}`}>
+            <Edit3 size={15} />
+          </button>
+        )}
+        {canDelete && (
+          <button className="icon-button table-icon-button danger" type="button" onClick={() => deleteAdminRecord(kind, row)} title={`Delete ${kind}`} aria-label={`Delete ${kind}`}>
+            <Trash2 size={15} />
+          </button>
+        )}
+      </div>
+    );
   }
 
   async function runExpenseAction(row, action, fallbackStatus) {
@@ -2085,6 +2840,48 @@ export default function AdminSectionPage({ view }) {
     setModalType(null);
   }
 
+  async function handleSiteMessageSubmit(event) {
+    event.preventDefault();
+    setSiteMessageError('');
+    setSiteMessageSaved(false);
+    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const enabled = Boolean(payload.enabled);
+    const nextMessage = {
+      enabled,
+      title: cleanText(payload.title),
+      message: cleanText(payload.message),
+      ctaText: cleanText(payload.ctaText),
+      ctaUrl: cleanText(payload.ctaUrl),
+      updatedAt: new Date().toISOString()
+    };
+    const error = firstError([
+      enabled ? validateRequired(nextMessage.title, 'Popup title') : '',
+      enabled ? validateRequired(nextMessage.message, 'Popup message') : '',
+      nextMessage.title.length > 90 ? 'Popup title must be 90 characters or fewer.' : '',
+      nextMessage.message.length > 700 ? 'Popup message must be 700 characters or fewer.' : '',
+      nextMessage.ctaText.length > 40 ? 'Button text must be 40 characters or fewer.' : '',
+      nextMessage.ctaUrl ? validateUrl(nextMessage.ctaUrl, 'Popup button URL') : ''
+    ]);
+
+    if (error) {
+      setSiteMessageError(error);
+      return;
+    }
+
+    writeJson('kb-site-message', nextMessage);
+    setSiteMessage(nextMessage);
+    try {
+      const saved = await apiSaveSiteSetting('site-message', nextMessage);
+      const finalMessage = saved || nextMessage;
+      writeJson('kb-site-message', finalMessage);
+      setSiteMessage(finalMessage);
+      setSiteMessageSaved(true);
+      window.dispatchEvent(new Event('kb-data-change'));
+    } catch (saveError) {
+      setSiteMessageError(saveError.message || 'Could not save popup message.');
+    }
+  }
+
   async function toggleAnnouncement(row) {
     const enabled = !isEnabledValue(row.enabled);
     const rowKey = getAnnouncementKey(row);
@@ -2166,6 +2963,76 @@ export default function AdminSectionPage({ view }) {
     }
     setSettingsSaved(true);
     window.dispatchEvent(new Event('kb-data-change'));
+  }
+
+  async function handleAboutContentSave() {
+    setAboutError('');
+    setAboutNotice('');
+    const normalized = normalizeAboutContent(aboutContent);
+    const cleaned = {
+      currentCommittee: normalized.currentCommittee.filter((row) => row.name || row.role || row.email || row.phone || row.bio || row.photo),
+      sponsors: normalized.sponsors.filter((row) => row.name || row.level || row.website || row.note || row.photo),
+      pastCommittees: normalized.pastCommittees.filter((row) => row.term || row.title || row.members || row.photo)
+    };
+    const validationError = firstError([
+      cleaned.currentCommittee.some((row) => !row.name) ? 'Each current committee row needs a name.' : '',
+      cleaned.sponsors.some((row) => !row.name) ? 'Each sponsor row needs a sponsor name.' : '',
+      cleaned.pastCommittees.some((row) => !row.term && !row.title) ? 'Each past committee row needs a term or title.' : ''
+    ]);
+
+    if (validationError) {
+      setAboutError(validationError);
+      return;
+    }
+
+    setAboutSaving(true);
+    writeJson('kb-about-content', cleaned);
+    setAboutContent(normalizeAboutContent(cleaned));
+    try {
+      const saved = await apiSaveSiteSetting('about-content', cleaned);
+      const nextContent = normalizeAboutContent(saved || cleaned);
+      writeJson('kb-about-content', nextContent);
+      setAboutContent(nextContent);
+      setAboutNotice('About page content saved.');
+      window.dispatchEvent(new Event('kb-data-change'));
+    } catch (error) {
+      setAboutError(error.message || 'Could not save About page content.');
+    } finally {
+      setAboutSaving(false);
+    }
+  }
+
+  async function handlePaataTeachersSave() {
+    setPaataTeachersError('');
+    setPaataTeachersNotice('');
+    const cleaned = normalizePaataTeachers(paataTeachers)
+      .filter((teacher) => teacher.name || teacher.role || teacher.level || teacher.email || teacher.phone || teacher.bio || teacher.photo);
+    const validationError = firstError([
+      cleaned.length === 0 ? 'Add at least one teacher.' : '',
+      cleaned.some((teacher) => !teacher.name) ? 'Each teacher row needs a teacher name.' : '',
+      cleaned.some((teacher) => teacher.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(teacher.email)) ? 'Enter a valid teacher email.' : ''
+    ]);
+
+    if (validationError) {
+      setPaataTeachersError(validationError);
+      return;
+    }
+
+    setPaataTeachersSaving(true);
+    writeJson('kb-paata-teachers', cleaned);
+    setPaataTeachers(cleaned);
+    try {
+      const saved = await apiSaveSiteSetting('paata-teachers', cleaned);
+      const normalized = normalizePaataTeachers(saved || cleaned);
+      writeJson('kb-paata-teachers', normalized);
+      setPaataTeachers(normalized);
+      setPaataTeachersNotice('Paata Shaale teacher details saved.');
+      window.dispatchEvent(new Event('kb-data-change'));
+    } catch (error) {
+      setPaataTeachersError(error.message || 'Could not save teacher details.');
+    } finally {
+      setPaataTeachersSaving(false);
+    }
   }
 
   function updateVolunteerGoogleFormDraft(patch) {
@@ -2410,7 +3277,7 @@ export default function AdminSectionPage({ view }) {
                 />
               )
             },
-            { key: 'edit', label: 'Edit', render: (row) => <button className="mini-action-link secondary" type="button" onClick={() => setEditRecord({ kind: 'event', row })}>Edit</button> }
+            { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="event" row={row} /> }
           ]}
         />
         {modalType === 'event' && <CreateModal type="event" onClose={() => setModalType(null)} onCreated={() => { refresh(); setModalType(null); }} />}
@@ -2517,11 +3384,81 @@ export default function AdminSectionPage({ view }) {
     );
   }
 
+  if (view === 'about') {
+    return (
+      <>
+        <PageHeader area="About Us" title="About page content" />
+        <AboutContentEditor
+          content={aboutContent}
+          setContent={setAboutContent}
+          onSave={handleAboutContentSave}
+          saving={aboutSaving}
+          notice={aboutNotice}
+          error={aboutError}
+        />
+      </>
+    );
+  }
+
+  if (view === 'paata-teachers') {
+    return (
+      <>
+        <PageHeader area="Paata Shaale" title="Teacher details" />
+        <PaataTeacherEditor
+          teachers={paataTeachers}
+          setTeachers={setPaataTeachers}
+          onSave={handlePaataTeachersSave}
+          saving={paataTeachersSaving}
+          notice={paataTeachersNotice}
+          error={paataTeachersError}
+        />
+      </>
+    );
+  }
+
   if (view === 'announcements') {
     return (
       <>
         <PageHeader area="Announcement" title="Manage announcements" action={<button className="button primary" type="button" onClick={() => { setAnnouncementError(''); setAnnouncementSaved(false); setModalType('announcement'); }}>Create</button>} />
         {announcementSaved && <p className="success admin-floating-message">Announcement saved.</p>}
+        <section className="admin-page-panel site-message-admin-panel">
+          <div className="admin-page-panel-heading">
+            <div>
+              <h2>Floating user message</h2>
+              <p>Show a small animated icon on public pages. Visitors click it to read this message.</p>
+            </div>
+            <span className={isEnabledValue(siteMessage.enabled) ? 'status-pill is-live' : 'status-pill'}>{isEnabledValue(siteMessage.enabled) ? 'Live' : 'Off'}</span>
+          </div>
+          <form className="site-message-form" onSubmit={handleSiteMessageSubmit}>
+            <label className="google-form-toggle">
+              <span>
+                <strong>Enable popup message</strong>
+                <small>{isEnabledValue(siteMessage.enabled) ? 'Users can see the animated message icon.' : 'Message icon is hidden from users.'}</small>
+              </span>
+              <input
+                name="enabled"
+                type="checkbox"
+                checked={Boolean(siteMessage.enabled)}
+                onChange={(event) => setSiteMessage((current) => ({ ...current, enabled: event.target.checked }))}
+              />
+            </label>
+            <div className="admin-form-grid">
+              <label>Popup title<input name="title" maxLength="90" value={siteMessage.title || ''} onChange={(event) => setSiteMessage((current) => ({ ...current, title: event.target.value }))} placeholder="Important Kannada Bharati update" /></label>
+              <label>Button text<input name="ctaText" maxLength="40" value={siteMessage.ctaText || ''} onChange={(event) => setSiteMessage((current) => ({ ...current, ctaText: event.target.value }))} placeholder="View details" /></label>
+              <label className="span-two">Button URL<input name="ctaUrl" value={siteMessage.ctaUrl || ''} onChange={(event) => setSiteMessage((current) => ({ ...current, ctaUrl: event.target.value }))} placeholder="/events or https://..." /></label>
+              <label className="span-two">Message<textarea name="message" maxLength="700" rows={4} value={siteMessage.message || ''} onChange={(event) => setSiteMessage((current) => ({ ...current, message: event.target.value }))} placeholder="Type the message users should read after clicking the floating icon." /></label>
+            </div>
+            <div className="site-message-admin-footer">
+              <div className="site-message-admin-preview">
+                <strong>{siteMessage.title || 'Popup title preview'}</strong>
+                <span>{siteMessage.message || 'Message preview appears here while you type.'}</span>
+              </div>
+              <button className="button primary" type="submit">Save Popup Message</button>
+            </div>
+            {siteMessageError && <p className="form-error">{siteMessageError}</p>}
+            {siteMessageSaved && <p className="success">Popup message saved.</p>}
+          </form>
+        </section>
         <AdminTable
           title="Announcements"
           rows={announcements}
@@ -2538,7 +3475,7 @@ export default function AdminSectionPage({ view }) {
                 <EnabledToggle enabled={isEnabledValue(row.enabled)} onChange={() => toggleAnnouncement(row)} />
               )
             },
-            { key: 'edit', label: 'Edit', render: (row) => <button className="mini-action-link secondary" type="button" onClick={() => setEditRecord({ kind: 'announcement', row })}>Edit</button> }
+            { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="announcement" row={row} /> }
           ]}
         />
         {modalType === 'announcement' && (
@@ -2602,10 +3539,19 @@ export default function AdminSectionPage({ view }) {
             { key: 'raised', label: 'Raised', render: (row) => `$${Number(row.raised || 0).toLocaleString()}` },
             { key: 'goal', label: 'Goal', render: (row) => `$${Number(row.goal || 0).toLocaleString()}` },
             { key: 'deadline', label: 'Needed by' },
-            { key: 'status', label: 'Status' }
+            { key: 'status', label: 'Status' },
+            { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="fundraiser" row={row} /> }
           ]}
         />
         {modalType === 'fundraiser' && <CreateModal type="fundraiser" onClose={() => setModalType(null)} onCreated={() => { refresh(); setModalType(null); }} />}
+        {editRecord?.kind === 'fundraiser' && (
+          <AdminEditModal
+            kind="fundraiser"
+            row={editRecord.row}
+            onClose={() => setEditRecord(null)}
+            onSave={(patch) => saveEditedRecord('fundraiser', editRecord.row, patch)}
+          />
+        )}
       </>
     );
   }
@@ -2637,9 +3583,18 @@ export default function AdminSectionPage({ view }) {
             { key: 'cause', label: 'Donation cause' },
             { key: 'amount', label: 'Amount', render: (row) => `$${Number(row.amount || 0).toLocaleString()}` },
             { key: 'paymentStatus', label: 'Payment status' },
-            { key: 'causeId', label: 'Cause ID' }
+            { key: 'causeId', label: 'Cause ID' },
+            { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="donation" row={row} /> }
           ]}
         />
+        {editRecord?.kind === 'donation' && (
+          <AdminEditModal
+            kind="donation"
+            row={editRecord.row}
+            onClose={() => setEditRecord(null)}
+            onSave={(patch) => saveEditedRecord('donation', editRecord.row, patch)}
+          />
+        )}
       </>
     );
   }
@@ -2718,9 +3673,18 @@ export default function AdminSectionPage({ view }) {
             { key: 'name', label: 'Name' },
             { key: 'email', label: 'Email' },
             { key: 'topic', label: 'Topic' },
-            { key: 'message', label: 'Message' }
+            { key: 'message', label: 'Message' },
+            { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="contact" row={row} /> }
           ]}
         />
+        {editRecord?.kind === 'contact' && (
+          <AdminEditModal
+            kind="contact"
+            row={editRecord.row}
+            onClose={() => setEditRecord(null)}
+            onSave={(patch) => saveEditedRecord('contact', editRecord.row, patch)}
+          />
+        )}
       </>
     );
   }
@@ -2739,9 +3703,18 @@ export default function AdminSectionPage({ view }) {
             { key: 'name', label: 'Name' },
             { key: 'email', label: 'Email' },
             { key: 'interest', label: 'Volunteer interest' },
-            { key: 'message', label: 'Message' }
+            { key: 'message', label: 'Message' },
+            { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="volunteer" row={row} /> }
           ]}
         />
+        {editRecord?.kind === 'volunteer' && (
+          <AdminEditModal
+            kind="volunteer"
+            row={editRecord.row}
+            onClose={() => setEditRecord(null)}
+            onSave={(patch) => saveEditedRecord('volunteer', editRecord.row, patch)}
+          />
+        )}
       </>
     );
   }
@@ -2774,15 +3747,15 @@ export default function AdminSectionPage({ view }) {
                 <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' })}>{tr('Email')}</button>
                 {!isPaidRegistration(row) && <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' })}>{tr('Paid')}</button>}
                 <EnabledToggle enabled={row.enabled !== false} onLabel="Enabled" offLabel="Disabled" onChange={(enabled) => toggleRegistrationEnabled(row, enabled)} />
+                <AdminRecordActions kind="registration" row={row} />
               </div>
             );
           }
-          return checked ? (
-            <span className="confirmed-badge">{row.checkedInAt ? new Date(row.checkedInAt).toLocaleString() : 'Checked'}</span>
-          ) : (
+          return (
             <div className="admin-row-actions compact-actions">
-              <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>CheckIn</button>
+              {checked ? <span className="confirmed-badge">{row.checkedInAt ? new Date(row.checkedInAt).toLocaleString() : 'Checked'}</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>CheckIn</button>}
               <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' })}>{tr('Email')}</button>
+              <AdminRecordActions kind="registration" row={row} />
             </div>
           );
         }
@@ -2869,6 +3842,14 @@ export default function AdminSectionPage({ view }) {
           filters={[{ key: 'program', label: 'Events', options: uniqueOptions(checkinRows, 'program') }]}
           columns={checkinColumns}
         />
+        {editRecord?.kind === 'registration' && (
+          <AdminEditModal
+            kind="registration"
+            row={editRecord.row}
+            onClose={() => setEditRecord(null)}
+            onSave={(patch) => saveEditedRecord('registration', editRecord.row, patch)}
+          />
+        )}
         {registrationDetail && <RegistrationDetailModal row={registrationDetail} onClose={() => setRegistrationDetail(null)} />}
       </>
     );
@@ -2942,7 +3923,7 @@ export default function AdminSectionPage({ view }) {
             {!isPaidRegistration(row) && (
               <button className="mini-action-link success" type="button" title="Mark payment received and save payment reference" onClick={() => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' })}>{tr('Paid')}</button>
             )}
-            <button className="mini-action-link secondary" type="button" onClick={() => setEditRecord({ kind: 'registration', row })}>Edit</button>
+            <AdminRecordActions kind="registration" row={row} />
           </div>
         )
       }
@@ -2987,7 +3968,7 @@ export default function AdminSectionPage({ view }) {
             {!isPaidRegistration(row) && (
               <button className="mini-action-link success" type="button" title="Mark payment received and save payment reference" onClick={() => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' })}>{tr('Paid')}</button>
             )}
-            <button className="mini-action-link secondary" type="button" onClick={() => setEditRecord({ kind: 'registration', row })}>Edit</button>
+            <AdminRecordActions kind="registration" row={row} />
           </div>
         )
       }
@@ -3002,7 +3983,8 @@ export default function AdminSectionPage({ view }) {
       { key: 'paid', label: 'Payment', render: (row) => isPaidRegistration(row) ? 'Paid' : 'Pending' },
       { key: 'paymentReference', label: 'Payment Ref' },
       { key: 'paymentNotes', label: 'Notes', render: (row) => getPaymentDetails(row)?.notes || '-' },
-      { key: 'details', label: 'Details', render: (row) => <DetailsIconButton onClick={() => setRegistrationDetail(row)} /> }
+      { key: 'details', label: 'Details', render: (row) => <DetailsIconButton onClick={() => setRegistrationDetail(row)} /> },
+      { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="registration" row={row} /> }
     ];
     return (
       <>
@@ -3105,10 +4087,23 @@ export default function AdminSectionPage({ view }) {
             { key: 'status', label: 'Status' },
             { key: 'action', label: 'Action', render: (row, index) => {
               const checked = checkedInIds.includes(getRegistrationKey(row, index)) || row.checkedIn;
-              return checked ? <span className="confirmed-badge">Checked</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Checkin</button>;
+              return (
+                <div className="admin-row-actions compact-actions">
+                  {checked ? <span className="confirmed-badge">Checked</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Checkin</button>}
+                  <AdminRecordActions kind="registration" row={row} />
+                </div>
+              );
             } }
           ]}
         />
+        {editRecord?.kind === 'registration' && (
+          <AdminEditModal
+            kind="registration"
+            row={editRecord.row}
+            onClose={() => setEditRecord(null)}
+            onSave={(patch) => saveEditedRecord('registration', editRecord.row, patch)}
+          />
+        )}
       </>
     );
   }
@@ -3376,9 +4371,18 @@ export default function AdminSectionPage({ view }) {
             { key: 'amount', label: 'Amount', render: (row) => `$${Number(row.amount || 0).toFixed(2)}` },
             { key: 'paid', label: 'Paid', render: (row) => isPaidRegistration(row) ? 'Yes' : 'No' },
             { key: 'paymentReference', label: 'Payment Ref', render: (row) => getPaymentDetails(row)?.reference || '-' },
-            { key: 'details', label: 'Details', render: (row) => <DetailsIconButton onClick={() => setRegistrationDetail(row)} /> }
+            { key: 'details', label: 'Details', render: (row) => <DetailsIconButton onClick={() => setRegistrationDetail(row)} /> },
+            { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="registration" row={row} /> }
           ]}
         />
+        {editRecord?.kind === 'registration' && (
+          <AdminEditModal
+            kind="registration"
+            row={editRecord.row}
+            onClose={() => setEditRecord(null)}
+            onSave={(patch) => saveEditedRecord('registration', editRecord.row, patch)}
+          />
+        )}
         {registrationDetail && <RegistrationDetailModal row={registrationDetail} onClose={() => setRegistrationDetail(null)} />}
       </>
     );
@@ -3488,10 +4492,19 @@ export default function AdminSectionPage({ view }) {
                 <button className="mini-action-link success" type="button" onClick={() => runExpenseAction(row, 'paid', 'Paid')}>{tr('Paid')}</button>
                 <button className="mini-action-link danger" type="button" onClick={() => runExpenseAction(row, 'reject', 'Rejected')}>Reject</button>
                 <button className="mini-action-link secondary" type="button" onClick={() => runExpenseAction(row, 'reset', 'Submitted')}>{tr('Reset')}</button>
+                <AdminRecordActions kind="expense" row={row} />
               </div>
             ) }
           ]}
         />
+        {editRecord?.kind === 'expense' && (
+          <AdminEditModal
+            kind="expense"
+            row={editRecord.row}
+            onClose={() => setEditRecord(null)}
+            onSave={(patch) => saveEditedRecord('expense', editRecord.row, patch)}
+          />
+        )}
       </>
     );
   }

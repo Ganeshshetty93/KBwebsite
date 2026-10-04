@@ -119,6 +119,44 @@ function publicUser(user) {
   };
 }
 
+function profileResponse(row, user) {
+  const [fallbackFirstName = '', ...fallbackLastName] = String(user?.name || '').trim().split(/\s+/).filter(Boolean);
+  const profile = row || {};
+  const firstName = profile.first_name || profile.firstName || fallbackFirstName || '';
+  const lastName = profile.last_name || profile.lastName || fallbackLastName.join(' ') || '';
+  const phone = profile.phone || user?.phone || '';
+  return {
+    id: profile.id || null,
+    email: profile.email || user?.email || '',
+    first_name: firstName,
+    last_name: lastName,
+    firstName,
+    lastName,
+    birth_date: profile.birth_date || profile.birthDate || '',
+    birthDate: profile.birth_date || profile.birthDate || '',
+    phone,
+    gender: profile.gender || 'Male',
+    company: profile.company || 'NA',
+    description: profile.description || '',
+    address1: profile.address1 || '',
+    address2: profile.address2 || '',
+    city: profile.city || '',
+    state: profile.state || '',
+    zip_code: profile.zip_code || profile.zipCode || '',
+    zipCode: profile.zip_code || profile.zipCode || '',
+    spouse_first_name: profile.spouse_first_name || profile.spouseFirstName || '',
+    spouseFirstName: profile.spouse_first_name || profile.spouseFirstName || '',
+    spouse_last_name: profile.spouse_last_name || profile.spouseLastName || '',
+    spouseLastName: profile.spouse_last_name || profile.spouseLastName || '',
+    spouse_birth_date: profile.spouse_birth_date || profile.spouseBirthDate || '',
+    spouseBirthDate: profile.spouse_birth_date || profile.spouseBirthDate || '',
+    photo: profile.photo || '',
+    created_at: profile.created_at || null,
+    updated_at: profile.updated_at || null,
+    isSaved: Boolean(row?.id)
+  };
+}
+
 function tokenFor(user) {
   return jwt.sign(publicUser(user), jwtSecret, { expiresIn: '7d' });
 }
@@ -859,6 +897,46 @@ async function saveSiteSetting(key, value) {
     .single();
   if (error) throw error;
   return data.value;
+}
+
+function normalizeAboutSetting(value = {}) {
+  const normalizeRows = (rows, fields) => (Array.isArray(rows) ? rows : []).slice(0, 80).map((row, index) => {
+    const normalized = { id: String(row.id || `about-${Date.now()}-${index}`) };
+    fields.forEach((field) => {
+      normalized[field] = String(row[field] || '').trim();
+    });
+    return normalized;
+  });
+
+  return {
+    currentCommittee: normalizeRows(value.currentCommittee, ['name', 'role', 'email', 'phone', 'bio', 'photo']),
+    sponsors: normalizeRows(value.sponsors, ['name', 'level', 'website', 'note', 'photo']),
+    pastCommittees: normalizeRows(value.pastCommittees, ['term', 'title', 'members', 'photo'])
+  };
+}
+
+function normalizePaataTeacherSetting(value = []) {
+  return (Array.isArray(value) ? value : []).slice(0, 80).map((row, index) => ({
+    id: String(row.id || `paata-teacher-${Date.now()}-${index}`),
+    name: String(row.name || '').trim(),
+    role: String(row.role || '').trim(),
+    level: String(row.level || '').trim(),
+    email: String(row.email || '').trim(),
+    phone: String(row.phone || '').trim(),
+    bio: String(row.bio || '').trim(),
+    photo: String(row.photo || '').trim()
+  }));
+}
+
+function normalizeSiteMessageSetting(value = {}) {
+  return {
+    enabled: booleanValue(value.enabled, false),
+    title: String(value.title || '').trim().slice(0, 90),
+    message: String(value.message || '').trim().slice(0, 700),
+    ctaText: String(value.ctaText || '').trim().slice(0, 40),
+    ctaUrl: String(value.ctaUrl || '').trim().slice(0, 500),
+    updatedAt: value.updatedAt || new Date().toISOString()
+  };
 }
 
 async function updateRecord(table, id, payload) {
@@ -1770,8 +1848,23 @@ app.post('/api/auth/register', authRateLimit, asyncHandler(async (req, res) => {
   const password = String(req.body.password || '');
   await verifyRecaptcha(req.body.recaptchaToken || req.body.recaptcha);
 
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required.' });
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Enter a valid email address.' });
+  }
+
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
+
+  const { data: existingUser, error: existingUserError } = await supabase
+    .from('kb_users')
+    .select('id, email')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (existingUserError) throw existingUserError;
+  if (existingUser) {
+    return res.status(409).json({ error: 'An account already exists for this email. Please log in or reset your password.' });
   }
 
   const name = req.body.name || `${req.body.firstName || ''} ${req.body.lastName || ''}`.trim() || email.split('@')[0];
@@ -2192,7 +2285,7 @@ app.get('/api/profile', authenticate, asyncHandler(async (req, res) => {
   ]);
   if (profile.error && profile.error.code !== 'PGRST116') throw profile.error;
   if (children.error) throw children.error;
-  res.json({ profile: profile.data || null, children: children.data || [] });
+  res.json({ profile: profileResponse(profile.data, req.user), children: children.data || [] });
 }));
 
 app.put('/api/profile', authenticate, asyncHandler(async (req, res) => {
@@ -2262,16 +2355,38 @@ app.post('/api/uploads', authenticate, asyncHandler(async (req, res) => {
 }));
 
 app.get('/api/settings/:key', asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
+  if (req.params.key === 'about-content') {
+    return res.json(await getSiteSetting(req.params.key, { currentCommittee: [], sponsors: [], pastCommittees: [] }));
+  }
+  if (req.params.key === 'paata-teachers') {
+    return res.json(await getSiteSetting(req.params.key, []));
+  }
+  if (req.params.key === 'site-message') {
+    return res.json(await getSiteSetting(req.params.key, { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
+  }
   const value = await getSiteSetting(req.params.key, req.params.key === 'volunteer-google-form' ? { enabled: false, url: defaultVolunteerGoogleFormUrl } : null);
   if (req.params.key === 'volunteer-google-form' && !value.url) value.url = defaultVolunteerGoogleFormUrl;
   res.json(value);
 }));
 
 app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
+  if (req.params.key === 'about-content') {
+    return res.json(await saveSiteSetting(req.params.key, normalizeAboutSetting(req.body)));
+  }
+  if (req.params.key === 'paata-teachers') {
+    return res.json(await saveSiteSetting(req.params.key, normalizePaataTeacherSetting(req.body)));
+  }
+  if (req.params.key === 'site-message') {
+    const value = normalizeSiteMessageSetting(req.body);
+    if (value.enabled && (!value.title || !value.message)) {
+      return res.status(400).json({ error: 'Title and message are required when the popup is enabled.' });
+    }
+    return res.json(await saveSiteSetting(req.params.key, value));
+  }
   const value = {
     enabled: booleanValue(req.body.enabled, false),
     url: String(req.body.url || '').trim()
@@ -2571,6 +2686,9 @@ app.post('/api/payments/paypal/orders', asyncHandler(async (req, res) => {
   const returnUrl = req.body.returnUrl || `${req.protocol}://${req.get('host')}/donate`;
   const cancelUrl = req.body.cancelUrl || returnUrl;
   const invoiceId = req.body.donationId && isUuid(req.body.donationId) ? req.body.donationId : undefined;
+  const landingPage = ['LOGIN', 'BILLING'].includes(String(req.body.landingPage || '').toUpperCase())
+    ? String(req.body.landingPage).toUpperCase()
+    : 'LOGIN';
 
   const order = await fetchJson(`${paypalBaseUrl}/v2/checkout/orders`, {
     method: 'POST',
@@ -2591,7 +2709,10 @@ app.post('/api/payments/paypal/orders', asyncHandler(async (req, res) => {
       }],
       application_context: {
         brand_name: 'Kannada Bharati',
-        landing_page: 'LOGIN',
+        landing_page: landingPage,
+        payment_method: {
+          payee_preferred: 'IMMEDIATE_PAYMENT_REQUIRED'
+        },
         user_action: 'PAY_NOW',
         return_url: returnUrl,
         cancel_url: cancelUrl
@@ -2601,6 +2722,14 @@ app.post('/api/payments/paypal/orders', asyncHandler(async (req, res) => {
 
   const approvalUrl = order.links?.find((link) => link.rel === 'approve')?.href;
   res.status(201).json({ orderId: order.id, approvalUrl });
+}));
+
+app.get('/api/payments/paypal/donate-link', asyncHandler(async (req, res) => {
+  res.json({
+    donateUrl: kbPaypalDonateUrl,
+    legacyHostedButtonId: process.env.KB_PAYPAL_HOSTED_BUTTON_ID || 'EY5YVURQPDWEE',
+    legacyFormUrl: 'https://www.paypal.com/cgi-bin/webscr'
+  });
 }));
 
 app.post('/api/payments/paypal/orders/:orderId/capture', asyncHandler(async (req, res) => {

@@ -760,6 +760,10 @@ export async function apiCreatePayPalOrder(payload) {
   });
 }
 
+export async function apiGetPayPalDonateLink() {
+  return request('/payments/paypal/donate-link');
+}
+
 export async function apiCapturePayPalOrder(orderId, payload) {
   return request(`/payments/paypal/orders/${encodeURIComponent(orderId)}/capture`, {
     method: 'POST',

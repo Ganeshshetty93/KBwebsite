@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   Gauge,
   HandCoins,
+  Info,
   Mail,
   Megaphone,
   PanelLeftClose,
@@ -76,6 +77,8 @@ const groups = [
       { label: 'Event', to: '/admin/events', icon: ClipboardCheck },
       { label: 'Event Settings', to: '/admin/event-settings', icon: Wrench },
       { label: 'Announcement', to: '/admin/announcements', icon: Megaphone },
+      { label: 'About Us', to: '/admin/about', icon: Info },
+      { label: 'Paata Teachers', to: '/admin/paata-teachers', icon: BookOpen },
       { label: 'Fund Raising', to: '/admin/fundraising', icon: HandCoins },
       { label: 'Donations', to: '/admin/donations', icon: Banknote },
       { label: 'Messages', to: '/admin/messages', icon: Mail },
@@ -132,6 +135,9 @@ export default function AdminShell() {
   return (
     <div className={sideCollapsed ? 'admin-app-shell side-collapsed' : 'admin-app-shell'}>
       <aside className="admin-side-menu">
+        <div className="admin-kannada-motto" title="ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ">
+          <span>ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ</span>
+        </div>
         <button
           className="admin-side-collapse"
           type="button"

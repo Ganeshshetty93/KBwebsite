@@ -244,7 +244,7 @@ export default function Login() {
 
           {!resetToken && !twoFactor && (
             <div className="social-area">
-            <p>Continuing with social login will automatically create an account.</p>
+            <p>Use a connected provider only after it is configured for this site.</p>
               <div className="social-row">
                 <button className="social-button google" type="button" onClick={handleGoogleLogin}>
                   <span>G</span>
@@ -322,7 +322,7 @@ export default function Login() {
               <button className="blue-submit" type="submit">{resetToken ? 'Reset password' : 'Log in'}</button>
               {error && <p className="form-error">{error}</p>}
               {notice && <p className="success">{notice}</p>}
-              {!resetToken && <p className="fine-print admin-login-note">Admin demo: use {adminEmail} with any password.</p>}
+              {!resetToken && <p className="fine-print admin-login-note">Use your registered email and password. Admin access requires a valid admin account.</p>}
             </form>
           )}
 

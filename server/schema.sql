@@ -337,6 +337,13 @@ set value = jsonb_set(
 )
 where coalesce(public.kb_site_settings.value->>'url', '') = '';
 
+insert into public.kb_site_settings (key, value)
+values
+  ('about-content', '{"currentCommittee": [], "sponsors": [], "pastCommittees": []}'::jsonb),
+  ('paata-teachers', '[]'::jsonb),
+  ('site-message', '{"enabled": false, "title": "", "message": "", "ctaText": "", "ctaUrl": ""}'::jsonb)
+on conflict (key) do nothing;
+
 create table if not exists public.kb_member_profiles (
   id uuid primary key default gen_random_uuid(),
   email text unique not null,

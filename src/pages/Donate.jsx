@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, HeartPulse, HandHeart, Landmark, ShieldAlert, UsersRound } from 'lucide-react';
+import { BookOpen, CreditCard, HeartPulse, HandHeart, Landmark, ShieldAlert, UsersRound } from 'lucide-react';
 import PageHero from '../components/PageHero.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { appendRecordAsync, readJson, writeJson } from '../utils/storage.js';
-import { apiCapturePayPalOrder, apiCreatePayPalOrder, apiReadRecords } from '../utils/api.js';
+import { apiCapturePayPalOrder, apiCreatePayPalOrder, apiGetPayPalDonateLink, apiReadRecords } from '../utils/api.js';
 import { cleanText, firstError, validateAmount, validateEmail, validateRequired } from '../utils/validation.js';
 
 const amounts = [50, 80, 100, 250];
+const fallbackDonateLink = 'https://www.paypal.com/donate?token=yXa3TfA1QxdZl-dL-PRMtJzuNTDf_55QcI_FQp48Twwc1UBYepRrXg79VpA_BqL2NoCnFjuGg9CrKgMJ';
 const defaultFundraiser = {
   id: 'default-kb-paata-shaale',
   title: 'KB Paata Shaale',
@@ -57,6 +58,7 @@ export default function Donate() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [hostedPayment, setHostedPayment] = useState({ donateUrl: fallbackDonateLink });
   const donationFormRef = useRef(null);
   const { language, t } = useLanguage();
   const causes = useMemo(() => fundraisers.filter((cause) => cause.status !== 'Completed'), [fundraisers]);
@@ -90,6 +92,21 @@ export default function Donate() {
       ignore = true;
     };
   }, [selectedCause]);
+
+  useEffect(() => {
+    let ignore = false;
+    apiGetPayPalDonateLink()
+      .then((config) => {
+        if (!ignore && config?.donateUrl) setHostedPayment(config);
+      })
+      .catch(() => {
+        if (!ignore) setHostedPayment({ donateUrl: fallbackDonateLink });
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -142,10 +159,42 @@ export default function Donate() {
     };
   }, [language]);
 
-  async function handleDonate(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  function openPayPalCheckout(url) {
+    const width = Math.min(620, window.screen?.availWidth || 620);
+    const height = Math.min(820, window.screen?.availHeight || 820);
+    const left = Math.max(0, ((window.screen?.availWidth || width) - width) / 2);
+    const top = Math.max(0, ((window.screen?.availHeight || height) - height) / 2);
+    const popup = window.open(
+      url,
+      'kb-paypal-checkout',
+      `popup=yes,width=${Math.round(width)},height=${Math.round(height)},left=${Math.round(left)},top=${Math.round(top)},resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup) {
+      window.location.assign(url);
+      return false;
+    }
+
+    popup.focus();
+    return true;
+  }
+
+  function checkoutUrlForMode(url, paymentMode) {
+    if (paymentMode !== 'card') return url;
+    try {
+      const checkoutUrl = new URL(url);
+      checkoutUrl.searchParams.set('fundingSource', 'card');
+      checkoutUrl.searchParams.set('payment_source', 'card');
+      return checkoutUrl.toString();
+    } catch {
+      const separator = String(url).includes('?') ? '&' : '?';
+      return `${url}${separator}fundingSource=card&payment_source=card`;
+    }
+  }
+
+  async function startDonationPayment(form, paymentMode = 'paypal') {
+    if (!form) return;
+    const payload = Object.fromEntries(new FormData(form).entries());
     const amount = Number(custom || selected);
     const customCause = cleanText(payload.causeDetails);
     const cause = selectedCauseRecord;
@@ -195,6 +244,7 @@ export default function Donate() {
         cause: causeTitle,
         name: payload.name,
         email: payload.email,
+        landingPage: paymentMode === 'card' ? 'BILLING' : 'LOGIN',
         returnUrl,
         cancelUrl
       });
@@ -204,13 +254,21 @@ export default function Donate() {
       }
 
       setMessage(language === 'kn' ? `PayPal ಗೆ ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ: $${amount}.` : `Opening PayPal for $${amount}.`);
-      window.location.assign(order.approvalUrl);
+      openPayPalCheckout(checkoutUrlForMode(order.approvalUrl, paymentMode));
       form.reset();
       setCustom('');
+      setPaymentProcessing(false);
     } catch (paymentError) {
-      setError(paymentError.message || 'PayPal payment could not be started.');
+      const hostedUrl = hostedPayment?.donateUrl || fallbackDonateLink;
+      setMessage(language === 'kn' ? 'PayPal hosted donation ಪುಟವನ್ನು ತೆರೆಯಲಾಗುತ್ತಿದೆ.' : 'Opening the Kannada Bharati hosted PayPal donation page.');
+      openPayPalCheckout(hostedUrl);
       setPaymentProcessing(false);
     }
+  }
+
+  async function handleDonate(event) {
+    event.preventDefault();
+    await startDonationPayment(event.currentTarget, 'paypal');
   }
 
   function chooseCause(causeId) {
@@ -336,9 +394,36 @@ export default function Donate() {
               placeholder="Enter amount"
             />
           </label>
-          <button className="button primary" type="submit" disabled={paymentProcessing}>
-            {paymentProcessing ? (language === 'kn' ? 'ದಯವಿಟ್ಟು ನಿರೀಕ್ಷಿಸಿ...' : 'Please wait...') : t('continueDonation')}
-          </button>
+          <div className="paypal-smart-buttons" aria-label={language === 'kn' ? 'PayPal ಪಾವತಿ ಆಯ್ಕೆಗಳು' : 'PayPal payment options'}>
+            <button className="paypal-smart-button paypal-smart-button-primary" type="submit" disabled={paymentProcessing}>
+              {paymentProcessing ? (
+                <span>{language === 'kn' ? 'ತೆರೆಯಲಾಗುತ್ತಿದೆ...' : 'Opening...'}</span>
+              ) : (
+                <span>{language === 'kn' ? 'ಉಳಿಸಿ ಮತ್ತು ಪಾವತಿಸಿ' : 'Save and Pay'}</span>
+              )}
+            </button>
+            <button
+              className="paypal-smart-button paypal-smart-button-card"
+              type="button"
+              disabled={paymentProcessing}
+              onClick={() => startDonationPayment(donationFormRef.current, 'card')}
+            >
+              <CreditCard size={26} />
+              <span>{language === 'kn' ? 'ಡೆಬಿಟ್ ಅಥವಾ ಕ್ರೆಡಿಟ್ ಕಾರ್ಡ್' : 'Debit or Credit Card'}</span>
+            </button>
+            <small className="paypal-powered">
+              Powered by <strong>PayPal</strong>
+            </small>
+          </div>
+          <a
+            className="paypal-hosted-link"
+            href={hostedPayment?.donateUrl || fallbackDonateLink}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <span>{language === 'kn' ? 'Hosted PayPal ದೇಣಿಗೆ' : 'Hosted PayPal donation'}</span>
+            <small>{language === 'kn' ? 'ಹಳೆಯ Kannada Bharati PayPal ಬಟನ್' : `Legacy button ${hostedPayment?.legacyHostedButtonId || 'EY5YVURQPDWEE'}`}</small>
+          </a>
           {error && <p className="form-error">{error}</p>}
           {message && <p className="success">{message}</p>}
         </form>
