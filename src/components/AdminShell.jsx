@@ -6,16 +6,20 @@ import {
   ChevronDown,
   ClipboardCheck,
   Gauge,
+  GraduationCap,
   HandCoins,
   Info,
+  KeyRound,
   Mail,
+  Menu,
   Megaphone,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
   ShieldCheck,
   UserCog,
-  Wrench
+  Wrench,
+  X
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { canAccessAdminPath, canUseAdminArea, defaultAdminPath, getCurrentUser, hasAnyRole, isAdmin } from '../utils/storage.js';
@@ -27,11 +31,11 @@ const groups = [
     links: [{ label: 'Profile', to: '/admin/profile', icon: UserCog }]
   },
   {
-    title: 'Reception',
+    title: 'Welcome Desk',
     icon: ClipboardCheck,
-    roles: ['admin', 'superadmin', 'receptionist'],
+    roles: ['admin', 'superadmin', 'welcomeDesk', 'welcomedesk', 'receptionist'],
     links: [
-      { label: 'CheckInNew', to: '/admin/checkin', icon: ClipboardCheck },
+      { label: 'Check-in', to: '/admin/checkin', icon: ClipboardCheck },
       { label: 'Guest Check-in', to: '/admin/guest-checkin', icon: UserCog },
       { label: 'Seat Management', to: '/admin/seats', icon: Gauge }
     ]
@@ -74,8 +78,11 @@ const groups = [
     links: [
       { label: 'User', to: '/admin/users', icon: UserCog },
       { label: 'Find User', to: '/admin/user-search', icon: Search },
+      { label: 'Roles & Access', to: '/admin/role-access', icon: KeyRound },
+      { label: 'Classes', to: '/admin/classes', icon: BookOpen },
       { label: 'Event', to: '/admin/events', icon: ClipboardCheck },
       { label: 'Event Settings', to: '/admin/event-settings', icon: Wrench },
+      { label: 'Teacher Allotment', to: '/admin/teacher-allotments', icon: GraduationCap },
       { label: 'Announcement', to: '/admin/announcements', icon: Megaphone },
       { label: 'About Us', to: '/admin/about', icon: Info },
       { label: 'Paata Teachers', to: '/admin/paata-teachers', icon: BookOpen },
@@ -95,13 +102,21 @@ export default function AdminShell() {
   const location = useLocation();
   const { tr } = useLanguage();
   const userAccessKey = `${user?.email || ''}:${user?.role || ''}:${Array.isArray(user?.roles) ? user.roles.join(',') : ''}`;
-  const visibleGroups = useMemo(
-    () => groups.filter((group) => !group.roles || isAdmin(user) || hasAnyRole(user, group.roles)),
+  const visibleGroups = useMemo(() => groups
+    .map((group) => ({
+      ...group,
+      links: group.links.filter((link) => canAccessAdminPath(user, link.to))
+    }))
+    .filter((group) => group.links.length && (!group.roles || isAdmin(user) || hasAnyRole(user, group.roles) || group.links.some((link) => canAccessAdminPath(user, link.to)))),
     [userAccessKey]
   );
   const activeGroupTitle = visibleGroups.find((group) => group.links.some((link) => location.pathname === link.to || location.pathname.startsWith(`${link.to}/`)))?.title;
+  const activeLinkLabel = visibleGroups
+    .flatMap((group) => group.links)
+    .find((link) => location.pathname === link.to || location.pathname.startsWith(`${link.to}/`))?.label || 'Dashboard';
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set(groups.map((group) => group.title)));
   const [sideCollapsed, setSideCollapsed] = useState(() => localStorage.getItem('kb-admin-side-collapsed') === 'true');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     setCollapsedGroups(new Set(visibleGroups.filter((group) => group.title !== activeGroupTitle).map((group) => group.title)));
@@ -110,6 +125,10 @@ export default function AdminShell() {
   useEffect(() => {
     localStorage.setItem('kb-admin-side-collapsed', sideCollapsed ? 'true' : 'false');
   }, [sideCollapsed]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   if (!canUseAdminArea(user)) {
     return <Navigate to="/login" replace />;
@@ -134,57 +153,82 @@ export default function AdminShell() {
 
   return (
     <div className={sideCollapsed ? 'admin-app-shell side-collapsed' : 'admin-app-shell'}>
-      <aside className="admin-side-menu">
-        <div className="admin-kannada-motto" title="ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ">
-          <span>ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ</span>
+      <aside className={mobileMenuOpen ? 'admin-side-menu is-mobile-open' : 'admin-side-menu'}>
+        <div className="admin-mobile-nav-header">
+          <button
+            className="admin-mobile-menu-toggle"
+            type="button"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="admin-navigation-panel"
+            onClick={() => setMobileMenuOpen((value) => !value)}
+          >
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+            <span>
+              <small>{tr('Admin menu')}</small>
+              <strong>{tr(activeLinkLabel)}</strong>
+            </span>
+          </button>
         </div>
-        <button
-          className="admin-side-collapse"
-          type="button"
-          aria-label={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
-          title={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
-          onClick={() => setSideCollapsed((value) => !value)}
-        >
-          {sideCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-        </button>
-        <NavLink className="admin-side-root" to="/admin" title={sideCollapsed ? tr('Dashboard') : undefined}>
-          <Gauge size={18} /> <span className="admin-nav-label">{tr('Dashboard')}</span>
-        </NavLink>
-        {visibleGroups.map((group) => {
-          const Icon = group.icon;
-          const open = isGroupOpen(group);
-          return (
-            <section key={group.title} className={open ? 'admin-nav-group is-open' : 'admin-nav-group'} data-label={tr(group.title)}>
-              <button
-                className="admin-nav-group-toggle"
-                type="button"
-                aria-expanded={open}
-                aria-controls={`admin-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`}
-                onClick={() => toggleGroup(group.title)}
-                title={sideCollapsed ? tr(group.title) : undefined}
-              >
-                <Icon className="admin-nav-main-icon" size={17} />
-                <span className="admin-nav-label">{tr(group.title)}</span>
-                <ChevronDown size={16} />
-              </button>
-              <nav
-                id={`admin-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`}
-                className={open ? 'admin-nav-links is-open' : 'admin-nav-links is-collapsed'}
-              >
-                {group.links.map((link) => {
-                  const LinkIcon = link.icon || group.icon;
-                  return (
-                    <NavLink key={link.to} to={link.to} end={link.to === '/admin'} title={sideCollapsed ? tr(link.label) : undefined}>
-                      <LinkIcon size={16} />
-                      <span>{tr(link.label)}</span>
-                    </NavLink>
-                  );
-                })}
-              </nav>
-            </section>
-          );
-        })}
+        <div className="admin-side-menu-content" id="admin-navigation-panel">
+          <div className="admin-kannada-motto" title="ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ">
+            <span>ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ</span>
+          </div>
+          <button
+            className="admin-side-collapse"
+            type="button"
+            aria-label={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
+            title={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
+            onClick={() => setSideCollapsed((value) => !value)}
+          >
+            {sideCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+          <NavLink className="admin-side-root" to="/admin" title={sideCollapsed ? tr('Dashboard') : undefined}>
+            <Gauge size={18} /> <span className="admin-nav-label">{tr('Dashboard')}</span>
+          </NavLink>
+          {visibleGroups.map((group) => {
+            const Icon = group.icon;
+            const open = isGroupOpen(group);
+            return (
+              <section key={group.title} className={open ? 'admin-nav-group is-open' : 'admin-nav-group'} data-label={tr(group.title)}>
+                <button
+                  className="admin-nav-group-toggle"
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={`admin-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`}
+                  onClick={() => toggleGroup(group.title)}
+                  title={sideCollapsed ? tr(group.title) : undefined}
+                >
+                  <Icon className="admin-nav-main-icon" size={17} />
+                  <span className="admin-nav-label">{tr(group.title)}</span>
+                  <ChevronDown size={16} />
+                </button>
+                <nav
+                  id={`admin-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`}
+                  className={open ? 'admin-nav-links is-open' : 'admin-nav-links is-collapsed'}
+                >
+                  {group.links.map((link) => {
+                    const LinkIcon = link.icon || group.icon;
+                    return (
+                      <NavLink key={link.to} to={link.to} end={link.to === '/admin'} title={sideCollapsed ? tr(link.label) : undefined}>
+                        <LinkIcon size={16} />
+                        <span>{tr(link.label)}</span>
+                      </NavLink>
+                    );
+                  })}
+                </nav>
+              </section>
+            );
+          })}
+        </div>
       </aside>
+      {mobileMenuOpen && (
+        <button
+          className="admin-mobile-nav-backdrop"
+          type="button"
+          aria-label={tr('Close admin menu')}
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
       <main className="admin-route-content">
         <Outlet />
       </main>

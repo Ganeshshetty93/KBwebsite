@@ -39,9 +39,9 @@ const accessGroups = [
     items: ['Dashboard', 'Registrations', 'Student view']
   },
   {
-    title: 'Reception',
+    title: 'Welcome Desk',
     icon: ClipboardCheck,
-    items: ['CheckInNew']
+    items: ['Check-in']
   },
   {
     title: 'Volunteer',

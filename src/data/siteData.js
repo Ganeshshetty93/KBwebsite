@@ -1,7 +1,7 @@
 export const heroStats = [
   ['Volunteer-led', 'Community powered'],
   ['2026-27', 'Classes open'],
-  ['Seattle area', 'Kannadiga families']
+  ['Washington', 'Kannada association (WAKA)']
 ];
 
 export const culturalClasses = [
@@ -122,7 +122,7 @@ export const events = [
 export const faqs = [
   {
     q: 'What is Kannada Bharati?',
-    a: 'Kannada Bharati is a volunteer-led nonprofit registered in Washington state, serving the Seattle-area Kannadiga community.'
+    a: 'Kannada Bharati is a volunteer-led nonprofit and a Washington Kannada Association (WAKA) serving Kannada families across the state.'
   },
   {
     q: 'What is Kannada Paata Shaale?',

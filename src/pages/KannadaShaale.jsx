@@ -12,7 +12,7 @@ import { readJson, writeJson } from '../utils/storage.js';
 const paataShaaleFaqs = [
   {
     q: 'What is Kannada Bharati [KB]?',
-    a: 'Kannada Bharati is a volunteer-led non-profit organization registered in Washington and serving the Seattle area Kannada community. It promotes the cultural heritage and traditions of Karnataka through classes such as Janapada Nritya, Carnatic Music, Hindustani Music, Bharatanatyam, arts, and crafts during the school year.'
+    a: 'Kannada Bharati is a volunteer-led non-profit and a Washington Kannada Association (WAKA) serving Kannada families across the state. It promotes the cultural heritage and traditions of Karnataka through classes such as Janapada Nritya, Carnatic Music, Hindustani Music, Bharatanatyam, arts, and crafts during the school year.'
   },
   {
     q: 'What is Kannada Academy?',

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Mail, ShieldCheck, UsersRound } from 'lucide-react';
+import { CheckCircle2, KeyRound, Mail, ShieldCheck, Smartphone, UsersRound } from 'lucide-react';
 import { setCurrentUser } from '../utils/storage.js';
-import { apiRegister } from '../utils/api.js';
+import { apiConfirmPhoneVerification, apiRegister, apiStartPhoneVerification } from '../utils/api.js';
 import { cleanText, firstError, validateEmail, validatePassword, validatePhone, validateRequired } from '../utils/validation.js';
 
 const recaptchaSiteKey = import.meta.env.VITE_GOOGLE_RECAPTCHA_SITE_KEY || '';
@@ -12,6 +12,8 @@ export default function Register() {
   const [params] = useSearchParams();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [phoneVerification, setPhoneVerification] = useState({ phone: '', code: '', sent: false, devCode: '', verified: false });
   const [recaptchaToken, setRecaptchaToken] = useState('');
   const recaptchaRef = useRef(null);
   const selectedProgram = params.get('program') || 'General membership';
@@ -48,11 +50,16 @@ export default function Register() {
     };
   }, []);
 
+  useEffect(() => {
+    if (saved) window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [saved]);
+
   async function handleSubmit(event) {
     event.preventDefault();
     setError('');
 
-    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
     const firstName = cleanText(payload.firstName);
     const lastName = cleanText(payload.lastName);
     const email = cleanText(payload.email).toLowerCase();
@@ -97,9 +104,11 @@ export default function Register() {
       role: 'member'
     };
 
+    let savedUser;
     try {
-      const savedUser = await apiRegister({
+      savedUser = await apiRegister({
         ...user,
+        phone: phone || null,
         name: user.parentName,
         password: payload.password,
         recaptchaToken
@@ -109,14 +118,46 @@ export default function Register() {
       setError(registerError.message || 'Account could not be created. Please check your details and try again.');
       return;
     }
-    event.currentTarget.reset();
+    form.reset();
     setSaved(true);
-    window.setTimeout(() => navigate('/classes'), 900);
+    if (!phone) {
+      window.setTimeout(() => navigate('/admin/profile'), 1800);
+      return;
+    }
+
+    try {
+      const result = await apiStartPhoneVerification(phone);
+      setPhoneVerification({ phone, code: result.devCode || '', sent: true, devCode: result.devCode || '', verified: false });
+      setNotice(result.devCode ? `Phone verification code generated: ${result.devCode}` : `A verification code was sent to ${phone}.`);
+    } catch (phoneError) {
+      setError(phoneError.message || 'Your account was created, but phone verification could not be started. You can verify it from your profile.');
+    }
+  }
+
+  async function handleConfirmPhone(event) {
+    event.preventDefault();
+    setError('');
+    setNotice('');
+    const code = cleanText(new FormData(event.currentTarget).get('code'));
+    if (!/^\d{6}$/.test(code)) {
+      setError('Enter the six-digit verification code.');
+      return;
+    }
+
+    try {
+      const result = await apiConfirmPhoneVerification({ phone: phoneVerification.phone, code });
+      if (result.user) setCurrentUser(result.user);
+      setPhoneVerification((current) => ({ ...current, verified: true }));
+      setNotice('Phone verified. Phone OTP login is now enabled.');
+      window.setTimeout(() => navigate('/admin/profile'), 1200);
+    } catch (phoneError) {
+      setError(phoneError.message || 'Phone verification failed.');
+    }
   }
 
   return (
     <main className="account-page register-page">
-      <section className="register-shell" aria-labelledby="register-title">
+      <section className={`register-shell${saved ? ' is-success' : ''}`} aria-labelledby={saved ? 'registration-success-title' : 'register-title'}>
         <aside className="register-welcome">
           <img src="/assets/kannada-bharati-logo.png" alt="Kannada Bharati logo" />
           <span className="register-eyebrow">Kannada Bharati member access</span>
@@ -130,6 +171,39 @@ export default function Register() {
         </aside>
 
         <div className="register-card">
+          {saved ? (
+            <div className="registration-success-state" role="status" aria-live="polite">
+              <span><CheckCircle2 size={34} /></span>
+              <h2 id="registration-success-title">Registered successfully</h2>
+              {phoneVerification.sent && !phoneVerification.verified ? (
+                <>
+                  <p>Your account is ready. Verify <strong>{phoneVerification.phone}</strong> to enable phone OTP login.</p>
+                  <form className="registration-phone-verification" onSubmit={handleConfirmPhone}>
+                    <label className="login-input-group">
+                      <span className="input-icon"><KeyRound size={18} /></span>
+                      <input
+                        name="code"
+                        value={phoneVerification.code}
+                        onChange={(event) => setPhoneVerification((current) => ({ ...current, code: event.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                        inputMode="numeric"
+                        pattern="[0-9]{6}"
+                        placeholder="Six-digit phone OTP"
+                        autoComplete="one-time-code"
+                        required
+                      />
+                    </label>
+                    <button className="blue-submit" type="submit"><Smartphone size={18} /> Verify phone</button>
+                  </form>
+                </>
+              ) : (
+                <p>{phoneVerification.verified ? 'Your phone number is verified. Opening your member profile now.' : 'Your account is ready and you are signed in. Opening your member profile now.'}</p>
+              )}
+              {error && <p className="form-error">{error}</p>}
+              {notice && <p className="success">{notice}</p>}
+              <button className="blue-submit" type="button" onClick={() => navigate('/admin/profile')}>Continue to my account</button>
+            </div>
+          ) : (
+            <>
           <div className="register-card-heading">
             <span><CheckCircle2 size={18} /> New member</span>
             <h2>Create your account</h2>
@@ -178,14 +252,14 @@ export default function Register() {
             )}
 
             {error && <p className="form-error">{error}</p>}
-            {saved && <p className="success">Account created. Opening classes...</p>}
-
             <button className="blue-submit" type="submit">Create account</button>
           </form>
 
           <p className="account-switch">
             Already have an account? <Link to="/login">Log in</Link>
           </p>
+            </>
+          )}
         </div>
       </section>
     </main>

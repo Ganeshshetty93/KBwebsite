@@ -237,7 +237,7 @@ export default function Events() {
           <div>
             <p className="eyebrow">{t('eventsTitle')}</p>
             <h2>{t('calendarTitle')}</h2>
-            <p className="events-intro">Celebrate culture, learning, and community through Kannada Bharati gatherings across the Seattle area.</p>
+            <p className="events-intro">Celebrate culture, learning, and community through Kannada Bharati gatherings across Washington.</p>
           </div>
         </div>
 

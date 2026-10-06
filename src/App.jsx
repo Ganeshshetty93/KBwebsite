@@ -1,5 +1,5 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { BellRing, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Megaphone, Menu, UserCircle, X } from 'lucide-react';
+import { BellRing, Camera, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Megaphone, Menu, MessagesSquare, Play, UserCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
 import { getCurrentUser, readJson, setCurrentUser, writeJson } from './utils/storage.js';
@@ -104,7 +104,9 @@ export default function App() {
 
   useEffect(() => {
     setRouteLoading(true);
+    setOpen(false);
     setProfileOpen(false);
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     const timer = window.setTimeout(() => setRouteLoading(false), 520);
     return () => window.clearTimeout(timer);
   }, [location.pathname]);
@@ -248,6 +250,15 @@ export default function App() {
         </div>
       )}
 
+      <section className="footer-motto" aria-label="Kannada cultural motto">
+        <span aria-hidden="true" />
+        <div>
+          <strong lang="kn">ಸಿರಿಗನ್ನಡಂ ಗೆಲ್ಗೆ, ಸಿರಿಗನ್ನಡಂ ಬಾಳ್ಗೆ</strong>
+          <p>Siri Gannadam Gelge, Siri Gannadam Balge</p>
+        </div>
+        <span aria-hidden="true" />
+      </section>
+
       <footer className="footer">
         <div>
           <strong>ಕನ್ನಡ ಭಾರತಿ</strong>
@@ -255,9 +266,15 @@ export default function App() {
           <div className="footer-social">
             <span>Connect with Kannada Bharati</span>
             <div>
-              <a href="https://www.facebook.com/KannadaBharati" target="_blank" rel="noreferrer" aria-label="Kannada Bharati Facebook">f</a>
-              <a href="https://www.youtube.com" target="_blank" rel="noreferrer" aria-label="Kannada Bharati YouTube">▶</a>
-              <a href="https://www.linkedin.com" target="_blank" rel="noreferrer" aria-label="Kannada Bharati LinkedIn">in</a>
+              <a href="https://www.facebook.com/kannada.bharati.92" target="_blank" rel="noopener noreferrer" aria-label="Kannada Bharati on Facebook" title="Facebook">
+                <MessagesSquare size={18} aria-hidden="true" />
+              </a>
+              <a href="https://www.youtube.com/@KannadaBharati" target="_blank" rel="noopener noreferrer" aria-label="Kannada Bharati on YouTube" title="YouTube">
+                <Play size={19} aria-hidden="true" />
+              </a>
+              <a href="https://www.instagram.com/kannadabharati/" target="_blank" rel="noopener noreferrer" aria-label="Kannada Bharati on Instagram" title="Instagram">
+                <Camera size={18} aria-hidden="true" />
+              </a>
             </div>
           </div>
         </div>

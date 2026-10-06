@@ -324,6 +324,19 @@ create table if not exists public.kb_site_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.kb_about_content (
+  section text primary key,
+  value jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.kb_about_content (section, value)
+values
+  ('currentCommittee', '[]'::jsonb),
+  ('sponsors', '[]'::jsonb),
+  ('pastCommittees', '[]'::jsonb)
+on conflict (section) do nothing;
+
 insert into public.kb_site_settings (key, value)
 values (
   'volunteer-google-form',
@@ -341,7 +354,9 @@ insert into public.kb_site_settings (key, value)
 values
   ('about-content', '{"currentCommittee": [], "sponsors": [], "pastCommittees": []}'::jsonb),
   ('paata-teachers', '[]'::jsonb),
-  ('site-message', '{"enabled": false, "title": "", "message": "", "ctaText": "", "ctaUrl": ""}'::jsonb)
+  ('site-message', '{"enabled": false, "title": "", "message": "", "ctaText": "", "ctaUrl": ""}'::jsonb),
+  ('role-definitions', '[]'::jsonb),
+  ('teacher-allotments', '[]'::jsonb)
 on conflict (key) do nothing;
 
 create table if not exists public.kb_member_profiles (
@@ -508,6 +523,7 @@ alter table public.kb_expenses enable row level security;
 alter table public.kb_event_types enable row level security;
 alter table public.kb_recurrence_options enable row level security;
 alter table public.kb_site_settings enable row level security;
+alter table public.kb_about_content enable row level security;
 alter table public.kb_member_profiles enable row level security;
 alter table public.kb_member_children enable row level security;
 alter table public.kb_checkins enable row level security;
@@ -565,6 +581,13 @@ using (true);
 drop policy if exists "Public can read site settings" on public.kb_site_settings;
 create policy "Public can read site settings"
 on public.kb_site_settings
+for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "Public can read about content" on public.kb_about_content;
+create policy "Public can read about content"
+on public.kb_about_content
 for select
 to anon, authenticated
 using (true);

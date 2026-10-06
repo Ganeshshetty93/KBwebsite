@@ -40,7 +40,7 @@ const paypalBaseUrl = (process.env.PAYPAL_ENV || 'live').toLowerCase() === 'sand
   : 'https://api-m.paypal.com';
 const appBaseUrl = process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'http://localhost:5174';
 const kbPaypalDonateUrl = process.env.KB_PAYPAL_DONATE_URL || 'https://www.paypal.com/donate?token=yXa3TfA1QxdZl-dL-PRMtJzuNTDf_55QcI_FQp48Twwc1UBYepRrXg79VpA_BqL2NoCnFjuGg9CrKgMJ';
-const roleNames = ['member', 'admin', 'superadmin', 'receptionist', 'teacher', 'volunteer', 'treasurer'];
+const roleNames = ['member', 'admin', 'superadmin', 'welcomedesk', 'receptionist', 'teacher', 'volunteer', 'treasurer'];
 const isProduction = process.env.NODE_ENV === 'production';
 const configuredAllowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS || '')
   .split(',')
@@ -168,11 +168,11 @@ function tokenFor(user) {
   return jwt.sign(publicUser(user), jwtSecret, { expiresIn: '7d' });
 }
 
-function twoFactorTokenFor(user) {
+function twoFactorTokenFor(user, providers = twoFactorProvidersFor(user)) {
   return jwt.sign({
     purpose: 'two-factor',
     email: String(user.email || '').toLowerCase(),
-    providers: twoFactorProvidersFor(user).map((provider) => provider.id)
+    providers: providers.map((provider) => provider.id)
   }, jwtSecret, { expiresIn: '10m' });
 }
 
@@ -208,6 +208,62 @@ function readTwoFactorVerificationToken(token) {
   } catch {
     return null;
   }
+}
+
+function oneTimeCodeTokenFor({ purpose, email, code, challengeId = '' }) {
+  return jwt.sign({
+    purpose,
+    email: String(email || '').toLowerCase(),
+    codeHash: codeHash(code),
+    challengeId
+  }, jwtSecret, { expiresIn: '10m' });
+}
+
+function readOneTimeCodeToken(token, purpose) {
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    if (payload?.purpose !== purpose || !payload.email || !payload.codeHash) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function oneTimeCodeMatches(payload, code) {
+  if (!payload?.codeHash || !code) return false;
+  const expected = Buffer.from(payload.codeHash, 'hex');
+  const received = Buffer.from(codeHash(code), 'hex');
+  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
+}
+
+function normalizePhoneNumber(value) {
+  const raw = String(value || '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return '';
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return `+${digits}`;
+}
+
+async function consumeOneTimeCodeChallenge(payload, provider) {
+  if (!payload?.challengeId) return true;
+  const supabase = requireSupabase();
+  const { data, error } = await supabase
+    .from('kb_two_factor_challenges')
+    .select('*')
+    .eq('id', payload.challengeId)
+    .eq('email', payload.email)
+    .eq('provider', provider)
+    .eq('verified', false)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || new Date(data.expires_at) < new Date()) return false;
+  const { error: updateError } = await supabase
+    .from('kb_two_factor_challenges')
+    .update({ verified: true })
+    .eq('id', data.id);
+  if (updateError) throw updateError;
+  return true;
 }
 
 function twoFactorProvidersFor(user) {
@@ -279,13 +335,13 @@ function requireSubmissionCreateAccess(req, res, next) {
   if (['registration', 'donation', 'volunteer', 'contact'].includes(type)) return next();
   if (type === 'expense') return authenticate(req, res, () => requireRole('volunteer', 'treasurer')(req, res, next));
   if (type === 'attendance') return authenticate(req, res, () => requireRole('teacher')(req, res, next));
-  if (type === 'checkin') return authenticate(req, res, () => requireRole('receptionist')(req, res, next));
+  if (type === 'checkin') return authenticate(req, res, () => requireRole('welcomedesk', 'receptionist')(req, res, next));
   if (['event', 'class', 'fundraiser', 'announcement'].includes(type)) return authenticate(req, res, () => requireAdmin(req, res, next));
   return res.status(403).json({ error: 'This submission type cannot be created directly.' });
 }
 
 function canManagePayment(user) {
-  return hasAnyRole(user, ['admin', 'superadmin', 'receptionist', 'treasurer']);
+  return hasAnyRole(user, ['admin', 'superadmin', 'welcomedesk', 'receptionist', 'treasurer']);
 }
 
 function canAccessRegistrationPayment(user, registration) {
@@ -304,7 +360,7 @@ function normalizeRoles(value) {
   const values = Array.isArray(value) ? value : String(value || 'member').split(',');
   const roles = values
     .map((role) => String(role || '').trim().toLowerCase())
-    .filter((role) => roleNames.includes(role));
+    .filter((role) => roleNames.includes(role) || /^[a-z0-9_-]{2,40}$/.test(role));
   return [...new Set(roles.length ? roles : ['member'])];
 }
 
@@ -845,6 +901,26 @@ function normalizePatch(table, payload) {
     return patch;
   }
 
+  if (table === 'kb_donations') {
+    const patch = {};
+    if (payload.name !== undefined) patch.name = payload.name;
+    if (payload.email !== undefined) patch.email = payload.email;
+    if (payload.amount !== undefined) patch.amount = numberValue(payload.amount, 0);
+    if (payload.causeId !== undefined || payload.cause_id !== undefined) {
+      const causeId = payload.causeId ?? payload.cause_id;
+      patch.cause_id = isUuid(causeId) ? causeId : null;
+    }
+    if (payload.cause !== undefined || payload.causeTitle !== undefined || payload.cause_title !== undefined) {
+      patch.cause_title = payload.cause ?? payload.causeTitle ?? payload.cause_title;
+    }
+    if (payload.paymentStatus !== undefined || payload.payment_status !== undefined) patch.payment_status = payload.paymentStatus ?? payload.payment_status;
+    if (payload.paypalOrderId !== undefined || payload.paypal_order_id !== undefined) patch.paypal_order_id = payload.paypalOrderId ?? payload.paypal_order_id;
+    if (payload.paypalCaptureId !== undefined || payload.paypal_capture_id !== undefined) patch.paypal_capture_id = payload.paypalCaptureId ?? payload.paypal_capture_id;
+    if (payload.paymentPayload !== undefined || payload.payment_payload !== undefined) patch.payment_payload = payload.paymentPayload ?? payload.payment_payload;
+    patch.updated_at = new Date().toISOString();
+    return patch;
+  }
+
   if (table !== 'kb_registrations') return payload;
 
   const patch = {};
@@ -928,12 +1004,16 @@ async function listOptionalTable(table) {
   try {
     return await listTable(table);
   } catch (error) {
-    if (error.code === '42P01' || /does not exist/i.test(error.message || '')) {
+    if (isMissingTableError(error)) {
       return [];
     }
 
     throw error;
   }
+}
+
+function isMissingTableError(error) {
+  return ['42P01', 'PGRST205'].includes(error?.code) || /does not exist|could not find the table/i.test(error?.message || '');
 }
 
 async function getSiteSetting(key, fallback = null) {
@@ -947,7 +1027,7 @@ async function getSiteSetting(key, fallback = null) {
     if (error) throw error;
     return data?.value ?? fallback;
   } catch (error) {
-    if (['42P01', 'PGRST205'].includes(error.code) || /does not exist|could not find the table/i.test(error.message || '')) return fallback;
+    if (isMissingTableError(error)) return fallback;
     throw error;
   }
 }
@@ -959,7 +1039,11 @@ async function saveSiteSetting(key, value) {
     .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
     .select('*')
     .single();
-  if (error) throw error;
+  if (error) {
+    error.status = 400;
+    error.message = `Could not save setting "${key}". ${error.message || 'Database rejected the update.'}`;
+    throw error;
+  }
   return data.value;
 }
 
@@ -977,6 +1061,56 @@ function normalizeAboutSetting(value = {}) {
     sponsors: normalizeRows(value.sponsors, ['name', 'level', 'website', 'note', 'photo']),
     pastCommittees: normalizeRows(value.pastCommittees, ['term', 'title', 'members', 'photo'])
   };
+}
+
+async function getAboutContent() {
+  const fallback = { currentCommittee: [], sponsors: [], pastCommittees: [] };
+  try {
+    const supabase = requireSupabase();
+    const { data, error } = await supabase
+      .from('kb_about_content')
+      .select('section,value');
+    if (error) throw error;
+    const next = { ...fallback };
+    (data || []).forEach((row) => {
+      if (Object.prototype.hasOwnProperty.call(next, row.section)) {
+        next[row.section] = Array.isArray(row.value) ? row.value : [];
+      }
+    });
+    const hasAnyRows = Object.values(next).some((rows) => rows.length);
+    if (hasAnyRows) return normalizeAboutSetting(next);
+    return normalizeAboutSetting(await getSiteSetting('about-content', fallback));
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return normalizeAboutSetting(await getSiteSetting('about-content', fallback));
+    }
+    throw error;
+  }
+}
+
+async function saveAboutContent(value) {
+  const normalized = normalizeAboutSetting(value);
+  try {
+    const supabase = requireSupabase();
+    const rows = [
+      { section: 'currentCommittee', value: normalized.currentCommittee, updated_at: new Date().toISOString() },
+      { section: 'sponsors', value: normalized.sponsors, updated_at: new Date().toISOString() },
+      { section: 'pastCommittees', value: normalized.pastCommittees, updated_at: new Date().toISOString() }
+    ];
+    const { error } = await supabase
+      .from('kb_about_content')
+      .upsert(rows, { onConflict: 'section' });
+    if (error) throw error;
+    await saveSiteSetting('about-content', normalized).catch(() => null);
+    return normalized;
+  } catch (error) {
+    if (isMissingTableError(error)) {
+      return saveSiteSetting('about-content', normalized);
+    }
+    error.status = 400;
+    error.message = `Could not save About Us content. ${error.message || 'Database rejected the update.'}`;
+    throw error;
+  }
 }
 
 function normalizePaataTeacherSetting(value = []) {
@@ -1956,6 +2090,7 @@ app.post('/api/auth/register', authRateLimit, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
+  const phone = req.body.phone ? normalizePhoneNumber(req.body.phone) : '';
   await verifyRecaptcha(req.body.recaptchaToken || req.body.recaptcha);
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -1964,6 +2099,10 @@ app.post('/api/auth/register', authRateLimit, asyncHandler(async (req, res) => {
 
   if (!password || password.length < 6) {
     return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
+
+  if (req.body.phone && !phone) {
+    return res.status(400).json({ error: 'Enter a valid phone number.' });
   }
 
   const { data: existingUser, error: existingUserError } = await supabase
@@ -1987,7 +2126,8 @@ app.post('/api/auth/register', authRateLimit, asyncHandler(async (req, res) => {
     .upsert({
       email,
       name,
-      phone: req.body.phone || null,
+      phone: phone || null,
+      phone_confirmed: false,
       role: primaryRole(roles),
       roles,
       password_hash: passwordHash,
@@ -1997,13 +2137,13 @@ app.post('/api/auth/register', authRateLimit, asyncHandler(async (req, res) => {
     .select('*')
     .single();
 
-  if (userResult.error && /roles|email_confirmation_token|email_confirmed|two_factor_enabled/i.test(userResult.error.message || '')) {
+  if (userResult.error && /roles|email_confirmation_token|email_confirmed|phone_confirmed|two_factor_enabled/i.test(userResult.error.message || '')) {
     userResult = await supabase
       .from('kb_users')
       .upsert({
         email,
         name,
-        phone: req.body.phone || null,
+        phone: phone || null,
         role: primaryRole(roles),
         password_hash: passwordHash,
         updated_at: new Date().toISOString()
@@ -2026,7 +2166,7 @@ app.post('/api/auth/register', authRateLimit, asyncHandler(async (req, res) => {
     parent_name: name,
     student_name: req.body.studentName || '-',
     email,
-    phone: req.body.phone || null,
+    phone: phone || null,
     program: req.body.program || 'General membership'
   });
 
@@ -2072,7 +2212,7 @@ app.post('/api/auth/login', authRateLimit, asyncHandler(async (req, res) => {
     user = updatedUser;
   }
 
-  if (booleanValue(user.two_factor_enabled, false) && email !== adminEmail) {
+  if (booleanValue(user.two_factor_enabled, false)) {
     const providers = twoFactorProvidersFor(user);
     if (!providers.length) {
       return res.status(403).json({ error: 'Two-factor authentication is enabled, but no verified delivery method is available. Contact an administrator.' });
@@ -2090,6 +2230,182 @@ app.post('/api/auth/login', authRateLimit, asyncHandler(async (req, res) => {
     role: user.role
   });
 
+  res.json({ user: publicUser(user), token: tokenFor(user) });
+}));
+
+app.post('/api/auth/otp/start', authRateLimit, asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
+  const email = String(req.body.email || '').trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Enter a valid email address.' });
+  }
+
+  const { data: user, error } = await supabase
+    .from('kb_users')
+    .select('*')
+    .eq('email', email)
+    .maybeSingle();
+  if (error) throw error;
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const stored = user ? await insertOptionalRecord('kb_two_factor_challenges', {
+    email,
+    provider: 'login-email',
+    code,
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    verified: false
+  }) : null;
+  const otpToken = oneTimeCodeTokenFor({ purpose: 'login-otp', email, code, challengeId: stored?.id || '' });
+  if (user) {
+    await sendEmailOrQueue({
+      to: email,
+      subject: 'Your Kannada Bharati login code',
+      template: 'two-factor-code',
+      payload: { code, email, purpose: 'otp-login' }
+    });
+  }
+
+  res.json({
+    ok: true,
+    otpToken,
+    destination: email,
+    message: 'If an account exists, a login code was sent.',
+    devCode: process.env.NODE_ENV === 'production' || !user ? undefined : code
+  });
+}));
+
+app.post('/api/auth/otp/verify', authRateLimit, asyncHandler(async (req, res) => {
+  const token = String(req.body.otpToken || req.body.token || '').trim();
+  const code = String(req.body.code || '').trim();
+  const challenge = readOneTimeCodeToken(token, 'login-otp');
+  if (!challenge) return res.status(401).json({ error: 'OTP session expired. Request a new code.' });
+  if (!/^\d{6}$/.test(code) || !oneTimeCodeMatches(challenge, code)) {
+    return res.status(400).json({ error: 'OTP code is invalid or expired.' });
+  }
+  if (!await consumeOneTimeCodeChallenge(challenge, 'login-email')) {
+    return res.status(400).json({ error: 'OTP code is invalid, expired, or already used.' });
+  }
+
+  const supabase = requireSupabase();
+  const { data: existing, error } = await supabase
+    .from('kb_users')
+    .select('*')
+    .eq('email', challenge.email)
+    .maybeSingle();
+  if (error) throw error;
+  if (!existing) return res.status(401).json({ error: 'Account was not found.' });
+
+  let user = existing;
+  if (!booleanValue(existing.email_confirmed, false)) {
+    const { data: confirmed, error: confirmError } = await supabase
+      .from('kb_users')
+      .update({ email_confirmed: true, email_confirmation_token: null, updated_at: new Date().toISOString() })
+      .eq('id', existing.id)
+      .select('*')
+      .single();
+    if (confirmError) throw confirmError;
+    user = confirmed;
+  }
+
+  if (booleanValue(user.two_factor_enabled, false)) {
+    const providers = twoFactorProvidersFor(user);
+    if (!providers.length) {
+      return res.status(403).json({ error: 'Two-factor authentication is enabled, but no verified delivery method is available.' });
+    }
+    return res.json({
+      twoFactorRequired: true,
+      twoFactorToken: twoFactorTokenFor(user, providers),
+      providers
+    });
+  }
+
+  await insertRecord('kb_logins', { email: user.email, role: user.role });
+  res.json({ user: publicUser(user), token: tokenFor(user) });
+}));
+
+app.post('/api/auth/phone-otp/start', authRateLimit, asyncHandler(async (req, res) => {
+  const phone = normalizePhoneNumber(req.body.phone);
+  if (!phone) return res.status(400).json({ error: 'Enter a valid phone number.' });
+  if (isProduction && (!twilioAccountSid || !twilioAuthToken || !twilioFromPhone)) {
+    return res.status(503).json({ error: 'Phone OTP is temporarily unavailable because SMS delivery is not configured.' });
+  }
+
+  const supabase = requireSupabase();
+  const { data: users, error } = await supabase
+    .from('kb_users')
+    .select('*')
+    .eq('phone_confirmed', true);
+  if (error) throw error;
+
+  const user = (users || []).find((candidate) => normalizePhoneNumber(candidate.phone) === phone);
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const challengeEmail = user?.email || `missing-${codeHash(phone).slice(0, 16)}@phone.invalid`;
+  const stored = user ? await insertOptionalRecord('kb_two_factor_challenges', {
+    email: user.email,
+    provider: 'login-phone',
+    code,
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    verified: false
+  }) : null;
+  const otpToken = oneTimeCodeTokenFor({
+    purpose: 'login-phone-otp',
+    email: challengeEmail,
+    code,
+    challengeId: stored?.id || ''
+  });
+
+  if (user) {
+    await sendSmsOrStore({
+      to: normalizePhoneNumber(user.phone),
+      body: `Your Kannada Bharati login code is: ${code}`,
+      payload: { email: user.email, purpose: 'phone-otp-login' }
+    });
+  }
+
+  res.json({
+    ok: true,
+    otpToken,
+    destination: phone,
+    message: 'If a verified account exists, a login code was sent.',
+    devCode: process.env.NODE_ENV === 'production' || !user ? undefined : code
+  });
+}));
+
+app.post('/api/auth/phone-otp/verify', authRateLimit, asyncHandler(async (req, res) => {
+  const token = String(req.body.otpToken || req.body.token || '').trim();
+  const code = String(req.body.code || '').trim();
+  const challenge = readOneTimeCodeToken(token, 'login-phone-otp');
+  if (!challenge) return res.status(401).json({ error: 'OTP session expired. Request a new code.' });
+  if (!/^\d{6}$/.test(code) || !oneTimeCodeMatches(challenge, code)) {
+    return res.status(400).json({ error: 'OTP code is invalid or expired.' });
+  }
+  if (!await consumeOneTimeCodeChallenge(challenge, 'login-phone')) {
+    return res.status(400).json({ error: 'OTP code is invalid, expired, or already used.' });
+  }
+
+  const supabase = requireSupabase();
+  const { data: user, error } = await supabase
+    .from('kb_users')
+    .select('*')
+    .eq('email', challenge.email)
+    .eq('phone_confirmed', true)
+    .maybeSingle();
+  if (error) throw error;
+  if (!user) return res.status(401).json({ error: 'Account was not found or the phone number is not verified.' });
+
+  if (booleanValue(user.two_factor_enabled, false)) {
+    const providers = twoFactorProvidersFor(user).filter((provider) => provider.id !== 'phone');
+    if (!providers.length) {
+      return res.status(403).json({ error: 'Two-factor authentication requires a verified method other than this phone number.' });
+    }
+    return res.json({
+      twoFactorRequired: true,
+      twoFactorToken: twoFactorTokenFor(user, providers),
+      providers
+    });
+  }
+
+  await insertRecord('kb_logins', { email: user.email, role: user.role });
   res.json({ user: publicUser(user), token: tokenFor(user) });
 }));
 
@@ -2137,7 +2453,7 @@ app.post('/api/auth/google', authRateLimit, asyncHandler(async (req, res) => {
     display_name: googleProfile.name || user.name
   });
 
-  if (booleanValue(user.two_factor_enabled, false) && user.email.toLowerCase() !== adminEmail) {
+  if (booleanValue(user.two_factor_enabled, false)) {
     const providers = twoFactorProvidersFor(user);
     if (!providers.length) {
       return res.status(403).json({ error: 'Two-factor authentication is enabled, but no verified delivery method is available. Contact an administrator.' });
@@ -2373,9 +2689,75 @@ app.post('/api/auth/confirm-email', authRateLimit, asyncHandler(async (req, res)
   res.json({ user: publicUser(user), token: tokenFor(user) });
 }));
 
+app.post('/api/auth/two-factor/setup/send', authRateLimit, authenticate, asyncHandler(async (req, res) => {
+  const supabase = requireSupabase();
+  const { data: user, error } = await supabase
+    .from('kb_users')
+    .select('*')
+    .eq('email', req.user.email.toLowerCase())
+    .single();
+  if (error) throw error;
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const stored = await insertOptionalRecord('kb_two_factor_challenges', {
+    email: user.email,
+    provider: 'two-factor-setup',
+    code,
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    verified: false
+  });
+  const setupToken = oneTimeCodeTokenFor({ purpose: 'two-factor-setup', email: user.email, code, challengeId: stored?.id || '' });
+  await sendEmailOrQueue({
+    to: user.email,
+    subject: 'Verify Kannada Bharati two-factor authentication',
+    template: 'two-factor-code',
+    payload: { code, email: user.email, purpose: 'two-factor-setup' }
+  });
+
+  res.json({
+    ok: true,
+    setupToken,
+    destination: user.email,
+    devCode: process.env.NODE_ENV === 'production' ? undefined : code
+  });
+}));
+
+app.post('/api/auth/two-factor/setup/verify', authRateLimit, authenticate, asyncHandler(async (req, res) => {
+  const token = String(req.body.setupToken || req.body.token || '').trim();
+  const code = String(req.body.code || '').trim();
+  const challenge = readOneTimeCodeToken(token, 'two-factor-setup');
+  if (!challenge || challenge.email !== req.user.email.toLowerCase()) {
+    return res.status(401).json({ error: 'Two-factor setup session expired. Request a new code.' });
+  }
+  if (!/^\d{6}$/.test(code) || !oneTimeCodeMatches(challenge, code)) {
+    return res.status(400).json({ error: 'Verification code is invalid or expired.' });
+  }
+  if (!await consumeOneTimeCodeChallenge(challenge, 'two-factor-setup')) {
+    return res.status(400).json({ error: 'Verification code is invalid, expired, or already used.' });
+  }
+
+  const supabase = requireSupabase();
+  const { data: user, error } = await supabase
+    .from('kb_users')
+    .update({
+      two_factor_enabled: true,
+      email_confirmed: true,
+      email_confirmation_token: null,
+      updated_at: new Date().toISOString()
+    })
+    .eq('email', challenge.email)
+    .select('*')
+    .single();
+  if (error) throw error;
+  res.json({ user: publicUser(user), token: tokenFor(user) });
+}));
+
 app.post('/api/auth/two-factor', authenticate, asyncHandler(async (req, res) => {
   const supabase = requireSupabase();
   const enabled = booleanValue(req.body.enabled, false);
+  if (enabled) {
+    return res.status(400).json({ error: 'Verify the emailed OTP before enabling two-factor authentication.' });
+  }
   const { data: user, error } = await supabase
     .from('kb_users')
     .update({ two_factor_enabled: enabled, updated_at: new Date().toISOString() })
@@ -2464,11 +2846,19 @@ app.post('/api/uploads', authenticate, asyncHandler(async (req, res) => {
   res.status(201).json(upload);
 }));
 
+app.get('/api/about-content', asyncHandler(async (req, res) => {
+  res.json(await getAboutContent());
+}));
+
+app.put('/api/about-content', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  res.json(await saveAboutContent(req.body));
+}));
+
 app.get('/api/settings/:key', asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
   if (req.params.key === 'about-content') {
-    return res.json(await getSiteSetting(req.params.key, { currentCommittee: [], sponsors: [], pastCommittees: [] }));
+    return res.json(await getAboutContent());
   }
   if (req.params.key === 'paata-teachers') {
     return res.json(await getSiteSetting(req.params.key, []));
@@ -2476,16 +2866,19 @@ app.get('/api/settings/:key', asyncHandler(async (req, res) => {
   if (req.params.key === 'site-message') {
     return res.json(await getSiteSetting(req.params.key, { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
   }
+  if (req.params.key === 'role-definitions' || req.params.key === 'teacher-allotments') {
+    return res.json(await getSiteSetting(req.params.key, []));
+  }
   const value = await getSiteSetting(req.params.key, req.params.key === 'volunteer-google-form' ? { enabled: false, url: defaultVolunteerGoogleFormUrl } : null);
   if (req.params.key === 'volunteer-google-form' && !value.url) value.url = defaultVolunteerGoogleFormUrl;
   res.json(value);
 }));
 
 app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
   if (req.params.key === 'about-content') {
-    return res.json(await saveSiteSetting(req.params.key, normalizeAboutSetting(req.body)));
+    return res.json(await saveAboutContent(req.body));
   }
   if (req.params.key === 'paata-teachers') {
     return res.json(await saveSiteSetting(req.params.key, normalizePaataTeacherSetting(req.body)));
@@ -2495,6 +2888,10 @@ app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (re
     if (value.enabled && (!value.title || !value.message)) {
       return res.status(400).json({ error: 'Title and message are required when the popup is enabled.' });
     }
+    return res.json(await saveSiteSetting(req.params.key, value));
+  }
+  if (req.params.key === 'role-definitions' || req.params.key === 'teacher-allotments') {
+    const value = Array.isArray(req.body) ? req.body : [];
     return res.json(await saveSiteSetting(req.params.key, value));
   }
   const value = {
@@ -2546,7 +2943,7 @@ app.get('/api/admin/users/find', authenticate, requireAdmin, asyncHandler(async 
   });
 }));
 
-app.get('/api/users/phone', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
+app.get('/api/users/phone', authenticate, requireRole('welcomedesk', 'receptionist'), asyncHandler(async (req, res) => {
   const email = String(req.query.email || '').trim().toLowerCase();
   if (!email) return res.status(400).json({ error: 'Email is required.' });
   const supabase = requireSupabase();
@@ -2636,8 +3033,11 @@ app.delete('/api/auth/external-logins/:provider', authenticate, asyncHandler(asy
 }));
 
 app.post('/api/auth/verify-phone/start', authRateLimit, authenticate, asyncHandler(async (req, res) => {
-  const phone = String(req.body.phone || '').trim();
+  const phone = normalizePhoneNumber(req.body.phone);
   if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
+  if (isProduction && (!twilioAccountSid || !twilioAuthToken || !twilioFromPhone)) {
+    return res.status(503).json({ error: 'Phone verification is temporarily unavailable because SMS delivery is not configured.' });
+  }
   const code = String(Math.floor(100000 + Math.random() * 900000));
   await insertOptionalRecord('kb_phone_verifications', {
     email: req.user.email,
@@ -2655,9 +3055,20 @@ app.post('/api/auth/verify-phone/start', authRateLimit, authenticate, asyncHandl
 }));
 
 app.post('/api/auth/verify-phone/confirm', authRateLimit, authenticate, asyncHandler(async (req, res) => {
-  const phone = String(req.body.phone || '').trim();
+  const phone = normalizePhoneNumber(req.body.phone);
   const code = String(req.body.code || '').trim();
+  if (!phone) return res.status(400).json({ error: 'Enter a valid phone number.' });
   const supabase = requireSupabase();
+  const { data: confirmedUsers, error: confirmedUsersError } = await supabase
+    .from('kb_users')
+    .select('email, phone')
+    .eq('phone_confirmed', true);
+  if (confirmedUsersError) throw confirmedUsersError;
+  const phoneOwner = (confirmedUsers || []).find((candidate) => (
+    candidate.email !== req.user.email && normalizePhoneNumber(candidate.phone) === phone
+  ));
+  if (phoneOwner) return res.status(409).json({ error: 'This phone number is already verified for another account.' });
+
   const { data, error } = await supabase
     .from('kb_phone_verifications')
     .select('*')
@@ -2693,7 +3104,7 @@ app.delete('/api/auth/phone', authenticate, asyncHandler(async (req, res) => {
   res.json({ ok: true, user: publicUser(user), token: tokenFor(user) });
 }));
 
-app.post('/api/registrations/:id/action', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
+app.post('/api/registrations/:id/action', authenticate, requireRole('welcomedesk', 'receptionist'), asyncHandler(async (req, res) => {
   const action = String(req.body.action || '').toLowerCase();
   const existingRegistration = action === 'paid' ? await getRegistrationById(req.params.id) : null;
   const paymentDetails = req.body.paymentDetails || null;
@@ -2744,12 +3155,14 @@ app.post('/api/expenses/:id/action', authenticate, requireRole('treasurer'), asy
   res.json(await updateRecord('kb_expenses', req.params.id, patch));
 }));
 
-app.get('/api/reception/events', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
+const requireWelcomeDesk = requireRole('welcomedesk', 'receptionist');
+
+async function listWelcomeDeskEvents(req, res) {
   const events = await listTable('kb_events');
   res.json(events.filter((event) => booleanValue(event.enable_check_in, true) && booleanValue(event.enabled, true)));
-}));
+}
 
-app.get('/api/reception/registrations', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
+async function listWelcomeDeskRegistrations(req, res) {
   const supabase = requireSupabase();
   let query = supabase.from('kb_registrations').select('*').order('created_at', { ascending: false });
   if (req.query.eventId) query = query.eq('event_id', req.query.eventId);
@@ -2757,9 +3170,9 @@ app.get('/api/reception/registrations', authenticate, requireRole('receptionist'
   const { data, error } = await query;
   if (error) throw error;
   res.json(data || []);
-}));
+}
 
-app.post('/api/reception/checkin', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
+async function createWelcomeDeskCheckIn(req, res) {
   const registrationId = req.body.registrationId || req.body.registration_id;
   const existingRegistration = registrationId ? await getRegistrationById(registrationId) : null;
   if (!existingRegistration) return res.status(404).json({ error: 'Registration was not found.' });
@@ -2778,7 +3191,14 @@ app.post('/api/reception/checkin', authenticate, requireRole('receptionist'), as
     checkedInBy: req.user.email
   });
   res.status(201).json({ registration, checkin });
-}));
+}
+
+app.get('/api/welcome-desk/events', authenticate, requireWelcomeDesk, asyncHandler(listWelcomeDeskEvents));
+app.get('/api/welcome-desk/registrations', authenticate, requireWelcomeDesk, asyncHandler(listWelcomeDeskRegistrations));
+app.post('/api/welcome-desk/checkin', authenticate, requireWelcomeDesk, asyncHandler(createWelcomeDeskCheckIn));
+app.get('/api/reception/events', authenticate, requireWelcomeDesk, asyncHandler(listWelcomeDeskEvents));
+app.get('/api/reception/registrations', authenticate, requireWelcomeDesk, asyncHandler(listWelcomeDeskRegistrations));
+app.post('/api/reception/checkin', authenticate, requireWelcomeDesk, asyncHandler(createWelcomeDeskCheckIn));
 
 app.post('/api/payments/paypal/orders', asyncHandler(async (req, res) => {
   const amount = numberValue(req.body.amount, 0);
@@ -3132,7 +3552,7 @@ app.post('/api/payments/:kind/cancel', requirePaymentKindAccess, asyncHandler(as
   res.json(await cancelRegistrationPaymentFlow(String(req.params.kind || '').toLowerCase(), req.body, req.user));
 }));
 
-app.get('/api/eventmgmt/seats', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
+app.get('/api/eventmgmt/seats', authenticate, requireRole('welcomedesk', 'receptionist'), asyncHandler(async (req, res) => {
   const eventId = String(req.query.eventId || '').trim();
   const supabase = requireSupabase();
   let seats = [];
@@ -3150,7 +3570,7 @@ app.get('/api/eventmgmt/seats', authenticate, requireRole('receptionist'), async
   res.json({ seats, registrations: eventId ? registrations.filter((row) => row.event_id === eventId) : registrations });
 }));
 
-app.post('/api/eventmgmt/seats', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
+app.post('/api/eventmgmt/seats', authenticate, requireRole('welcomedesk', 'receptionist'), asyncHandler(async (req, res) => {
   const eventId = String(req.body.eventId || '').trim();
   const seatNumber = String(req.body.seatNumber || req.body.seat_number || '').trim();
   if (!eventId || !seatNumber) return res.status(400).json({ error: 'Event id and seat number are required.' });
@@ -3178,7 +3598,7 @@ app.post('/api/eventmgmt/seats', authenticate, requireRole('receptionist'), asyn
   }
 }));
 
-app.patch('/api/eventmgmt/seats/:id', authenticate, requireRole('receptionist'), asyncHandler(async (req, res) => {
+app.patch('/api/eventmgmt/seats/:id', authenticate, requireRole('welcomedesk', 'receptionist'), asyncHandler(async (req, res) => {
   res.json(await updateRecord('kb_seats', req.params.id, {
     ...req.body,
     updatedAt: new Date().toISOString()
@@ -3408,7 +3828,7 @@ app.post('/api/fundraisers', authenticate, requireAdmin, asyncHandler(async (req
 
 app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
   const fullAdmin = hasAnyRole(req.user, ['admin', 'superadmin']);
-  const staff = hasAnyRole(req.user, ['receptionist', 'teacher', 'volunteer', 'treasurer']);
+  const staff = hasAnyRole(req.user, ['welcomedesk', 'receptionist', 'teacher', 'volunteer', 'treasurer']);
   if (!fullAdmin && !staff) {
     const supabase = requireSupabase();
     const email = String(req.user.email || '').toLowerCase();
@@ -3450,7 +3870,7 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
   if (!fullAdmin) {
     const email = String(req.user.email || '').toLowerCase();
     const roles = normalizeRoles(req.user.roles || req.user.role);
-    const canReception = roles.includes('receptionist');
+    const canWelcomeDesk = roles.includes('welcomedesk') || roles.includes('receptionist');
     const canTeacher = roles.includes('teacher');
     const canVolunteer = roles.includes('volunteer');
     const canTreasurer = roles.includes('treasurer');
@@ -3461,14 +3881,14 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
       listOptionalTable('kb_announcements')
     ]);
     const [registrations, donations, volunteers, contacts, expenses, checkins, attendance] = await Promise.all([
-      (canReception || canTeacher) ? listTable('kb_registrations') : listTable('kb_registrations').then((rows) => rows.filter((row) => String(row.email || '').toLowerCase() === email)),
+      (canWelcomeDesk || canTeacher) ? listTable('kb_registrations') : listTable('kb_registrations').then((rows) => rows.filter((row) => String(row.email || '').toLowerCase() === email)),
       canTreasurer ? listTable('kb_donations') : Promise.resolve([]),
-      canReception ? listTable('kb_volunteers') : Promise.resolve([]),
+      canWelcomeDesk ? listTable('kb_volunteers') : Promise.resolve([]),
       Promise.resolve([]),
       (canTreasurer || canVolunteer)
         ? listOptionalTable('kb_expenses').then((rows) => canTreasurer ? rows : rows.filter((row) => String(row.submitted_by || row.submittedBy || '').toLowerCase() === email))
         : Promise.resolve([]),
-      canReception ? listOptionalTable('kb_checkins') : Promise.resolve([]),
+      canWelcomeDesk ? listOptionalTable('kb_checkins') : Promise.resolve([]),
       canTeacher ? listOptionalTable('kb_attendance') : Promise.resolve([])
     ]);
 

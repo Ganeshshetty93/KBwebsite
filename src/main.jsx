@@ -60,8 +60,11 @@ createRoot(document.getElementById('root')).render(
                 <Route path="register-member" element={<AdminSectionPage view="register-member" />} />
                 <Route path="expense" element={<AdminSectionPage view="expense" />} />
                 <Route path="users" element={<AdminSectionPage view="users" />} />
+                <Route path="role-access" element={<AdminSectionPage view="role-access" />} />
+                <Route path="classes" element={<AdminSectionPage view="classes" />} />
                 <Route path="events" element={<AdminSectionPage view="events" />} />
                 <Route path="event-settings" element={<AdminSectionPage view="event-settings" />} />
+                <Route path="teacher-allotments" element={<AdminSectionPage view="teacher-allotments" />} />
                 <Route path="announcements" element={<AdminSectionPage view="announcements" />} />
                 <Route path="about" element={<AdminSectionPage view="about" />} />
                 <Route path="paata-teachers" element={<AdminSectionPage view="paata-teachers" />} />
