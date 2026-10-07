@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Images, ReceiptText, UsersRound, X } from 'lucide-react';
-import PageHero from '../components/PageHero.jsx';
+import EventHeroCarousel from '../components/EventHeroCarousel.jsx';
 import { events } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { apiAppendRecord, apiCompleteFlowPayment, apiCreateFlowPayment, apiReadRecords } from '../utils/api.js';
@@ -226,11 +226,10 @@ export default function Events() {
 
   return (
     <>
-      <PageHero
+      <EventHeroCarousel
         eyebrow={t('eventsTitle')}
         title={t('eventsHeroTitle')}
         text={t('eventsHeroText')}
-        className="events-hero"
       />
       <section className="section events-page">
         <div className="section-toolbar events-toolbar">

@@ -24,6 +24,7 @@ const WebRequirements = lazy(() => import('./pages/WebRequirements.jsx'));
 const KannadaLiterature = lazy(() => import('./pages/KannadaLiterature.jsx'));
 const AdminShell = lazy(() => import('./components/AdminShell.jsx'));
 const AdminSectionPage = lazy(() => import('./pages/AdminSectionPage.jsx'));
+const EventHeroManager = lazy(() => import('./pages/EventHeroManager.jsx'));
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -64,6 +65,7 @@ createRoot(document.getElementById('root')).render(
                 <Route path="classes" element={<AdminSectionPage view="classes" />} />
                 <Route path="events" element={<AdminSectionPage view="events" />} />
                 <Route path="event-settings" element={<AdminSectionPage view="event-settings" />} />
+                <Route path="event-hero" element={<EventHeroManager />} />
                 <Route path="teacher-allotments" element={<AdminSectionPage view="teacher-allotments" />} />
                 <Route path="announcements" element={<AdminSectionPage view="announcements" />} />
                 <Route path="about" element={<AdminSectionPage view="about" />} />

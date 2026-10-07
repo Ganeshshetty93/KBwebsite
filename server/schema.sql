@@ -356,7 +356,8 @@ values
   ('paata-teachers', '[]'::jsonb),
   ('site-message', '{"enabled": false, "title": "", "message": "", "ctaText": "", "ctaUrl": ""}'::jsonb),
   ('role-definitions', '[]'::jsonb),
-  ('teacher-allotments', '[]'::jsonb)
+  ('teacher-allotments', '[]'::jsonb),
+  ('events-hero-slides', '[]'::jsonb)
 on conflict (key) do nothing;
 
 create table if not exists public.kb_member_profiles (

@@ -2855,7 +2855,7 @@ app.put('/api/about-content', authenticate, requireAdmin, asyncHandler(async (re
 }));
 
 app.get('/api/settings/:key', asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
   if (req.params.key === 'about-content') {
     return res.json(await getAboutContent());
@@ -2866,7 +2866,7 @@ app.get('/api/settings/:key', asyncHandler(async (req, res) => {
   if (req.params.key === 'site-message') {
     return res.json(await getSiteSetting(req.params.key, { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
   }
-  if (req.params.key === 'role-definitions' || req.params.key === 'teacher-allotments') {
+  if (req.params.key === 'role-definitions' || req.params.key === 'teacher-allotments' || req.params.key === 'events-hero-slides') {
     return res.json(await getSiteSetting(req.params.key, []));
   }
   const value = await getSiteSetting(req.params.key, req.params.key === 'volunteer-google-form' ? { enabled: false, url: defaultVolunteerGoogleFormUrl } : null);
@@ -2875,7 +2875,7 @@ app.get('/api/settings/:key', asyncHandler(async (req, res) => {
 }));
 
 app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
   if (req.params.key === 'about-content') {
     return res.json(await saveAboutContent(req.body));
@@ -2892,6 +2892,26 @@ app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (re
   }
   if (req.params.key === 'role-definitions' || req.params.key === 'teacher-allotments') {
     const value = Array.isArray(req.body) ? req.body : [];
+    return res.json(await saveSiteSetting(req.params.key, value));
+  }
+  if (req.params.key === 'events-hero-slides') {
+    const value = (Array.isArray(req.body) ? req.body : [])
+      .slice(0, 12)
+      .map((slide, index) => ({
+        id: String(slide?.id || `event-hero-${index + 1}`).slice(0, 100),
+        image: String(slide?.image || '').trim(),
+        alt: String(slide?.alt || '').trim().slice(0, 180),
+        caption: String(slide?.caption || '').trim().slice(0, 180),
+        position: ['top', 'center', 'bottom'].includes(slide?.position) ? slide.position : 'center',
+        enabled: booleanValue(slide?.enabled, true)
+      }))
+      .filter((slide) => slide.image);
+    if (!value.length || !value.some((slide) => slide.enabled)) {
+      return res.status(400).json({ error: 'At least one visible event hero photo is required.' });
+    }
+    if (value.some((slide) => !slide.alt)) {
+      return res.status(400).json({ error: 'Accessible image text is required for every event hero photo.' });
+    }
     return res.json(await saveSiteSetting(req.params.key, value));
   }
   const value = {
