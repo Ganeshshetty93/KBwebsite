@@ -3221,13 +3221,18 @@ export default function AdminSectionPage({ view }) {
     const payload = Object.fromEntries(new FormData(form).entries());
     const audience = cleanText(payload.audience);
     const target = cleanText(payload.target);
+    const ctaLabel = cleanText(payload.ctaLabel);
+    const ctaUrl = cleanText(payload.ctaUrl);
     const validationError = firstError([
       validateRequired(audience, 'Audience'),
       audience !== 'all-users' ? validateRequired(target, 'Target') : '',
       validateRequired(payload.subject, 'Subject'),
       cleanText(payload.subject).length < 4 ? 'Subject must be at least 4 characters.' : '',
       validateRequired(payload.body, 'Message'),
-      cleanText(payload.body).length < 10 ? 'Message must be at least 10 characters.' : ''
+      cleanText(payload.body).length < 10 ? 'Message must be at least 10 characters.' : '',
+      ctaLabel && !ctaUrl ? 'Action button URL is required when a label is entered.' : '',
+      ctaUrl && !ctaLabel ? 'Action button label is required when a URL is entered.' : '',
+      ctaUrl ? validateUrl(ctaUrl, 'Action button URL') : ''
     ]);
 
     if (validationError) {
@@ -3243,7 +3248,9 @@ export default function AdminSectionPage({ view }) {
         subject: cleanText(payload.subject),
         intro: cleanText(payload.intro),
         body: cleanText(payload.body),
-        footer: cleanText(payload.footer)
+        footer: cleanText(payload.footer),
+        ctaLabel,
+        ctaUrl
       });
       form.reset();
       setBulkEmail({ audience: 'all-users', target: '', sending: false, notice: `Message prepared for ${result.count} recipient(s). Sent: ${result.sent}. Queued/stored: ${result.queued}.`, error: '' });
@@ -4394,6 +4401,14 @@ export default function AdminSectionPage({ view }) {
               Footer note
               <input name="footer" maxLength="220" placeholder="Optional closing note" />
             </label>
+            <label>
+              Action button label
+              <input name="ctaLabel" maxLength="60" placeholder="View details and register" />
+            </label>
+            <label>
+              Action button URL
+              <input name="ctaUrl" maxLength="500" placeholder="/classes or https://..." />
+            </label>
           </div>
           <div className="bulk-email-actions">
             <span>Emails are sent through SMTP when configured; otherwise they are stored in the Email Outbox.</span>
@@ -5379,6 +5394,13 @@ export default function AdminSectionPage({ view }) {
         subject: 'Kannada Bharati donation confirmation',
         body: 'Thank you for supporting Kannada Bharati.',
         action: 'View Donation'
+      },
+      {
+        title: 'Admin message',
+        key: 'bulk-message',
+        subject: 'Classes Registration Now Open',
+        body: 'Branded template used for messages composed by administrators.',
+        action: 'Preview Message Email'
       }
     ];
     const tableCounts = [

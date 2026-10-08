@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import PageHero from '../components/PageHero.jsx';
+import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
 import ClassCard from '../components/ClassCard.jsx';
 import { culturalClasses, paataShaaleLevels } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
@@ -42,7 +42,8 @@ export default function Classes() {
 
   return (
     <>
-      <PageHero
+      <PageHeroCarousel
+        pageKey="classes"
         eyebrow={t('classesEyebrow')}
         title={t('classesTitle')}
         text={t('classesText')}

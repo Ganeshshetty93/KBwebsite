@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { BookOpen, ChevronLeft, ChevronRight, HandHeart, HeartHandshake, Music2, Pause, Play, Sparkles, UsersRound } from 'lucide-react';
-import PageHero from '../components/PageHero.jsx';
+import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
 import { events, heroStats } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { apiReadAboutContent, apiReadRecords } from '../utils/api.js';
@@ -418,11 +418,11 @@ export default function Home() {
   ];
   return (
     <>
-      <PageHero
+      <PageHeroCarousel
+        pageKey="home"
         eyebrow={t('homeEyebrow')}
         title={t('homeTitle')}
         text={t('homeText')}
-        image
         actions={[
           { label: t('exploreClasses'), href: '/classes' },
           { label: t('memberLogin'), href: '/login', variant: 'secondary' }

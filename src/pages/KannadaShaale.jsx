@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BookOpenCheck, Mail, Phone, UsersRound } from 'lucide-react';
-import PageHero from '../components/PageHero.jsx';
+import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
 import ClassCard from '../components/ClassCard.jsx';
 import { paataShaaleLevels } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
@@ -136,7 +136,8 @@ export default function KannadaShaale() {
 
   return (
     <>
-      <PageHero
+      <PageHeroCarousel
+        pageKey="paataShaale"
         eyebrow={t('paataTitle')}
         title={t('shaaleTitle')}
         text={t('shaaleText')}

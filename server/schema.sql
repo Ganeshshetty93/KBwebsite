@@ -357,7 +357,9 @@ values
   ('site-message', '{"enabled": false, "title": "", "message": "", "ctaText": "", "ctaUrl": ""}'::jsonb),
   ('role-definitions', '[]'::jsonb),
   ('teacher-allotments', '[]'::jsonb),
-  ('events-hero-slides', '[]'::jsonb)
+  ('events-hero-slides', '[]'::jsonb),
+  ('page-hero-settings', '{}'::jsonb),
+  ('event-memories', '[]'::jsonb)
 on conflict (key) do nothing;
 
 create table if not exists public.kb_member_profiles (

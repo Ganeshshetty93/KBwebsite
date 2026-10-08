@@ -1785,10 +1785,82 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function safeEmailLink(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('/')) return `${appBaseUrl}${raw}`;
+  try {
+    const url = new URL(raw);
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+function emailCopy(value) {
+  return escapeHtml(value).replace(/\r?\n/g, '<br>');
+}
+
+function renderBulkMessageEmail(subject, message = {}) {
+  const intro = String(message.intro || 'Hello Kannada Bharati family,').trim();
+  const body = String(message.body || '').trim();
+  const footer = String(message.footer || '').trim();
+  const ctaUrl = safeEmailLink(message.ctaUrl);
+  const ctaLabel = String(message.ctaLabel || '').trim();
+  const contextLabel = message.target
+    ? `${message.audience === 'class' ? 'Class' : 'Event'} update · ${message.target}`
+    : 'Community update';
+  const text = [
+    'KANNADA BHARATI', subject, contextLabel, '', intro, '', body,
+    ctaUrl && ctaLabel ? `${ctaLabel}: ${ctaUrl}` : '', footer, '',
+    'Regards,', 'Kannada Bharati Team', appBaseUrl
+  ].filter(Boolean).join('\n');
+  const html = `<!doctype html>
+    <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head>
+      <body style="margin:0;padding:0;background:#f2f5f3;color:#172723;font-family:Arial,Helvetica,sans-serif;">
+        <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(body.slice(0, 140))}</div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f2f5f3;"><tr><td align="center" style="padding:28px 12px;">
+          <table role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;border:1px solid #d8e0dc;background:#ffffff;">
+            <tr><td style="height:6px;background:#f2b51d;font-size:0;line-height:0;">&nbsp;</td></tr>
+            <tr><td align="center" style="padding:26px 28px 24px;background:#087345;color:#ffffff;">
+              <div style="margin-bottom:8px;font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;">Kannada Bharati</div>
+              <h1 style="margin:0;font-size:27px;line-height:1.18;font-weight:700;color:#ffffff;">${escapeHtml(subject)}</h1>
+              <div style="margin-top:10px;font-size:12px;line-height:1.4;color:#d9f2e6;">${escapeHtml(contextLabel)}</div>
+            </td></tr>
+            <tr><td style="padding:30px 32px 10px;background:#ffffff;color:#172723;font-size:15px;line-height:1.7;">
+              <p style="margin:0 0 18px;color:#172723;">${emailCopy(intro)}</p>
+              <div style="margin:0;color:#33443f;">${emailCopy(body)}</div>
+            </td></tr>
+            ${ctaUrl && ctaLabel ? `<tr><td align="center" style="padding:22px 32px 26px;background:#ffffff;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" style="border-radius:5px;background:#e85d2a;">
+                <a href="${escapeHtml(ctaUrl)}" style="display:inline-block;padding:13px 24px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">${escapeHtml(ctaLabel)}</a>
+              </td></tr></table>
+            </td></tr>` : ''}
+            ${footer ? `<tr><td style="padding:0 32px 24px;background:#ffffff;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f6f8f5;border-left:4px solid #087345;"><tr>
+                <td style="padding:16px 18px;color:#33443f;font-size:13px;line-height:1.6;">${emailCopy(footer)}</td>
+              </tr></table>
+            </td></tr>` : ''}
+            <tr><td style="padding:4px 32px 30px;background:#ffffff;color:#33443f;font-size:13px;line-height:1.6;">Regards,<br><strong style="color:#172723;">Kannada Bharati Team</strong></td></tr>
+            <tr><td align="center" style="padding:20px 24px;background:#073f3c;color:#dcebe6;font-size:11px;line-height:1.6;">
+              <strong style="color:#ffffff;">Kannada Bharati · A Washington Kannada Association</strong><br>
+              <a href="${escapeHtml(appBaseUrl)}" style="color:#f4c343;text-decoration:none;">Website</a>&nbsp; · &nbsp;
+              <a href="https://www.facebook.com/kannada.bharati.92" style="color:#f4c343;text-decoration:none;">Facebook</a>&nbsp; · &nbsp;
+              <a href="https://www.instagram.com/kannadabharati/" style="color:#f4c343;text-decoration:none;">Instagram</a>&nbsp; · &nbsp;
+              <a href="https://www.youtube.com/@KannadaBharati" style="color:#f4c343;text-decoration:none;">YouTube</a>
+            </td></tr>
+          </table>
+        </td></tr></table>
+      </body>
+    </html>`;
+  return { text, html };
+}
+
 function renderEmail({ subject, template, payload = {} }) {
   const registration = payload.registration || {};
   const donation = payload.donation || {};
   const bulkMessage = payload.message || {};
+  if (template === 'bulk-message') return renderBulkMessageEmail(subject, bulkMessage);
   const amountDue = Number(registration.amount || 0);
   const registrationPaid = registration.paid === true || registration.payment_received === true;
   const payUrl = amountDue > 0 && !registrationPaid ? payload.payUrl || '' : '';
@@ -1895,6 +1967,21 @@ function sampleTemplateMessage(template) {
       subject: 'Kannada Bharati donation confirmation',
       template: 'donation-confirmation',
       payload: { donation }
+    },
+    'bulk-message': {
+      subject: 'Classes Registration Now Open',
+      template: 'bulk-message',
+      payload: {
+        message: {
+          intro: 'Namaskara Kannada Bharati family,',
+          body: 'Registration is now open for our upcoming classes and community programs. Seats are limited, so please register early.',
+          footer: 'Registrations are subject to approval and seat availability.',
+          ctaLabel: 'View details and register',
+          ctaUrl: '/classes',
+          audience: 'all-users',
+          target: ''
+        }
+      }
     }
   };
   return messages[template] || messages.registration;
@@ -2855,7 +2942,7 @@ app.put('/api/about-content', authenticate, requireAdmin, asyncHandler(async (re
 }));
 
 app.get('/api/settings/:key', asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides', 'page-hero-settings', 'event-memories']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
   if (req.params.key === 'about-content') {
     return res.json(await getAboutContent());
@@ -2869,13 +2956,19 @@ app.get('/api/settings/:key', asyncHandler(async (req, res) => {
   if (req.params.key === 'role-definitions' || req.params.key === 'teacher-allotments' || req.params.key === 'events-hero-slides') {
     return res.json(await getSiteSetting(req.params.key, []));
   }
+  if (req.params.key === 'page-hero-settings') {
+    return res.json(await getSiteSetting(req.params.key, {}));
+  }
+  if (req.params.key === 'event-memories') {
+    return res.json(await getSiteSetting(req.params.key, []));
+  }
   const value = await getSiteSetting(req.params.key, req.params.key === 'volunteer-google-form' ? { enabled: false, url: defaultVolunteerGoogleFormUrl } : null);
   if (req.params.key === 'volunteer-google-form' && !value.url) value.url = defaultVolunteerGoogleFormUrl;
   res.json(value);
 }));
 
 app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides', 'page-hero-settings', 'event-memories']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
   if (req.params.key === 'about-content') {
     return res.json(await saveAboutContent(req.body));
@@ -2911,6 +3004,58 @@ app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (re
     }
     if (value.some((slide) => !slide.alt)) {
       return res.status(400).json({ error: 'Accessible image text is required for every event hero photo.' });
+    }
+    return res.json(await saveSiteSetting(req.params.key, value));
+  }
+  if (req.params.key === 'page-hero-settings') {
+    const pageKeys = ['home', 'about', 'classes', 'paataShaale', 'events', 'volunteer'];
+    const value = Object.fromEntries(pageKeys.map((pageKey) => {
+      const page = req.body?.[pageKey] || {};
+      const slides = (Array.isArray(page.slides) ? page.slides : [])
+        .slice(0, 12)
+        .map((slide, index) => ({
+          id: String(slide?.id || `${pageKey}-hero-${index + 1}`).slice(0, 100),
+          image: String(slide?.image || '').trim(),
+          alt: String(slide?.alt || '').trim().slice(0, 180),
+          caption: String(slide?.caption || '').trim().slice(0, 180),
+          position: ['top', 'center', 'bottom'].includes(slide?.position) ? slide.position : 'center',
+          enabled: booleanValue(slide?.enabled, true)
+        }))
+        .filter((slide) => slide.image);
+      const enabledSlides = slides.filter((slide) => slide.enabled);
+      const requestedSelection = String(page.selectedSlideId || '');
+      return [pageKey, {
+        mode: page.mode === 'single' ? 'single' : 'carousel',
+        selectedSlideId: enabledSlides.some((slide) => slide.id === requestedSelection)
+          ? requestedSelection
+          : enabledSlides[0]?.id || '',
+        slides
+      }];
+    }));
+    const invalidPage = pageKeys.find((pageKey) => !value[pageKey].slides.some((slide) => slide.enabled));
+    if (invalidPage) {
+      return res.status(400).json({ error: `${invalidPage} needs at least one visible hero photo.` });
+    }
+    const missingAltPage = pageKeys.find((pageKey) => value[pageKey].slides.some((slide) => !slide.alt));
+    if (missingAltPage) {
+      return res.status(400).json({ error: `Accessible image text is required for every ${missingAltPage} hero photo.` });
+    }
+    return res.json(await saveSiteSetting(req.params.key, value));
+  }
+  if (req.params.key === 'event-memories') {
+    const value = (Array.isArray(req.body) ? req.body : [])
+      .slice(0, 40)
+      .map((item, index) => ({
+        id: String(item?.id || `event-memory-${index + 1}`).slice(0, 100),
+        image: String(item?.image || '').trim(),
+        title: String(item?.title || '').trim().slice(0, 120),
+        date: String(item?.date || 'Past celebration').trim().slice(0, 80),
+        alt: String(item?.alt || item?.title || '').trim().slice(0, 180),
+        enabled: booleanValue(item?.enabled, true)
+      }))
+      .filter((item) => item.image);
+    if (value.some((item) => !item.title || !item.alt)) {
+      return res.status(400).json({ error: 'Every event memory needs a title and accessible image text.' });
     }
     return res.json(await saveSiteSetting(req.params.key, value));
   }
@@ -3727,9 +3872,13 @@ app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, as
   const body = String(req.body.body || '').trim();
   const intro = String(req.body.intro || '').trim();
   const footer = String(req.body.footer || '').trim();
+  const ctaLabel = String(req.body.ctaLabel || '').trim().slice(0, 60);
+  const ctaUrl = String(req.body.ctaUrl || '').trim();
 
   if (!subject || subject.length < 4) return res.status(400).json({ error: 'Subject is required.' });
   if (!body || body.length < 10) return res.status(400).json({ error: 'Message body is required.' });
+  if ((ctaLabel && !ctaUrl) || (!ctaLabel && ctaUrl)) return res.status(400).json({ error: 'Action button label and URL must be provided together.' });
+  if (ctaUrl && !safeEmailLink(ctaUrl)) return res.status(400).json({ error: 'Action button URL must be a valid website or internal path.' });
 
   const recipients = await resolveBulkEmailRecipients({ audience, target });
   if (!recipients.length) return res.status(400).json({ error: 'No recipients found for the selected audience.' });
@@ -3745,6 +3894,8 @@ app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, as
           intro: intro || `Hello ${recipient.name || 'Kannada Bharati member'},`,
           body,
           footer,
+          ctaLabel,
+          ctaUrl,
           audience,
           target,
           sentBy: req.user.email

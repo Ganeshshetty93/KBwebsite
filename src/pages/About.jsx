@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Award, ChevronLeft, ChevronRight, HeartHandshake, Mail, Pause, Phone, Play, Sparkles, UsersRound } from 'lucide-react';
-import PageHero from '../components/PageHero.jsx';
+import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { apiReadAboutContent } from '../utils/api.js';
 import { defaultAboutContent, normalizeAboutContent } from '../utils/aboutContent.js';
@@ -195,7 +195,8 @@ export default function About() {
 
   return (
     <>
-      <PageHero
+      <PageHeroCarousel
+        pageKey="about"
         eyebrow={t('aboutEyebrow')}
         title={t('aboutTitle')}
         text={t('aboutText')}

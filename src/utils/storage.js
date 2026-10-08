@@ -135,7 +135,7 @@ export const adminPageCatalog = [
   { path: '/admin/classes', label: 'Class Management', fields: ['title', 'category', 'status', 'date', 'time', 'fee', 'location', 'actions'] },
   { path: '/admin/events', label: 'Event Management', fields: ['eventId', 'title', 'eventType', 'startOn', 'location', 'capacity', 'enabled', 'actions'] },
   { path: '/admin/event-settings', label: 'Event Settings', fields: ['eventTypes', 'recurrences', 'volunteerForm'] },
-  { path: '/admin/event-hero', label: 'Event Hero Photos', fields: ['image', 'alt', 'caption', 'position', 'enabled', 'order'] },
+  { path: '/admin/event-hero', label: 'Gallery', fields: ['page', 'mode', 'image', 'alt', 'caption', 'position', 'enabled', 'order'] },
   { path: '/admin/teacher-allotments', label: 'Teacher Allotment', fields: ['classTitle', 'teacherEmail', 'teacherName', 'notes', 'enabled', 'actions'] },
   { path: '/admin/role-access', label: 'Role & Access', fields: ['role', 'pages', 'fields', 'actions'] },
   { path: '/admin/announcements', label: 'Announcements', fields: ['text', 'ctaText', 'startOn', 'endOn', 'enabled', 'actions'] },
