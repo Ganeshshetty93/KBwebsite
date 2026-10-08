@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BookOpenCheck, Mail, Phone, UsersRound } from 'lucide-react';
-import PageHero from '../components/PageHero.jsx';
+import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
 import ClassCard from '../components/ClassCard.jsx';
 import { paataShaaleLevels } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
@@ -12,7 +12,7 @@ import { readJson, writeJson } from '../utils/storage.js';
 const paataShaaleFaqs = [
   {
     q: 'What is Kannada Bharati [KB]?',
-    a: 'Kannada Bharati is a volunteer-led non-profit organization registered in Washington and serving the Seattle area Kannada community. It promotes the cultural heritage and traditions of Karnataka through classes such as Janapada Nritya, Carnatic Music, Hindustani Music, Bharatanatyam, arts, and crafts during the school year.'
+    a: 'Kannada Bharati is a volunteer-led non-profit and a Washington Kannada Association (WAKA) serving Kannada families across the state. It promotes the cultural heritage and traditions of Karnataka through classes such as Janapada Nritya, Carnatic Music, Hindustani Music, Bharatanatyam, arts, and crafts during the school year.'
   },
   {
     q: 'What is Kannada Academy?',
@@ -136,7 +136,8 @@ export default function KannadaShaale() {
 
   return (
     <>
-      <PageHero
+      <PageHeroCarousel
+        pageKey="paataShaale"
         eyebrow={t('paataTitle')}
         title={t('shaaleTitle')}
         text={t('shaaleText')}

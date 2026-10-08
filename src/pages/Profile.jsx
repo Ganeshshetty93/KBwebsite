@@ -19,6 +19,8 @@ import {
   apiSetPassword,
   apiSetTwoFactor,
   apiStartPhoneVerification,
+  apiStartTwoFactorSetup,
+  apiVerifyTwoFactorSetup,
   apiUploadFile
 } from '../utils/api.js';
 import { cleanText, firstError, validateDateOrder, validateImageFile, validatePhone, validateRequired } from '../utils/validation.js';
@@ -90,6 +92,7 @@ export default function Profile() {
   const [externalLogins, setExternalLogins] = useState([]);
   const [phoneVerification, setPhoneVerification] = useState({ phone: '', code: '', sent: false, devCode: '' });
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(Boolean(user.twoFactorEnabled));
+  const [twoFactorSetup, setTwoFactorSetup] = useState({ setupToken: '', code: '', sent: false, devCode: '' });
   const [registrations, setRegistrations] = useState([]);
   const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [paymentMessage, setPaymentMessage] = useState('');
@@ -215,16 +218,52 @@ export default function Profile() {
 
   async function handleTwoFactorChange(event) {
     const enabled = event.currentTarget.checked;
-    setTwoFactorEnabled(enabled);
     setAccountError('');
+    setAccountMessage('');
     try {
-      const updatedUser = await apiSetTwoFactor(enabled);
+      if (enabled) {
+        const result = await apiStartTwoFactorSetup();
+        setTwoFactorSetup({
+          setupToken: result.setupToken,
+          code: result.devCode || '',
+          sent: true,
+          devCode: result.devCode || ''
+        });
+        setAccountMessage(result.devCode ? `Verification code generated: ${result.devCode}` : `A verification code was sent to ${accountUser.email}.`);
+        return;
+      }
+
+      setTwoFactorEnabled(false);
+      setTwoFactorSetup({ setupToken: '', code: '', sent: false, devCode: '' });
+      const updatedUser = await apiSetTwoFactor(false);
       setCurrentUser(updatedUser);
       setAccountUser(updatedUser);
-      setAccountMessage(enabled ? 'Two-factor authentication enabled.' : 'Two-factor authentication disabled.');
+      setAccountMessage('Two-factor authentication disabled.');
     } catch (error) {
-      setTwoFactorEnabled(!enabled);
+      setTwoFactorEnabled(Boolean(accountUser.twoFactorEnabled));
       setAccountError(error.message || 'Two-factor setting could not be updated.');
+    }
+  }
+
+  async function handleVerifyTwoFactorSetup(event) {
+    event.preventDefault();
+    setAccountError('');
+    setAccountMessage('');
+    const code = cleanText(new FormData(event.currentTarget).get('code'));
+    if (!/^\d{6}$/.test(code)) {
+      setAccountError('Enter the six-digit verification code.');
+      return;
+    }
+
+    try {
+      const updatedUser = await apiVerifyTwoFactorSetup({ setupToken: twoFactorSetup.setupToken, code });
+      setCurrentUser(updatedUser);
+      setAccountUser(updatedUser);
+      setTwoFactorEnabled(true);
+      setTwoFactorSetup({ setupToken: '', code: '', sent: false, devCode: '' });
+      setAccountMessage('Two-factor authentication enabled and verified.');
+    } catch (error) {
+      setAccountError(error.message || 'Two-factor verification failed.');
     }
   }
 
@@ -541,6 +580,13 @@ export default function Profile() {
                 ))}
               </div>
             </div>
+            <p className={`phone-verification-status${accountUser.phoneConfirmed ? ' is-verified' : ''}`}>
+              <CheckCircle2 size={18} aria-hidden="true" />
+              <span>
+                <strong>{accountUser.phoneConfirmed ? 'Phone verified' : 'Phone not verified'}</strong>
+                <small>{accountUser.phoneConfirmed ? 'Phone OTP login is available for this account.' : 'Verify your number below before using Phone OTP login.'}</small>
+              </span>
+            </p>
             <form className="account-security-grid" onSubmit={handlePhoneStart}>
               <label>Phone number <input name="phone" type="tel" defaultValue={profile.phone || user.phone || ''} required /></label>
               <button className="button secondary-dark" type="submit">Send Verification Code</button>
@@ -559,9 +605,33 @@ export default function Profile() {
                 <strong>Two-factor authentication</strong>
                 <small>Add an extra verification step during login.</small>
               </span>
-              <input type="checkbox" checked={twoFactorEnabled} onChange={handleTwoFactorChange} />
-              <em>{twoFactorEnabled ? 'Enabled' : 'Disabled'}</em>
+              <input type="checkbox" checked={twoFactorEnabled} disabled={twoFactorSetup.sent} onChange={handleTwoFactorChange} />
+              <em>{twoFactorEnabled ? 'Enabled' : twoFactorSetup.sent ? 'Verify code' : 'Disabled'}</em>
             </label>
+            {twoFactorSetup.sent && !twoFactorEnabled && (
+              <form className="account-security-grid two-factor-setup-form" onSubmit={handleVerifyTwoFactorSetup}>
+                <label>
+                  Verification code
+                  <input
+                    name="code"
+                    value={twoFactorSetup.code}
+                    onChange={(event) => setTwoFactorSetup((current) => ({ ...current, code: event.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    autoComplete="one-time-code"
+                    required
+                  />
+                </label>
+                <button className="button primary" type="submit">Verify and Enable 2FA</button>
+                <button
+                  className="button secondary-dark"
+                  type="button"
+                  onClick={() => { setTwoFactorSetup({ setupToken: '', code: '', sent: false, devCode: '' }); setAccountMessage(''); }}
+                >
+                  Cancel
+                </button>
+              </form>
+            )}
           </section>
 
           <section className="member-profile-form">

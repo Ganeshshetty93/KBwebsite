@@ -331,11 +331,22 @@ async function request(path, options = {}) {
     throw new Error(`Could not reach API at ${API_BASE}. Make sure npm run server is running.`);
   }
 
-  const payload = await response.json().catch(() => null);
+  const responseText = await response.text();
+  let payload = null;
+  try {
+    payload = responseText ? JSON.parse(responseText) : null;
+  } catch {
+    payload = null;
+  }
 
   if (!response.ok) {
     const details = Array.isArray(payload?.details) ? payload.details.filter(Boolean).join(' ') : '';
-    throw new Error([payload?.error, details].filter(Boolean).join(' ') || 'Request failed. Please check the form and try again.');
+    const fallback = response.status === 404
+      ? 'This service is unavailable on the running API. Restart the backend and try again.'
+      : response.status >= 500
+        ? 'The server could not complete this request. Please try again.'
+        : 'Request failed. Please check the form and try again.';
+    throw new Error([payload?.error, details].filter(Boolean).join(' ') || fallback);
   }
 
   return payload;
@@ -453,12 +464,12 @@ export async function apiFindUserByEmail(email) {
   };
 }
 
-export async function apiReadReceptionRegistrations(eventId = '', includeDeletedItems = false) {
+export async function apiReadWelcomeDeskRegistrations(eventId = '', includeDeletedItems = false) {
   await ensureAdminToken();
   const params = new URLSearchParams();
   if (eventId) params.set('eventId', eventId);
   if (includeDeletedItems) params.set('includeDeletedItems', 'true');
-  const data = await request(`/reception/registrations${params.toString() ? `?${params}` : ''}`);
+  const data = await request(`/welcome-desk/registrations${params.toString() ? `?${params}` : ''}`);
   return data.map(normalizeRegistration);
 }
 
@@ -467,9 +478,9 @@ export async function apiLookupUserPhone(email) {
   return request(`/users/phone?email=${encodeURIComponent(email)}`);
 }
 
-export async function apiReceptionCheckin(payload) {
+export async function apiWelcomeDeskCheckIn(payload) {
   await ensureAdminToken();
-  const data = await request('/reception/checkin', {
+  const data = await request('/welcome-desk/checkin', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
@@ -578,6 +589,42 @@ export async function apiLogin(payload) {
   return data.user;
 }
 
+export async function apiStartOtpLogin(email) {
+  return request('/auth/otp/start', {
+    method: 'POST',
+    body: JSON.stringify({ email })
+  });
+}
+
+export async function apiVerifyOtpLogin(payload) {
+  const data = await request('/auth/otp/verify', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  if (data.twoFactorRequired) return data;
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
+export async function apiStartPhoneOtpLogin(phone) {
+  return request('/auth/phone-otp/start', {
+    method: 'POST',
+    body: JSON.stringify({ phone })
+  });
+}
+
+export async function apiVerifyPhoneOtpLogin(payload) {
+  const data = await request('/auth/phone-otp/verify', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  if (data.twoFactorRequired) return data;
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
 export async function apiGoogleLogin(payload) {
   const data = await request('/auth/google', {
     method: 'POST',
@@ -637,6 +684,23 @@ export async function apiSetTwoFactor(enabled) {
   const data = await request('/auth/two-factor', {
     method: 'POST',
     body: JSON.stringify({ enabled })
+  });
+
+  localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
+  return data.user;
+}
+
+export async function apiStartTwoFactorSetup() {
+  return request('/auth/two-factor/setup/send', {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+}
+
+export async function apiVerifyTwoFactorSetup(payload) {
+  const data = await request('/auth/two-factor/setup/verify', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   });
 
   localStorage.setItem('kb-auth-token', JSON.stringify(data.token));
@@ -749,6 +813,18 @@ export async function apiReadSiteSetting(key) {
 export async function apiSaveSiteSetting(key, payload) {
   await ensureAdminToken();
   return request(`/settings/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiReadAboutContent() {
+  return request('/about-content');
+}
+
+export async function apiSaveAboutContent(payload) {
+  await ensureAdminToken();
+  return request('/about-content', {
     method: 'PUT',
     body: JSON.stringify(payload)
   });

@@ -80,7 +80,7 @@ export const defaultAboutContent = {
 };
 
 function normalizeRows(rows, defaults, fields) {
-  const source = Array.isArray(rows) && rows.length ? rows : defaults;
+  const source = Array.isArray(rows) ? rows : defaults;
   return source.map((row, index) => {
     const normalized = {
       id: row.id || row.localId || `${fields[0]}-${index}-${Date.now()}`

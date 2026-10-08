@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Images, ReceiptText, UsersRound, X } from 'lucide-react';
-import PageHero from '../components/PageHero.jsx';
+import EventHeroCarousel from '../components/EventHeroCarousel.jsx';
 import { events } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
-import { apiAppendRecord, apiCompleteFlowPayment, apiCreateFlowPayment, apiReadRecords } from '../utils/api.js';
+import { apiAppendRecord, apiCompleteFlowPayment, apiCreateFlowPayment, apiReadRecords, apiReadSiteSetting } from '../utils/api.js';
 import { appendRecord, getCurrentUser, readJson } from '../utils/storage.js';
 import { cleanText, firstError, validateEmail, validatePhone, validateRequired } from '../utils/validation.js';
+import { normalizeEventMemories } from '../utils/eventMemories.js';
 
 function getEventImage(event) {
   if (event.photo) return event.photo;
@@ -49,6 +50,7 @@ function memberOptions(user) {
 export default function Events() {
   const { t, tr } = useLanguage();
   const [dbEvents, setDbEvents] = useState([]);
+  const [eventMemories, setEventMemories] = useState([]);
 
   useEffect(() => {
     let ignore = false;
@@ -64,6 +66,16 @@ export default function Events() {
     };
   }, []);
 
+  useEffect(() => {
+    let ignore = false;
+    apiReadSiteSetting('event-memories')
+      .then((value) => {
+        if (!ignore) setEventMemories(normalizeEventMemories(value, { includeDisabled: false }));
+      })
+      .catch(() => {});
+    return () => { ignore = true; };
+  }, []);
+
   const allEvents = dbEvents.length ? dbEvents : events;
   const [featuredEvent, ...upcomingEvents] = allEvents;
   const uploadedPastPhotos = allEvents.filter((event) => event.photo).map((event) => ({
@@ -71,13 +83,14 @@ export default function Events() {
     date: event.month,
     image: event.photo
   }));
-  const pastCelebrations = [
+  const fallbackPastCelebrations = [
     ...uploadedPastPhotos,
     { title: 'Kannada Rajyotsava Memories', date: 'Past celebration', initial: 'ರ' },
     { title: 'Student Showcase Highlights', date: 'Past celebration', initial: 'ಶ' },
     { title: 'Community Food Festival', date: 'Past celebration', initial: 'ಊ' },
     { title: 'Music and Dance Night', date: 'Past celebration', initial: 'ಸ' }
   ];
+  const pastCelebrations = eventMemories.length ? eventMemories : fallbackPastCelebrations;
   const [showPastPhotos, setShowPastPhotos] = useState(false);
   const [registeringEvent, setRegisteringEvent] = useState(null);
   const [registrationStep, setRegistrationStep] = useState(1);
@@ -226,18 +239,18 @@ export default function Events() {
 
   return (
     <>
-      <PageHero
+      <EventHeroCarousel
+        pageKey="events"
         eyebrow={t('eventsTitle')}
         title={t('eventsHeroTitle')}
         text={t('eventsHeroText')}
-        className="events-hero"
       />
       <section className="section events-page">
         <div className="section-toolbar events-toolbar">
           <div>
             <p className="eyebrow">{t('eventsTitle')}</p>
             <h2>{t('calendarTitle')}</h2>
-            <p className="events-intro">Celebrate culture, learning, and community through Kannada Bharati gatherings across the Seattle area.</p>
+            <p className="events-intro">Celebrate culture, learning, and community through Kannada Bharati gatherings across Washington.</p>
           </div>
         </div>
 
@@ -287,7 +300,7 @@ export default function Events() {
               {pastCelebrations.map((item) => (
                 <article className="past-photo-card" key={`${item.title}-${item.date}`}>
                   {item.image ? (
-                    <img src={item.image} alt={item.title} />
+                    <img src={item.image} alt={item.alt || item.title} />
                   ) : (
                     <div className="past-photo-fallback">
                       <span>{item.initial}</span>

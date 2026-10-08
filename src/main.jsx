@@ -24,6 +24,7 @@ const WebRequirements = lazy(() => import('./pages/WebRequirements.jsx'));
 const KannadaLiterature = lazy(() => import('./pages/KannadaLiterature.jsx'));
 const AdminShell = lazy(() => import('./components/AdminShell.jsx'));
 const AdminSectionPage = lazy(() => import('./pages/AdminSectionPage.jsx'));
+const EventHeroManager = lazy(() => import('./pages/EventHeroManager.jsx'));
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -60,8 +61,12 @@ createRoot(document.getElementById('root')).render(
                 <Route path="register-member" element={<AdminSectionPage view="register-member" />} />
                 <Route path="expense" element={<AdminSectionPage view="expense" />} />
                 <Route path="users" element={<AdminSectionPage view="users" />} />
+                <Route path="role-access" element={<AdminSectionPage view="role-access" />} />
+                <Route path="classes" element={<AdminSectionPage view="classes" />} />
                 <Route path="events" element={<AdminSectionPage view="events" />} />
                 <Route path="event-settings" element={<AdminSectionPage view="event-settings" />} />
+                <Route path="event-hero" element={<EventHeroManager />} />
+                <Route path="teacher-allotments" element={<AdminSectionPage view="teacher-allotments" />} />
                 <Route path="announcements" element={<AdminSectionPage view="announcements" />} />
                 <Route path="about" element={<AdminSectionPage view="about" />} />
                 <Route path="paata-teachers" element={<AdminSectionPage view="paata-teachers" />} />

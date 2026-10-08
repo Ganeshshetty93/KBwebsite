@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
-import { BookOpen, CalendarDays, Edit3, Eye, GraduationCap, HandCoins, ImagePlus, Mail, Megaphone, Phone, Plus, ReceiptText, Save, Trash2, UserPlus, UsersRound, X } from 'lucide-react';
+import { BookOpen, CalendarDays, Copy, Edit3, Eye, GraduationCap, HandCoins, ImagePlus, Mail, Megaphone, Phone, Plus, ReceiptText, Save, Trash2, UserPlus, UsersRound, X } from 'lucide-react';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { culturalClasses, events, paataShaaleLevels } from '../data/siteData.js';
-import { appendRecord, canAccessAdminPath, defaultAdminPath, getCurrentUser, hasAnyRole, isAdmin, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
+import { adminPageCatalog, appendAdminRecordAsync, appendRecord, builtInAssignableRoles, canAccessAdminPath, defaultAdminPath, getAllowedFieldKeysForPath, getAssignableRoles, getCurrentUser, hasAnyRole, isAdmin, normalizeRoleId, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
 import { defaultAboutContent, normalizeAboutContent } from '../utils/aboutContent.js';
 import { defaultPaataTeachers, normalizePaataTeachers } from '../utils/paataTeachers.js';
 import {
@@ -16,11 +17,13 @@ import {
   apiExpenseAction,
   apiFindUserByEmail,
   apiLookupUserPhone,
-  apiReceptionCheckin,
+  apiReadAboutContent,
+  apiWelcomeDeskCheckIn,
   apiReadSeats,
   apiReadSiteSetting,
   apiRegistrationAction,
   apiSaveAttendance,
+  apiSaveAboutContent,
   apiSaveSiteSetting,
   apiSendBulkEmail,
   apiSendOutboxEmail,
@@ -38,7 +41,6 @@ const fallbackPrograms = [
 
 const defaultEventTypes = ['Classroom', 'Workshop', 'Seminar', 'Cultural'];
 const defaultRecurrences = ['OneTime', 'Daily', 'Weekly', 'Monthly', 'Yearly'];
-const assignableRoles = ['member', 'admin', 'superadmin', 'receptionist', 'teacher', 'volunteer', 'treasurer'];
 const referenceVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true';
 const defaultVolunteerGoogleForm = {
   enabled: false,
@@ -120,6 +122,58 @@ function formatFileSize(size = 0) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function normalizeRoleDefinitions(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((role) => ({
+    id: normalizeRoleId(role.id || role.name),
+    name: cleanText(role.name || role.id),
+    description: cleanText(role.description),
+    pages: Array.isArray(role.pages) ? role.pages.filter(Boolean) : [],
+    fields: role.fields && typeof role.fields === 'object' ? role.fields : {}
+  })).filter((role) => role.id && role.name);
+}
+
+function normalizeTeacherAllotments(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    id: row.id || `allotment-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    classTitle: cleanText(row.classTitle || row.class_title || row.program),
+    teacherEmail: cleanText(row.teacherEmail || row.teacher_email).toLowerCase(),
+    teacherName: cleanText(row.teacherName || row.teacher_name),
+    notes: cleanText(row.notes),
+    enabled: row.enabled !== false
+  })).filter((row) => row.classTitle && row.teacherEmail);
+}
+
+function cloneEventPayload(row = {}) {
+  const suffix = new Date().getFullYear() + 1;
+  const nextUrlKey = `${row.urlKey || row.url_key || row.title || 'event'}-${suffix}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return {
+    ...row,
+    id: undefined,
+    createdAt: undefined,
+    created_at: undefined,
+    eventId: row.eventId ? `${row.eventId}-copy` : '',
+    urlKey: nextUrlKey,
+    title: `${row.title || 'Event'} Copy`,
+    startOn: '',
+    endOn: '',
+    month: '',
+    enabled: false
+  };
+}
+
+function cloneClassPayload(row = {}) {
+  return {
+    ...row,
+    id: undefined,
+    createdAt: undefined,
+    created_at: undefined,
+    title: `${row.title || 'Class'} Copy`,
+    date: '',
+    time: '',
+    status: 'Draft'
+  };
+}
+
 function makeCsv(rows, columns) {
   const escape = (value) => `"${String(value).replace(/"/g, '""')}"`;
   const header = columns.map((column) => escape(column.label)).join(',');
@@ -150,6 +204,16 @@ function openPrintableTable(title, rows, columns) {
 
 function AdminTable({ title, rows, columns, filters = [], emptyText = 'No records yet.', action, pageSize = 10 }) {
   const { tr } = useLanguage();
+  const location = useLocation();
+  const allowedFieldKeys = getAllowedFieldKeysForPath(getCurrentUser(), location.pathname);
+  const visibleColumns = useMemo(() => {
+    if (!allowedFieldKeys) return columns;
+    const allowed = allowedFieldKeys.map((field) => String(field).toLowerCase());
+    return columns.filter((column) => (
+      allowed.includes(String(column.key || '').toLowerCase())
+      || allowed.includes(String(column.label || '').toLowerCase())
+    ));
+  }, [allowedFieldKeys, columns]);
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState({});
   const [page, setPage] = useState(1);
@@ -178,7 +242,7 @@ function AdminTable({ title, rows, columns, filters = [], emptyText = 'No record
   }, [activeFilters, query, rows]);
 
   async function handleCopy() {
-    const text = makeCsv(visibleRows, columns);
+    const text = makeCsv(visibleRows, visibleColumns);
     try {
       await navigator.clipboard.writeText(text);
     } catch {
@@ -212,23 +276,23 @@ function AdminTable({ title, rows, columns, filters = [], emptyText = 'No record
       </div>
       <div className="admin-table-actions">
         <button type="button" onClick={handleCopy}>{tr('Copy')}</button>
-        <button type="button" onClick={() => downloadFile(`${filename}.csv`, makeCsv(visibleRows, columns), 'text/csv;charset=utf-8')}>CSV</button>
-        <button type="button" onClick={() => downloadFile(`${filename}.xls`, makeHtmlTable(title, visibleRows, columns), 'application/vnd.ms-excel;charset=utf-8')}>Excel</button>
-        <button type="button" onClick={() => openPrintableTable(title, visibleRows, columns)}>PDF</button>
-        <button type="button" onClick={() => openPrintableTable(title, visibleRows, columns)}>{tr('Print')}</button>
+        <button type="button" onClick={() => downloadFile(`${filename}.csv`, makeCsv(visibleRows, visibleColumns), 'text/csv;charset=utf-8')}>CSV</button>
+        <button type="button" onClick={() => downloadFile(`${filename}.xls`, makeHtmlTable(title, visibleRows, visibleColumns), 'application/vnd.ms-excel;charset=utf-8')}>Excel</button>
+        <button type="button" onClick={() => openPrintableTable(title, visibleRows, visibleColumns)}>PDF</button>
+        <button type="button" onClick={() => openPrintableTable(title, visibleRows, visibleColumns)}>{tr('Print')}</button>
       </div>
       <div className="table-scroll">
         <table>
           <thead>
-            <tr>{columns.map((column) => <th key={column.key}>{tr(column.label)}</th>)}</tr>
+            <tr>{visibleColumns.map((column) => <th key={column.key}>{tr(column.label)}</th>)}</tr>
           </thead>
           <tbody>
             {pagedRows.length ? pagedRows.map((row, index) => (
               <tr key={`${row.id || row.email || row.title || row.text || pageStart + index}-${pageStart + index}`}>
-                {columns.map((column) => <td key={column.key}>{column.render ? column.render(row, pageStart + index) : renderValue(row[column.key])}</td>)}
+                {visibleColumns.map((column) => <td key={column.key}>{column.render ? column.render(row, pageStart + index) : renderValue(row[column.key])}</td>)}
               </tr>
             )) : (
-              <tr><td colSpan={columns.length}>{tr(emptyText)}</td></tr>
+              <tr><td colSpan={visibleColumns.length || 1}>{tr(visibleColumns.length ? emptyText : 'No fields are enabled for this role.')}</td></tr>
             )}
           </tbody>
         </table>
@@ -386,7 +450,7 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
         <div>
           <p className="eyebrow">{tr('Teacher workspace')}</p>
           <h2>{tr('Take class attendance')}</h2>
-          <p>{tr('Select a class and date, mark each student, add notes when needed, and save the roster for reception/admin visibility.')}</p>
+          <p>{tr('Select a class and date, mark each student, add notes when needed, and save the roster for Welcome Desk/admin visibility.')}</p>
           <div className="attendance-hero-meta">
             <span><BookOpen size={16} /> {tr(selectedClass || 'No class selected')}</span>
             <span><CalendarDays size={16} /> {attendanceDate}</span>
@@ -1051,22 +1115,441 @@ function RegistrationDetailModal({ row, onClose }) {
   );
 }
 
+function roleDisplayName(role) {
+  const value = String(role || '').trim();
+  const normalized = value.toLowerCase();
+  if (normalized === 'welcomedesk' || normalized === 'receptionist') return 'Welcome Desk';
+  if (normalized === 'superadmin') return 'Super Admin';
+  return value.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (letter) => letter.toUpperCase());
+}
+
 function UserRoleEditor({ row, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [pickerPosition, setPickerPosition] = useState({ top: 0, left: 0, width: 300 });
+  const controlRef = useRef(null);
+  const closeTimerRef = useRef(null);
   const roles = Array.isArray(row.roles) && row.roles.length ? row.roles : [row.role || 'member'];
+  const assignableRoles = [...new Set([...getAssignableRoles(), ...roles])];
+
+  function placePicker() {
+    const bounds = controlRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const gutter = 12;
+    const gap = 7;
+    const estimatedHeight = 220;
+    const width = Math.min(300, window.innerWidth - gutter * 2);
+    const left = Math.max(gutter, Math.min(bounds.left, window.innerWidth - width - gutter));
+    const fitsBelow = bounds.bottom + gap + estimatedHeight <= window.innerHeight - gutter;
+    const top = fitsBelow
+      ? bounds.bottom + gap
+      : Math.max(gutter, bounds.top - estimatedHeight - gap);
+    setPickerPosition({ top, left, width });
+  }
+
+  useEffect(() => {
+    if (!open) return undefined;
+    placePicker();
+    window.addEventListener('resize', placePicker);
+    window.addEventListener('scroll', placePicker, true);
+    return () => {
+      window.removeEventListener('resize', placePicker);
+      window.removeEventListener('scroll', placePicker, true);
+    };
+  }, [open]);
+
+  useEffect(() => () => window.clearTimeout(closeTimerRef.current), []);
+
+  function keepPickerOpen() {
+    window.clearTimeout(closeTimerRef.current);
+  }
+
+  function schedulePickerClose() {
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => setOpen(false), 120);
+  }
+
   function toggleRole(role) {
     let next = roles.includes(role) ? roles.filter((item) => item !== role) : [...roles, role];
     if (!next.length) next = ['member'];
     onChange(next);
   }
-  return (
-    <div className="role-chip-editor">
-      {assignableRoles.map((role) => (
-        <label key={role} className={roles.includes(role) ? 'is-selected' : ''}>
-          <input type="checkbox" checked={roles.includes(role)} onChange={() => toggleRole(role)} />
-          <span>{role}</span>
-        </label>
-      ))}
+  const picker = (
+    <div
+      className={`user-role-picker${open ? ' is-open' : ''}`}
+      style={pickerPosition}
+      onMouseEnter={keepPickerOpen}
+      onMouseLeave={schedulePickerClose}
+    >
+      <div className="user-role-picker-heading">
+        <span>Select roles</span>
+        <button type="button" aria-label="Close role selector" onClick={() => setOpen(false)}><X size={15} /></button>
+      </div>
+      <div className="role-chip-editor">
+        {assignableRoles.map((role) => (
+          <label key={role} className={roles.includes(role) ? 'is-selected' : ''} title={roleDisplayName(role)}>
+            <input type="checkbox" checked={roles.includes(role)} onChange={() => toggleRole(role)} />
+            <span>{roleDisplayName(role)}</span>
+          </label>
+        ))}
+      </div>
     </div>
+  );
+
+  return (
+    <>
+      <div
+        ref={controlRef}
+        className={`user-role-control${open ? ' is-open' : ''}`}
+        onMouseEnter={() => {
+          keepPickerOpen();
+          placePicker();
+          setOpen(true);
+        }}
+        onMouseLeave={schedulePickerClose}
+      >
+      <div className="user-role-summary">
+        <div className="user-role-badges" aria-label={`Assigned roles: ${roles.map(roleDisplayName).join(', ')}`}>
+          {roles.slice(0, 2).map((role) => <span key={role}>{roleDisplayName(role)}</span>)}
+          {roles.length > 2 && <strong>+{roles.length - 2}</strong>}
+        </div>
+        <button
+          className="user-role-edit"
+          type="button"
+          aria-label={`Edit roles for ${row.email || row.name || 'user'}`}
+          aria-expanded={open}
+          title="Select roles"
+          onClick={() => {
+            placePicker();
+            setOpen(true);
+          }}
+        >
+          <Edit3 size={15} />
+        </button>
+      </div>
+      </div>
+      {createPortal(picker, document.body)}
+    </>
+  );
+}
+
+function RoleAccessManager({ roles, onSave, notice, error }) {
+  const [editingId, setEditingId] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedPage, setSelectedPage] = useState(adminPageCatalog[0]?.path || '/admin');
+  const [formError, setFormError] = useState('');
+  const [draft, setDraft] = useState({ name: '', description: '', pages: [], fields: {} });
+  const editing = roles.find((role) => role.id === editingId);
+  const selectedPageMeta = adminPageCatalog.find((page) => page.path === selectedPage) || adminPageCatalog[0];
+
+  function resetDraft() {
+    setEditingId('');
+    setSelectedPage(adminPageCatalog[0]?.path || '/admin');
+    setFormError('');
+    setDraft({ name: '', description: '', pages: [], fields: {} });
+  }
+
+  function openAddModal() {
+    resetDraft();
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    resetDraft();
+  }
+
+  function editRole(role) {
+    setEditingId(role.id);
+    setDraft({
+      name: role.name,
+      description: role.description || '',
+      pages: role.pages || [],
+      fields: role.fields || {}
+    });
+    setSelectedPage(role.pages?.[0] || adminPageCatalog[0]?.path || '/admin');
+    setModalOpen(true);
+  }
+
+  function togglePage(path) {
+    const page = adminPageCatalog.find((item) => item.path === path);
+    setDraft((current) => ({
+      ...current,
+      pages: current.pages.includes(path) ? current.pages.filter((item) => item !== path) : [...current.pages, path],
+      fields: current.pages.includes(path)
+        ? Object.fromEntries(Object.entries(current.fields || {}).filter(([fieldPath]) => fieldPath !== path))
+        : { ...(current.fields || {}), [path]: page?.fields || [] }
+    }));
+    setSelectedPage(path);
+  }
+
+  function toggleField(path, field) {
+    setDraft((current) => {
+      const currentFields = current.fields?.[path] || [];
+      const nextFields = currentFields.includes(field)
+        ? currentFields.filter((item) => item !== field)
+        : [...currentFields, field];
+      return {
+        ...current,
+        pages: current.pages.includes(path) ? current.pages : [...current.pages, path],
+        fields: { ...(current.fields || {}), [path]: nextFields }
+      };
+    });
+  }
+
+  function setAllFields(path, fields) {
+    setDraft((current) => ({
+      ...current,
+      pages: current.pages.includes(path) ? current.pages : [...current.pages, path],
+      fields: { ...(current.fields || {}), [path]: fields }
+    }));
+  }
+
+  function saveRole(event) {
+    event.preventDefault();
+    const id = normalizeRoleId(editingId || draft.name);
+    setFormError('');
+    if (!id || !cleanText(draft.name)) {
+      setFormError('Role name is required.');
+      return;
+    }
+    if (builtInAssignableRoles.map(normalizeRoleId).includes(id) || id === 'receptionist') {
+      setFormError('Built-in roles cannot be overwritten. Use a custom role name.');
+      return;
+    }
+    if (!draft.pages.length) {
+      setFormError('Select at least one page for this role.');
+      return;
+    }
+    const fields = draft.pages.reduce((acc, path) => {
+      acc[path] = (draft.fields?.[path] || []).filter(Boolean);
+      return acc;
+    }, {});
+    const nextRole = {
+      id,
+      name: cleanText(draft.name),
+      description: cleanText(draft.description),
+      pages: draft.pages,
+      fields
+    };
+    const nextRoles = editing
+      ? roles.map((role) => (role.id === editingId ? nextRole : role))
+      : [...roles.filter((role) => role.id !== id), nextRole];
+    onSave(nextRoles);
+    closeModal();
+  }
+
+  function removeRole(roleId) {
+    onSave(roles.filter((role) => role.id !== roleId));
+    if (editingId === roleId) resetDraft();
+  }
+
+  return (
+    <>
+      {notice && <p className="success admin-floating-message">{notice}</p>}
+      {error && <p className="form-error admin-floating-message">{error}</p>}
+      <AdminTable
+        title="Saved roles"
+        rows={roles}
+        emptyText="No custom roles yet."
+        action={<button className="button primary" type="button" onClick={openAddModal}><Plus size={16} /> Add role</button>}
+        columns={[
+          { key: 'name', label: 'Role' },
+          { key: 'id', label: 'Role key' },
+          { key: 'description', label: 'Description' },
+          { key: 'pages', label: 'Pages', render: (role) => `${(role.pages || []).length} page(s)` },
+          { key: 'fields', label: 'Fields', render: (role) => Object.values(role.fields || {}).reduce((total, fields) => total + fields.length, 0) },
+          { key: 'actions', label: 'Actions', render: (role) => (
+            <div className="admin-row-actions">
+              <button className="icon-button table-icon-button" type="button" onClick={() => editRole(role)} aria-label="Edit role"><Edit3 size={15} /></button>
+              <button className="icon-button table-icon-button danger" type="button" onClick={() => removeRole(role.id)} aria-label="Delete role"><Trash2 size={15} /></button>
+            </div>
+          ) }
+        ]}
+      />
+      {modalOpen && (
+        <div className="popup-backdrop" role="presentation">
+          <div className="popup-panel role-access-modal" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit role' : 'Add role'}>
+            <button className="popup-close" type="button" aria-label="Close popup" onClick={closeModal}>
+              <X size={20} />
+            </button>
+            <form className="admin-create-form role-access-form" onSubmit={saveRole}>
+              <div className="role-modal-heading">
+                <div>
+                  <h2>{editing ? 'Edit role' : 'Add role'}</h2>
+                  <p className="admin-form-note">Create a role, choose pages, then select exactly which fields should be visible.</p>
+                </div>
+                <span>{draft.pages.length} page(s)</span>
+              </div>
+              {formError && <p className="form-error">{formError}</p>}
+              <div className="role-modal-basics">
+                <label>Role name<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Event coordinator" required /></label>
+                <label>Description<input value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Can manage selected event pages" /></label>
+              </div>
+              <div className="role-permission-builder">
+                <aside className="role-page-side">
+                  <div className="panel-mini-heading">
+                    <span>Page access</span>
+                    <strong>{draft.pages.length}</strong>
+                  </div>
+                  <div className="role-page-list">
+                    {adminPageCatalog.map((page) => (
+                      <button
+                        key={page.path}
+                        className={`${selectedPage === page.path ? 'is-active' : ''} ${draft.pages.includes(page.path) ? 'is-selected' : ''}`}
+                        type="button"
+                        onClick={() => setSelectedPage(page.path)}
+                      >
+                        <input type="checkbox" checked={draft.pages.includes(page.path)} onChange={() => togglePage(page.path)} onClick={(event) => event.stopPropagation()} />
+                        <span><strong>{page.label}</strong><small>{page.path}</small></span>
+                      </button>
+                    ))}
+                  </div>
+                </aside>
+                <section className="role-field-side">
+                  <div className="panel-mini-heading">
+                    <span>{selectedPageMeta?.label || 'Fields'}</span>
+                    <strong>{(draft.fields?.[selectedPage] || []).length}/{selectedPageMeta?.fields?.length || 0}</strong>
+                  </div>
+                  <p className="admin-form-note">These fields control what table columns this role can see on the selected page.</p>
+                  <div className="role-field-actions">
+                    <button className="mini-action-link secondary" type="button" onClick={() => setAllFields(selectedPage, selectedPageMeta?.fields || [])}>Select all</button>
+                    <button className="mini-action-link danger" type="button" onClick={() => setAllFields(selectedPage, [])}>Clear fields</button>
+                  </div>
+                  <div className="role-field-grid">
+                    {(selectedPageMeta?.fields || []).map((field) => (
+                      <label key={field} className={(draft.fields?.[selectedPage] || []).includes(field) ? 'is-selected' : ''}>
+                        <input type="checkbox" checked={(draft.fields?.[selectedPage] || []).includes(field)} onChange={() => toggleField(selectedPage, field)} />
+                        <span>{field}</span>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              </div>
+              <div className="paata-teacher-form-actions">
+                <button className="button primary" type="submit"><Save size={16} /> {editing ? 'Update role' : 'Add role'}</button>
+                <button className="button ghost" type="button" onClick={closeModal}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function TeacherAllotmentManager({ allotments, classes, teachers, onSave, notice, error }) {
+  const [editingId, setEditingId] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [draft, setDraft] = useState({ classTitle: '', teacherEmail: '', teacherName: '', notes: '', enabled: true });
+  const classOptions = classes.filter((item) => item.title);
+  const teacherOptions = teachers.filter((item) => item.email);
+
+  function resetDraft() {
+    setEditingId('');
+    setDraft({ classTitle: classOptions[0]?.title || '', teacherEmail: '', teacherName: '', notes: '', enabled: true });
+  }
+
+  function openAddModal() {
+    resetDraft();
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    resetDraft();
+  }
+
+  function updateTeacher(email) {
+    const teacher = teacherOptions.find((item) => String(item.email).toLowerCase() === String(email).toLowerCase());
+    setDraft((current) => ({ ...current, teacherEmail: email, teacherName: teacher ? `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || teacher.name || email : current.teacherName }));
+  }
+
+  function saveAllotment(event) {
+    event.preventDefault();
+    if (!draft.classTitle || !draft.teacherEmail) return;
+    const row = {
+      ...draft,
+      id: editingId || `allotment-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      teacherEmail: cleanText(draft.teacherEmail).toLowerCase(),
+      teacherName: cleanText(draft.teacherName),
+      classTitle: cleanText(draft.classTitle),
+      notes: cleanText(draft.notes),
+      enabled: Boolean(draft.enabled)
+    };
+    const nextRows = editingId
+      ? allotments.map((item) => (item.id === editingId ? row : item))
+      : [...allotments.filter((item) => !(item.classTitle === row.classTitle && item.teacherEmail === row.teacherEmail)), row];
+    onSave(nextRows);
+    closeModal();
+  }
+
+  function editAllotment(row) {
+    setEditingId(row.id);
+    setDraft({ ...row });
+    setModalOpen(true);
+  }
+
+  return (
+    <>
+      <section className="workflow-hero teacher-allotment-hero">
+        <div>
+          <p className="eyebrow">Class ownership</p>
+          <h2>Assign teachers to classes</h2>
+          <p>Choose a class, assign a teacher account, and keep the roster ownership clear for attendance and class operations.</p>
+        </div>
+        <div className="workflow-action-list">
+          <article><strong>{classOptions.length}</strong><span>Classes</span></article>
+          <article><strong>{teacherOptions.length}</strong><span>Teachers</span></article>
+          <article><strong>{allotments.length}</strong><span>Assignments</span></article>
+        </div>
+      </section>
+      {notice && <p className="success admin-floating-message">{notice}</p>}
+      {error && <p className="form-error admin-floating-message">{error}</p>}
+      <AdminTable
+        title="Teacher allotments"
+        rows={allotments}
+        emptyText="No teacher allotments yet."
+        action={<button className="button primary" type="button" onClick={openAddModal}><Plus size={16} /> Add allotment</button>}
+        columns={[
+          { key: 'classTitle', label: 'Class' },
+          { key: 'teacherName', label: 'Teacher' },
+          { key: 'teacherEmail', label: 'Teacher email' },
+          { key: 'notes', label: 'Notes' },
+          { key: 'enabled', label: 'Enabled', render: (row) => row.enabled !== false ? 'Yes' : 'No' },
+          { key: 'actions', label: 'Actions', render: (row) => (
+            <div className="admin-row-actions">
+              <button className="icon-button table-icon-button" type="button" onClick={() => editAllotment(row)} aria-label="Edit allotment"><Edit3 size={15} /></button>
+              <button className="icon-button table-icon-button danger" type="button" onClick={() => onSave(allotments.filter((item) => item.id !== row.id))} aria-label="Delete allotment"><Trash2 size={15} /></button>
+            </div>
+          ) }
+        ]}
+      />
+      {modalOpen && (
+        <div className="popup-backdrop" role="presentation">
+          <div className="popup-panel teacher-allotment-modal" role="dialog" aria-modal="true" aria-label={editingId ? 'Edit allotment' : 'Add allotment'}>
+            <button className="popup-close" type="button" aria-label="Close popup" onClick={closeModal}>
+              <X size={20} />
+            </button>
+            <form className="admin-create-form" onSubmit={saveAllotment}>
+              <h2>{editingId ? 'Edit allotment' : 'Add allotment'}</h2>
+              <p className="admin-form-note">Assign one teacher to one class. The teacher attendance and class area will use these assignments.</p>
+              <div className="admin-form-grid">
+                <label>Class<select value={draft.classTitle} onChange={(event) => setDraft((current) => ({ ...current, classTitle: event.target.value }))} required><option value="">Choose class</option>{classOptions.map((item) => <option key={item.id || item.title} value={item.title}>{item.title}</option>)}</select></label>
+                <label>Teacher<select value={draft.teacherEmail} onChange={(event) => updateTeacher(event.target.value)} required><option value="">Choose teacher</option>{teacherOptions.map((item) => <option key={item.email} value={item.email}>{`${item.firstName || item.name || item.email} ${item.lastName || ''}`.trim()} · {item.email}</option>)}</select></label>
+                <label>Teacher display name<input value={draft.teacherName} onChange={(event) => setDraft((current) => ({ ...current, teacherName: event.target.value }))} /></label>
+                <label className="admin-checkbox"><input type="checkbox" checked={draft.enabled !== false} onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))} /> Active assignment</label>
+              </div>
+              <label>Notes<textarea rows={4} value={draft.notes || ''} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Primary teacher, substitute, batch note..." /></label>
+              <div className="paata-teacher-form-actions">
+                <button className="button primary" type="submit"><Save size={16} /> {editingId ? 'Update allotment' : 'Add allotment'}</button>
+                <button className="button ghost" type="button" onClick={closeModal}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1074,6 +1557,7 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
   const [error, setError] = useState('');
   const titleByKind = {
     event: 'Edit event',
+    class: 'Edit class',
     announcement: 'Edit announcement',
     registration: 'Edit registration',
     fundraiser: 'Edit fundraising cause',
@@ -1130,6 +1614,23 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
           confirmationMessage: cleanText(data.registrationConfirmation),
           paymentMessage: cleanText(data.paymentMessage)
         }
+      };
+    } else if (kind === 'class') {
+      if (!cleanText(data.title)) {
+        setError('Class title is required.');
+        return;
+      }
+      patch = {
+        title: cleanText(data.title),
+        category: cleanText(data.category),
+        status: cleanText(data.status),
+        date: cleanText(data.date),
+        time: cleanText(data.time),
+        age: cleanText(data.age),
+        fee: cleanText(data.fee),
+        location: cleanText(data.location),
+        focus: cleanText(data.focus),
+        photo: data.removePhoto ? '' : cleanText(data.photo)
       };
     } else if (kind === 'announcement') {
       if (!cleanText(data.text)) {
@@ -1294,6 +1795,23 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
               </div>
             </>
           )}
+          {kind === 'class' && (
+            <>
+              <div className="admin-form-grid">
+                <label>Class title<input name="title" defaultValue={row.title || ''} required /></label>
+                <label>Category<input name="category" defaultValue={row.category || ''} /></label>
+                <label>Status<input name="status" defaultValue={row.status || ''} placeholder="New students / Draft / Waitlist" /></label>
+                <label>Date range<input name="date" defaultValue={row.date || ''} placeholder="Sep 13, 2027 - Jun 20, 2028" /></label>
+                <label>Time<input name="time" defaultValue={row.time || ''} placeholder="Sundays, 10:00 AM - 11:00 AM" /></label>
+                <label>Age group<input name="age" defaultValue={row.age || ''} /></label>
+                <label>Fee<input name="fee" defaultValue={row.fee || ''} /></label>
+                <label>Location<input name="location" defaultValue={row.location || ''} /></label>
+                <label>Image URL<input name="photo" defaultValue={row.photo || ''} placeholder="https://..." /></label>
+              </div>
+              <label>Focus<textarea name="focus" defaultValue={row.focus || ''} /></label>
+              <label className="admin-checkbox"><input name="removePhoto" type="checkbox" /> Remove image</label>
+            </>
+          )}
           {kind === 'announcement' && (
             <>
               <label>Announcement text<input name="text" defaultValue={row.text || ''} required /></label>
@@ -1417,6 +1935,7 @@ function AboutContentEditor({ content, setContent, onSave, saving, notice, error
   const { tr } = useLanguage();
   const [editor, setEditor] = useState(null);
   const [draftError, setDraftError] = useState('');
+  const [draftSaving, setDraftSaving] = useState(false);
   const sections = [
     {
       key: 'currentCommittee',
@@ -1460,6 +1979,7 @@ function AboutContentEditor({ content, setContent, onSave, saving, notice, error
 
   function getRowTitle(sectionKey, row) {
     if (sectionKey === 'pastCommittees') return row.title || row.term || 'Past committee';
+    if (sectionKey === 'sponsors') return row.name || row.level || 'Sponsor logo';
     return row.name || 'Untitled';
   }
 
@@ -1490,7 +2010,7 @@ function AboutContentEditor({ content, setContent, onSave, saving, notice, error
     setEditor((current) => ({ ...current, draft: { ...current.draft, [field]: value } }));
   }
 
-  function saveDraft(event) {
+  async function saveDraft(event) {
     event.preventDefault();
     if (!editor) return;
     const sectionKey = editor.sectionKey;
@@ -1499,8 +2019,8 @@ function AboutContentEditor({ content, setContent, onSave, saving, notice, error
       setDraftError('Name is required.');
       return;
     }
-    if (sectionKey === 'sponsors' && !cleanText(draft.name)) {
-      setDraftError('Sponsor name is required.');
+    if (sectionKey === 'sponsors' && !cleanText(draft.name) && !cleanText(draft.level) && !cleanText(draft.website) && !cleanText(draft.note) && !cleanText(draft.photo)) {
+      setDraftError('Add a sponsor name, details, or upload a sponsor image.');
       return;
     }
     if (sectionKey === 'pastCommittees' && !cleanText(draft.term) && !cleanText(draft.title)) {
@@ -1508,22 +2028,26 @@ function AboutContentEditor({ content, setContent, onSave, saving, notice, error
       return;
     }
     const cleaned = Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, key === 'id' ? value : cleanText(value)]));
-    setContent((current) => ({
-      ...current,
+    const nextContent = {
+      ...content,
       [sectionKey]: editor.mode === 'edit'
-        ? current[sectionKey].map((row) => (row.id === editor.rowId ? cleaned : row))
-        : [...current[sectionKey], cleaned]
-    }));
-    setEditor(null);
+        ? content[sectionKey].map((row) => (row.id === editor.rowId ? cleaned : row))
+        : [...content[sectionKey], cleaned]
+    };
+    setDraftSaving(true);
+    const saved = await onSave(nextContent);
+    setDraftSaving(false);
+    if (saved) setEditor(null);
   }
 
-  function removeRow(sectionKey, rowId) {
+  async function removeRow(sectionKey, rowId) {
     const confirmed = window.confirm('Remove this item from the About page?');
     if (!confirmed) return;
-    setContent((current) => ({
-      ...current,
-      [sectionKey]: current[sectionKey].filter((row) => row.id !== rowId)
-    }));
+    const nextContent = {
+      ...content,
+      [sectionKey]: content[sectionKey].filter((row) => row.id !== rowId)
+    };
+    await onSave(nextContent);
   }
 
   async function uploadDraftPhoto(file) {
@@ -1558,7 +2082,7 @@ function AboutContentEditor({ content, setContent, onSave, saving, notice, error
           <h2>{tr('Manage public About page')}</h2>
           <p>{tr('Upload committee photos, sponsor logos, and past committee details. The public About page updates after saving.')}</p>
         </div>
-        <button className="button" type="button" onClick={onSave} disabled={saving}>
+        <button className="button" type="button" onClick={() => onSave()} disabled={saving}>
           <Save size={17} /> {saving ? tr('Saving...') : tr('Save About Page')}
         </button>
       </section>
@@ -1635,7 +2159,7 @@ function AboutContentEditor({ content, setContent, onSave, saving, notice, error
                 </div>
                 <div className="about-admin-fields about-admin-modal-fields">
                   {activeSection.fields.map(([field, label, type]) => (
-                    <label key={field}>
+                    <label key={field} className={type === 'textarea' || field === 'website' ? 'is-wide' : ''}>
                       <span>{tr(label)}</span>
                       {type === 'textarea' ? (
                         <textarea value={editor.draft[field] || ''} onChange={(event) => updateDraft(field, event.target.value)} rows={4} />
@@ -1647,11 +2171,11 @@ function AboutContentEditor({ content, setContent, onSave, saving, notice, error
                 </div>
               </div>
               <div className="paata-teacher-form-actions">
-                <button className="button primary" type="submit">
-                  <Save size={16} /> {editor.mode === 'edit' ? tr('Update') : tr('Add')}
-                </button>
-                <button className="button secondary" type="button" onClick={() => setEditor(null)}>
+                <button className="button secondary-dark" type="button" onClick={() => setEditor(null)} disabled={draftSaving}>
                   <X size={16} /> {tr('Cancel')}
+                </button>
+                <button className="button primary" type="submit" disabled={draftSaving || saving}>
+                  <Save size={16} /> {draftSaving ? tr('Saving...') : editor.mode === 'edit' ? tr('Update') : tr('Add')}
                 </button>
               </div>
               {draftError && <p className="form-error">{draftError}</p>}
@@ -1883,7 +2407,7 @@ function useAdminData() {
           if (refreshedCurrentUser && JSON.stringify(refreshedCurrentUser.roles || []) !== JSON.stringify(currentUser?.roles || [])) {
             setCurrentUser(effectiveUser);
           }
-          const canSeeAllRegistrations = isAdmin(effectiveUser) || hasAnyRole(effectiveUser, ['receptionist', 'teacher']);
+          const canSeeAllRegistrations = isAdmin(effectiveUser) || hasAnyRole(effectiveUser, ['welcomeDesk', 'welcomedesk', 'receptionist', 'teacher']);
           const canSeeAllExpenses = isAdmin(effectiveUser) || hasAnyRole(effectiveUser, ['treasurer']);
           const canSeeOwnExpenses = canSeeAllExpenses || hasAnyRole(effectiveUser, ['volunteer']);
           const localRegistrations = readJson('kb-registration-submissions', []).filter((row) => (
@@ -1956,6 +2480,12 @@ export default function AdminSectionPage({ view }) {
   const [paataTeachersSaving, setPaataTeachersSaving] = useState(false);
   const [paataTeachersNotice, setPaataTeachersNotice] = useState('');
   const [paataTeachersError, setPaataTeachersError] = useState('');
+  const [roleDefinitions, setRoleDefinitions] = useState(() => readJson('kb-role-definitions', []));
+  const [roleAccessNotice, setRoleAccessNotice] = useState('');
+  const [roleAccessError, setRoleAccessError] = useState('');
+  const [teacherAllotments, setTeacherAllotments] = useState(() => readJson('kb-teacher-allotments', []));
+  const [teacherAllotmentNotice, setTeacherAllotmentNotice] = useState('');
+  const [teacherAllotmentError, setTeacherAllotmentError] = useState('');
   const [settingsError, setSettingsError] = useState('');
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [emailOutboxNotice, setEmailOutboxNotice] = useState('');
@@ -2072,6 +2602,16 @@ export default function AdminSectionPage({ view }) {
     });
     return new Set(rows.map((row) => String(row.email || '').toLowerCase()).filter(Boolean)).size;
   })();
+  const assignedClassTitles = teacherAllotments
+    .filter((row) => row.enabled !== false && String(row.teacherEmail || '').toLowerCase() === currentUserEmail)
+    .map((row) => row.classTitle);
+  const shouldLimitToAssignedClasses = !isAdmin(user) && hasAnyRole(user, ['teacher']) && assignedClassTitles.length > 0;
+  const visibleTeacherPrograms = shouldLimitToAssignedClasses
+    ? programs.filter((program) => assignedClassTitles.includes(program.title))
+    : programs;
+  const visibleTeacherRegistrations = shouldLimitToAssignedClasses
+    ? registrations.filter((row) => assignedClassTitles.includes(row.program))
+    : registrations;
 
   useEffect(() => {
     if (view !== 'seats') return;
@@ -2111,7 +2651,7 @@ export default function AdminSectionPage({ view }) {
   useEffect(() => {
     if (view !== 'about') return;
     let ignore = false;
-    apiReadSiteSetting('about-content')
+    apiReadAboutContent()
       .then((setting) => {
         if (ignore) return;
         const normalized = normalizeAboutContent(setting);
@@ -2135,6 +2675,56 @@ export default function AdminSectionPage({ view }) {
         setPaataTeachers(normalized);
         writeJson('kb-paata-teachers', normalized);
         window.dispatchEvent(new Event('kb-data-change'));
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, [view]);
+
+  useEffect(() => {
+    if (view !== 'role-access') return;
+    let ignore = false;
+    apiReadSiteSetting('role-definitions')
+      .then((rows) => {
+        if (ignore) return;
+        const normalized = normalizeRoleDefinitions(rows);
+        setRoleDefinitions(normalized);
+        writeJson('kb-role-definitions', normalized);
+        window.dispatchEvent(new Event('kb-data-change'));
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, [view]);
+
+  useEffect(() => {
+    if (view !== 'teacher-allotments') return;
+    let ignore = false;
+    apiReadSiteSetting('teacher-allotments')
+      .then((rows) => {
+        if (ignore) return;
+        const normalized = normalizeTeacherAllotments(rows);
+        setTeacherAllotments(normalized);
+        writeJson('kb-teacher-allotments', normalized);
+        window.dispatchEvent(new Event('kb-data-change'));
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, [view]);
+
+  useEffect(() => {
+    if (!['teacher', 'teacher-attendance'].includes(view)) return;
+    let ignore = false;
+    apiReadSiteSetting('teacher-allotments')
+      .then((rows) => {
+        if (ignore) return;
+        const normalized = normalizeTeacherAllotments(rows);
+        setTeacherAllotments(normalized);
+        writeJson('kb-teacher-allotments', normalized);
       })
       .catch(() => {});
     return () => {
@@ -2285,6 +2875,64 @@ export default function AdminSectionPage({ view }) {
     }
   }
 
+  async function cloneAdminRecord(kind, row) {
+    const key = kind === 'class' ? 'kb-admin-classes' : 'kb-admin-events';
+    const dashboardKey = kind === 'class' ? 'classes' : 'events';
+    const payload = kind === 'class' ? cloneClassPayload(row) : cloneEventPayload(row);
+    const localRecord = { ...payload, localId: `${kind}-clone-${Date.now()}`, createdAt: new Date().toISOString() };
+    const localRows = [localRecord, ...(dashboard[dashboardKey] || [])];
+    writeJson(key, localRows);
+    setDashboard((current) => ({ ...current, [dashboardKey]: localRows }));
+    window.dispatchEvent(new Event('kb-data-change'));
+
+    try {
+      const saved = await appendAdminRecordAsync(key, payload);
+      const savedRows = [saved, ...localRows.filter((item) => item.localId !== localRecord.localId)];
+      writeJson(key, savedRows);
+      setDashboard((current) => ({ ...current, [dashboardKey]: savedRows }));
+      setEditRecord({ kind, row: saved });
+      window.dispatchEvent(new Event('kb-data-change'));
+    } catch {
+      setEditRecord({ kind, row: localRecord });
+    }
+  }
+
+  async function saveRoleDefinitions(nextRoles) {
+    const normalized = normalizeRoleDefinitions(nextRoles);
+    setRoleDefinitions(normalized);
+    writeJson('kb-role-definitions', normalized);
+    setRoleAccessNotice('Role access saved.');
+    setRoleAccessError('');
+    window.dispatchEvent(new Event('kb-data-change'));
+    try {
+      const saved = await apiSaveSiteSetting('role-definitions', normalized);
+      const savedNormalized = normalizeRoleDefinitions(saved);
+      setRoleDefinitions(savedNormalized);
+      writeJson('kb-role-definitions', savedNormalized);
+      window.dispatchEvent(new Event('kb-data-change'));
+    } catch (error) {
+      setRoleAccessError(error.message || 'Role access saved locally, but database save failed.');
+    }
+  }
+
+  async function saveTeacherAllotments(nextRows) {
+    const normalized = normalizeTeacherAllotments(nextRows);
+    setTeacherAllotments(normalized);
+    writeJson('kb-teacher-allotments', normalized);
+    setTeacherAllotmentNotice('Teacher allotments saved.');
+    setTeacherAllotmentError('');
+    window.dispatchEvent(new Event('kb-data-change'));
+    try {
+      const saved = await apiSaveSiteSetting('teacher-allotments', normalized);
+      const savedNormalized = normalizeTeacherAllotments(saved);
+      setTeacherAllotments(savedNormalized);
+      writeJson('kb-teacher-allotments', savedNormalized);
+      window.dispatchEvent(new Event('kb-data-change'));
+    } catch (error) {
+      setTeacherAllotmentError(error.message || 'Teacher allotments saved locally, but database save failed.');
+    }
+  }
+
   async function saveEditedRecord(kind, row, patch) {
     const idMatches = (item) => (
       (item.id && row.id && item.id === row.id)
@@ -2296,6 +2944,7 @@ export default function AdminSectionPage({ view }) {
     );
     const storageKeyByKind = {
       event: 'kb-admin-events',
+      class: 'kb-admin-classes',
       announcement: 'kb-announcement-submissions',
       registration: 'kb-registration-submissions',
       fundraiser: 'kb-admin-fundraisers',
@@ -2306,6 +2955,7 @@ export default function AdminSectionPage({ view }) {
     };
     const dashboardKeyByKind = {
       event: 'events',
+      class: 'classes',
       announcement: 'announcements',
       registration: 'registrations',
       fundraiser: 'fundraisers',
@@ -2316,6 +2966,7 @@ export default function AdminSectionPage({ view }) {
     };
     const currentRowsByKind = {
       event: allEvents,
+      class: programs,
       announcement: announcements,
       registration: registrations,
       fundraiser: fundraisers,
@@ -2362,6 +3013,7 @@ export default function AdminSectionPage({ view }) {
     );
     const storageKeyByKind = {
       event: 'kb-admin-events',
+      class: 'kb-admin-classes',
       announcement: 'kb-announcement-submissions',
       registration: 'kb-registration-submissions',
       fundraiser: 'kb-admin-fundraisers',
@@ -2372,6 +3024,7 @@ export default function AdminSectionPage({ view }) {
     };
     const dashboardKeyByKind = {
       event: 'events',
+      class: 'classes',
       announcement: 'announcements',
       registration: 'registrations',
       fundraiser: 'fundraisers',
@@ -2382,6 +3035,7 @@ export default function AdminSectionPage({ view }) {
     };
     const currentRowsByKind = {
       event: allEvents,
+      class: programs,
       announcement: announcements,
       registration: registrations,
       fundraiser: fundraisers,
@@ -2405,8 +3059,14 @@ export default function AdminSectionPage({ view }) {
   }
 
   function AdminRecordActions({ kind, row, canEdit = true, canDelete = true }) {
+    const canClone = kind === 'event' || kind === 'class';
     return (
       <div className="admin-row-actions compact-actions">
+        {canClone && (
+          <button className="icon-button table-icon-button" type="button" onClick={() => cloneAdminRecord(kind, row)} title={`Clone ${kind}`} aria-label={`Clone ${kind}`}>
+            <Copy size={15} />
+          </button>
+        )}
         {canEdit && (
           <button className="icon-button table-icon-button" type="button" onClick={() => setEditRecord({ kind, row })} title={`Edit ${kind}`} aria-label={`Edit ${kind}`}>
             <Edit3 size={15} />
@@ -2561,13 +3221,18 @@ export default function AdminSectionPage({ view }) {
     const payload = Object.fromEntries(new FormData(form).entries());
     const audience = cleanText(payload.audience);
     const target = cleanText(payload.target);
+    const ctaLabel = cleanText(payload.ctaLabel);
+    const ctaUrl = cleanText(payload.ctaUrl);
     const validationError = firstError([
       validateRequired(audience, 'Audience'),
       audience !== 'all-users' ? validateRequired(target, 'Target') : '',
       validateRequired(payload.subject, 'Subject'),
       cleanText(payload.subject).length < 4 ? 'Subject must be at least 4 characters.' : '',
       validateRequired(payload.body, 'Message'),
-      cleanText(payload.body).length < 10 ? 'Message must be at least 10 characters.' : ''
+      cleanText(payload.body).length < 10 ? 'Message must be at least 10 characters.' : '',
+      ctaLabel && !ctaUrl ? 'Action button URL is required when a label is entered.' : '',
+      ctaUrl && !ctaLabel ? 'Action button label is required when a URL is entered.' : '',
+      ctaUrl ? validateUrl(ctaUrl, 'Action button URL') : ''
     ]);
 
     if (validationError) {
@@ -2583,7 +3248,9 @@ export default function AdminSectionPage({ view }) {
         subject: cleanText(payload.subject),
         intro: cleanText(payload.intro),
         body: cleanText(payload.body),
-        footer: cleanText(payload.footer)
+        footer: cleanText(payload.footer),
+        ctaLabel,
+        ctaUrl
       });
       form.reset();
       setBulkEmail({ audience: 'all-users', target: '', sending: false, notice: `Message prepared for ${result.count} recipient(s). Sent: ${result.sent}. Queued/stored: ${result.queued}.`, error: '' });
@@ -2706,7 +3373,7 @@ export default function AdminSectionPage({ view }) {
 
     setCheckinError('');
     try {
-      const result = await apiReceptionCheckin({
+      const result = await apiWelcomeDeskCheckIn({
         registrationId: row.id,
         registrationKey: key,
         eventId: row.eventId || expectedEventId
@@ -2982,10 +3649,10 @@ export default function AdminSectionPage({ view }) {
     window.dispatchEvent(new Event('kb-data-change'));
   }
 
-  async function handleAboutContentSave() {
+  async function handleAboutContentSave(contentOverride = aboutContent) {
     setAboutError('');
     setAboutNotice('');
-    const normalized = normalizeAboutContent(aboutContent);
+    const normalized = normalizeAboutContent(contentOverride);
     const cleaned = {
       currentCommittee: normalized.currentCommittee.filter((row) => row.name || row.role || row.email || row.phone || row.bio || row.photo),
       sponsors: normalized.sponsors.filter((row) => row.name || row.level || row.website || row.note || row.photo),
@@ -2993,27 +3660,26 @@ export default function AdminSectionPage({ view }) {
     };
     const validationError = firstError([
       cleaned.currentCommittee.some((row) => !row.name) ? 'Each current committee row needs a name.' : '',
-      cleaned.sponsors.some((row) => !row.name) ? 'Each sponsor row needs a sponsor name.' : '',
       cleaned.pastCommittees.some((row) => !row.term && !row.title) ? 'Each past committee row needs a term or title.' : ''
     ]);
 
     if (validationError) {
       setAboutError(validationError);
-      return;
+      return false;
     }
 
     setAboutSaving(true);
-    writeJson('kb-about-content', cleaned);
-    setAboutContent(normalizeAboutContent(cleaned));
     try {
-      const saved = await apiSaveSiteSetting('about-content', cleaned);
+      const saved = await apiSaveAboutContent(cleaned);
       const nextContent = normalizeAboutContent(saved || cleaned);
       writeJson('kb-about-content', nextContent);
       setAboutContent(nextContent);
       setAboutNotice('About page content saved.');
       window.dispatchEvent(new Event('kb-data-change'));
+      return true;
     } catch (error) {
       setAboutError(error.message || 'Could not save About page content.');
+      return false;
     } finally {
       setAboutSaving(false);
     }
@@ -3308,6 +3974,71 @@ export default function AdminSectionPage({ view }) {
             onSave={(patch) => saveEditedRecord('event', editRecord.row, patch)}
           />
         )}
+      </>
+    );
+  }
+
+  if (view === 'classes') {
+    return (
+      <>
+        <PageHeader area="Classes" title="Manage classes" action={<button className="button primary" type="button" onClick={() => setModalType('class')}>Create</button>} />
+        <AdminTable
+          title="Classes"
+          rows={programs}
+          emptyText="No classes created yet."
+          columns={[
+            { key: 'title', label: 'Class' },
+            { key: 'category', label: 'Category' },
+            { key: 'status', label: 'Status' },
+            { key: 'date', label: 'Date' },
+            { key: 'time', label: 'Time' },
+            { key: 'age', label: 'Age' },
+            { key: 'fee', label: 'Fee' },
+            { key: 'location', label: 'Location' },
+            { key: 'focus', label: 'Focus' },
+            { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="class" row={row} /> }
+          ]}
+        />
+        {modalType === 'class' && <CreateModal type="class" onClose={() => setModalType(null)} onCreated={() => { refresh(); setModalType(null); }} />}
+        {editRecord?.kind === 'class' && (
+          <AdminEditModal
+            kind="class"
+            row={editRecord.row}
+            onClose={() => setEditRecord(null)}
+            onSave={(patch) => saveEditedRecord('class', editRecord.row, patch)}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (view === 'role-access') {
+    return (
+      <>
+        <PageHeader area="Security" title="Role and access control" />
+        <RoleAccessManager
+          roles={roleDefinitions}
+          onSave={saveRoleDefinitions}
+          notice={roleAccessNotice}
+          error={roleAccessError}
+        />
+      </>
+    );
+  }
+
+  if (view === 'teacher-allotments') {
+    const teacherRows = registeredUsers.filter((row) => String(row.role || '').toLowerCase() === 'teacher' || (row.roles || []).includes?.('teacher'));
+    return (
+      <>
+        <PageHeader area="Teacher" title="Teacher allotment" />
+        <TeacherAllotmentManager
+          allotments={teacherAllotments}
+          classes={programs}
+          teachers={teacherRows}
+          onSave={saveTeacherAllotments}
+          notice={teacherAllotmentNotice}
+          error={teacherAllotmentError}
+        />
       </>
     );
   }
@@ -3670,6 +4401,14 @@ export default function AdminSectionPage({ view }) {
               Footer note
               <input name="footer" maxLength="220" placeholder="Optional closing note" />
             </label>
+            <label>
+              Action button label
+              <input name="ctaLabel" maxLength="60" placeholder="View details and register" />
+            </label>
+            <label>
+              Action button URL
+              <input name="ctaUrl" maxLength="500" placeholder="/classes or https://..." />
+            </label>
           </div>
           <div className="bulk-email-actions">
             <span>Emails are sent through SMTP when configured; otherwise they are stored in the Email Outbox.</span>
@@ -3770,7 +4509,7 @@ export default function AdminSectionPage({ view }) {
           }
           return (
             <div className="admin-row-actions compact-actions">
-              {checked ? <span className="confirmed-badge">{row.checkedInAt ? new Date(row.checkedInAt).toLocaleString() : 'Checked'}</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>CheckIn</button>}
+              {checked ? <span className="confirmed-badge">{row.checkedInAt ? new Date(row.checkedInAt).toLocaleString() : 'Checked'}</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Check In</button>}
               <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' })}>{tr('Email')}</button>
               <AdminRecordActions kind="registration" row={row} />
             </div>
@@ -3794,10 +4533,10 @@ export default function AdminSectionPage({ view }) {
     ];
     return (
       <>
-        <PageHeader root="Reception" area="CheckInNew" title="Event check-in" action={<span className="received-count">Recieved {checkinRows.length} registration(s)</span>} />
-        <section className="workflow-hero reception-hero">
+        <PageHeader root="Welcome Desk" area="Check-in" title="Event check-in" action={<span className="received-count">Received {checkinRows.length} registration(s)</span>} />
+        <section className="workflow-hero welcome-desk-hero">
           <div>
-            <p className="eyebrow">Reception desk</p>
+            <p className="eyebrow">Welcome Desk</p>
             <h2>{selectedCheckinEvent.title || 'Select an event'}</h2>
             <p>Track arrivals, phone lookups, payments, and member counts from one check-in workspace.</p>
           </div>
@@ -4055,8 +4794,8 @@ export default function AdminSectionPage({ view }) {
     const guestAmount = guestRows.reduce((sum, row) => sum + getMoneyAmount(row), 0);
     return (
       <>
-        <PageHeader root="Reception" area="Guest Check-in" title="Guest registration and check-in" />
-        <section className="workflow-hero reception-hero">
+        <PageHeader root="Welcome Desk" area="Guest Check-in" title="Guest registration and check-in" />
+        <section className="workflow-hero welcome-desk-hero">
           <div>
             <p className="eyebrow">Guest desk</p>
             <h2>Fast intake for walk-ins and invited guests</h2>
@@ -4106,7 +4845,7 @@ export default function AdminSectionPage({ view }) {
               const checked = checkedInIds.includes(getRegistrationKey(row, index)) || row.checkedIn;
               return (
                 <div className="admin-row-actions compact-actions">
-                  {checked ? <span className="confirmed-badge">Checked</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Checkin</button>}
+                  {checked ? <span className="confirmed-badge">Checked</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Check In</button>}
                   <AdminRecordActions kind="registration" row={row} />
                 </div>
               );
@@ -4172,7 +4911,7 @@ export default function AdminSectionPage({ view }) {
     const selectedSeat = seatRows.find((seat) => seat.seatNumber === selectedSeatNumber) || seatRows.find((seat) => seat.status === 'Available') || seatRows[0] || {};
     return (
       <>
-        <PageHeader root="Reception" area="Seats" title="Seat management" />
+        <PageHeader root="Welcome Desk" area="Seats" title="Seat management" />
         <section className="workflow-hero seat-hero">
           <div>
             <p className="eyebrow">Seat operations</p>
@@ -4321,7 +5060,7 @@ export default function AdminSectionPage({ view }) {
   }
 
   if (view === 'teacher') {
-    const classRows = registrations.filter((row) => row.registrationType === 'class' || programs.some((program) => program.title === row.program));
+    const classRows = visibleTeacherRegistrations.filter((row) => row.registrationType === 'class' || visibleTeacherPrograms.some((program) => program.title === row.program));
     const teacherRows = registeredUsers.filter((row) => String(row.role || '').toLowerCase() === 'teacher' || (row.roles || []).includes?.('teacher'));
     const confirmedClassRows = statusCount(classRows, (status) => status.includes('confirmed'));
     const paidClassRows = classRows.filter(isPaidRegistration).length;
@@ -4377,7 +5116,7 @@ export default function AdminSectionPage({ view }) {
           title="Class registrations"
           rows={classRows}
           emptyText="No class registrations yet."
-          filters={[{ key: 'program', label: 'Class', options: uniqueOptions(registrations, 'program') }]}
+          filters={[{ key: 'program', label: 'Class', options: uniqueOptions(classRows, 'program') }]}
           columns={[
             { key: 'program', label: 'Class' },
             { key: 'familyMember', label: 'Student', render: (row) => row.familyMember || row.studentName || '-' },
@@ -4408,8 +5147,8 @@ export default function AdminSectionPage({ view }) {
   if (view === 'teacher-attendance') {
     return (
       <TeacherAttendanceView
-        programs={programs}
-        registrations={registrations}
+        programs={visibleTeacherPrograms}
+        registrations={visibleTeacherRegistrations}
         attendanceRecords={attendanceRecords}
         currentUser={user}
         onSave={handleAttendanceSave}
@@ -4655,6 +5394,13 @@ export default function AdminSectionPage({ view }) {
         subject: 'Kannada Bharati donation confirmation',
         body: 'Thank you for supporting Kannada Bharati.',
         action: 'View Donation'
+      },
+      {
+        title: 'Admin message',
+        key: 'bulk-message',
+        subject: 'Classes Registration Now Open',
+        body: 'Branded template used for messages composed by administrators.',
+        action: 'Preview Message Email'
       }
     ];
     const tableCounts = [

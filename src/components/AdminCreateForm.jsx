@@ -486,7 +486,7 @@ export default function AdminCreateForm({ type, onCreated }) {
           <label className="admin-checkbox"><input name="enabled" type="checkbox" defaultChecked /> Enabled</label>
           <label className="admin-checkbox"><input name="displaySeatNumbers" type="checkbox" /> Display Seat Numbers</label>
           <label className="admin-checkbox"><input name="freeForVolunteers" type="checkbox" /> Free for Volunteers</label>
-          <label className="admin-checkbox"><input name="enableCheckIn" type="checkbox" /> Enable for Check-in</label>
+          <label className="admin-checkbox"><input name="enableCheckIn" type="checkbox" /> Enable check-in</label>
           <label className="admin-checkbox"><input name="enableVolunteerDiscount" type="checkbox" /> Enable Volunteer discount</label>
         </div>
       )}

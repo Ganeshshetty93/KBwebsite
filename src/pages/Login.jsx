@@ -1,14 +1,14 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CalendarDays, KeyRound, Mail, ShieldCheck, Sparkles, UsersRound } from 'lucide-react';
+import { CalendarDays, KeyRound, Mail, ShieldCheck, Smartphone, Sparkles, UsersRound } from 'lucide-react';
 import { defaultAdminPath, hasAnyRole, isAdmin, setCurrentUser } from '../utils/storage.js';
-import { apiConfirmEmail, apiForgotPassword, apiGoogleLogin, apiLogin, apiResetPassword, apiSendTwoFactorCode, apiVerifyTwoFactorCode } from '../utils/api.js';
-import { cleanText, firstError, validateEmail, validatePassword } from '../utils/validation.js';
+import { apiConfirmEmail, apiForgotPassword, apiGoogleLogin, apiLogin, apiResetPassword, apiSendTwoFactorCode, apiStartOtpLogin, apiStartPhoneOtpLogin, apiVerifyOtpLogin, apiVerifyPhoneOtpLogin, apiVerifyTwoFactorCode } from '../utils/api.js';
+import { cleanText, firstError, validateEmail, validatePassword, validatePhone } from '../utils/validation.js';
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || 'ganeshshetty93@gmail.com').toLowerCase();
-const staffRoles = ['receptionist', 'teacher', 'volunteer', 'treasurer'];
+const staffRoles = ['welcomeDesk', 'teacher', 'volunteer', 'treasurer'];
 
 function loadGoogleIdentityScript() {
   if (window.google?.accounts?.oauth2) return Promise.resolve();
@@ -40,6 +40,9 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [loginMode, setLoginMode] = useState('password');
+  const [otpLogin, setOtpLogin] = useState({ email: '', otpToken: '', code: '', sent: false, devCode: '' });
+  const [phoneOtpLogin, setPhoneOtpLogin] = useState({ phone: '', otpToken: '', code: '', sent: false, devCode: '' });
   const [twoFactor, setTwoFactor] = useState(null);
   const googleTokenClientRef = useRef(null);
   const resetToken = searchParams.get('resetToken');
@@ -81,6 +84,112 @@ export default function Login() {
       navigate(loginDestination(result));
     } catch (loginError) {
       setError(loginError.message || 'Login failed.');
+    }
+  }
+
+  async function sendOtpLoginCode(email) {
+    const normalized = cleanText(email).toLowerCase();
+    const validationError = validateEmail(normalized);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setError('');
+    setNotice('');
+    try {
+      const result = await apiStartOtpLogin(normalized);
+      setOtpLogin({
+        email: normalized,
+        otpToken: result.otpToken,
+        code: result.devCode || '',
+        sent: true,
+        devCode: result.devCode || ''
+      });
+      setNotice(result.devCode ? `Login code generated: ${result.devCode}` : `A six-digit login code was sent to ${normalized}.`);
+    } catch (otpError) {
+      setError(otpError.message || 'Could not send the login code.');
+    }
+  }
+
+  function handleStartOtpLogin(event) {
+    event.preventDefault();
+    sendOtpLoginCode(new FormData(event.currentTarget).get('email'));
+  }
+
+  async function handleVerifyOtpLogin(event) {
+    event.preventDefault();
+    setError('');
+    setNotice('');
+    const code = cleanText(new FormData(event.currentTarget).get('code'));
+    if (!/^\d{6}$/.test(code)) {
+      setError('Enter the six-digit OTP code.');
+      return;
+    }
+
+    try {
+      const result = await apiVerifyOtpLogin({ otpToken: otpLogin.otpToken, code });
+      if (result?.twoFactorRequired) {
+        beginTwoFactor(result);
+        return;
+      }
+      setCurrentUser(result);
+      navigate(loginDestination(result));
+    } catch (otpError) {
+      setError(otpError.message || 'OTP verification failed.');
+    }
+  }
+
+  async function sendPhoneOtpLoginCode(phone) {
+    const normalized = cleanText(phone);
+    const validationError = validatePhone(normalized) || (!normalized ? 'Phone number is required.' : '');
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setError('');
+    setNotice('');
+    try {
+      const result = await apiStartPhoneOtpLogin(normalized);
+      setPhoneOtpLogin({
+        phone: normalized,
+        otpToken: result.otpToken,
+        code: result.devCode || '',
+        sent: true,
+        devCode: result.devCode || ''
+      });
+      setNotice(result.devCode ? `Login code generated: ${result.devCode}` : 'If this verified phone number is registered, a six-digit login code was sent.');
+    } catch (otpError) {
+      setError(otpError.message || 'Could not send the phone login code.');
+    }
+  }
+
+  function handleStartPhoneOtpLogin(event) {
+    event.preventDefault();
+    sendPhoneOtpLoginCode(new FormData(event.currentTarget).get('phone'));
+  }
+
+  async function handleVerifyPhoneOtpLogin(event) {
+    event.preventDefault();
+    setError('');
+    setNotice('');
+    const code = cleanText(new FormData(event.currentTarget).get('code'));
+    if (!/^\d{6}$/.test(code)) {
+      setError('Enter the six-digit OTP code.');
+      return;
+    }
+
+    try {
+      const result = await apiVerifyPhoneOtpLogin({ otpToken: phoneOtpLogin.otpToken, code });
+      if (result?.twoFactorRequired) {
+        beginTwoFactor(result);
+        return;
+      }
+      setCurrentUser(result);
+      navigate(loginDestination(result));
+    } catch (otpError) {
+      setError(otpError.message || 'Phone OTP verification failed.');
     }
   }
 
@@ -264,6 +373,38 @@ export default function Login() {
             <span />
           </div>}
 
+          {!resetToken && !twoFactor && (
+            <div className="auth-mode-switch" role="tablist" aria-label="Choose login method">
+              <button
+                className={loginMode === 'password' ? 'is-active' : ''}
+                type="button"
+                role="tab"
+                aria-selected={loginMode === 'password'}
+                onClick={() => { setLoginMode('password'); setError(''); setNotice(''); }}
+              >
+                <KeyRound size={17} /> Password
+              </button>
+              <button
+                className={loginMode === 'otp' ? 'is-active' : ''}
+                type="button"
+                role="tab"
+                aria-selected={loginMode === 'otp'}
+                onClick={() => { setLoginMode('otp'); setError(''); setNotice(''); }}
+              >
+                <Mail size={17} /> Email OTP
+              </button>
+              <button
+                className={loginMode === 'phone-otp' ? 'is-active' : ''}
+                type="button"
+                role="tab"
+                aria-selected={loginMode === 'phone-otp'}
+                onClick={() => { setLoginMode('phone-otp'); setError(''); setNotice(''); }}
+              >
+                <Smartphone size={17} /> Phone OTP
+              </button>
+            </div>
+          )}
+
           {twoFactor ? (
             <div className="login-form two-factor-login-card">
               <form onSubmit={handleSendTwoFactorCode}>
@@ -289,6 +430,80 @@ export default function Login() {
               <button className="text-link-button" type="button" onClick={() => setTwoFactor(null)}>Use a different account</button>
               {error && <p className="form-error">{error}</p>}
               {notice && <p className="success">{notice}</p>}
+            </div>
+          ) : loginMode === 'phone-otp' && !resetToken ? (
+            <div className="login-form otp-login-card">
+              {!phoneOtpLogin.sent ? (
+                <form onSubmit={handleStartPhoneOtpLogin}>
+                  <label className="login-input-group">
+                    <span className="input-icon"><Smartphone size={18} /></span>
+                    <input name="phone" type="tel" required placeholder="Verified phone number" autoComplete="tel" />
+                  </label>
+                  <button className="blue-submit" type="submit">Send phone login code</button>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyPhoneOtpLogin}>
+                  <p className="otp-destination">Enter the code sent to <strong>{phoneOtpLogin.phone}</strong>.</p>
+                  <label className="login-input-group">
+                    <span className="input-icon"><KeyRound size={18} /></span>
+                    <input
+                      name="code"
+                      value={phoneOtpLogin.code}
+                      onChange={(event) => setPhoneOtpLogin((current) => ({ ...current, code: event.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      placeholder="Six-digit OTP"
+                      autoComplete="one-time-code"
+                      required
+                    />
+                  </label>
+                  <button className="blue-submit" type="submit">Verify OTP and sign in</button>
+                  <div className="otp-login-actions">
+                    <button className="text-link-button" type="button" onClick={() => sendPhoneOtpLoginCode(phoneOtpLogin.phone)}>Resend code</button>
+                    <button className="text-link-button" type="button" onClick={() => { setPhoneOtpLogin({ phone: '', otpToken: '', code: '', sent: false, devCode: '' }); setNotice(''); }}>Use another number</button>
+                  </div>
+                </form>
+              )}
+              {error && <p className="form-error">{error}</p>}
+              {notice && <p className="success">{notice}</p>}
+              <p className="fine-print admin-login-note">Use a phone number verified during registration or in your profile. OTP codes expire after 10 minutes.</p>
+            </div>
+          ) : loginMode === 'otp' && !resetToken ? (
+            <div className="login-form otp-login-card">
+              {!otpLogin.sent ? (
+                <form onSubmit={handleStartOtpLogin}>
+                  <label className="login-input-group">
+                    <span className="input-icon"><Mail size={18} /></span>
+                    <input name="email" type="email" required placeholder="Registered email" autoComplete="email" />
+                  </label>
+                  <button className="blue-submit" type="submit">Send login code</button>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyOtpLogin}>
+                  <p className="otp-destination">Enter the code sent to <strong>{otpLogin.email}</strong>.</p>
+                  <label className="login-input-group">
+                    <span className="input-icon"><KeyRound size={18} /></span>
+                    <input
+                      name="code"
+                      value={otpLogin.code}
+                      onChange={(event) => setOtpLogin((current) => ({ ...current, code: event.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      placeholder="Six-digit OTP"
+                      autoComplete="one-time-code"
+                      required
+                    />
+                  </label>
+                  <button className="blue-submit" type="submit">Verify OTP and sign in</button>
+                  <div className="otp-login-actions">
+                    <button className="text-link-button" type="button" onClick={() => sendOtpLoginCode(otpLogin.email)}>Resend code</button>
+                    <button className="text-link-button" type="button" onClick={() => { setOtpLogin({ email: '', otpToken: '', code: '', sent: false, devCode: '' }); setNotice(''); }}>Use another email</button>
+                  </div>
+                </form>
+              )}
+              {error && <p className="form-error">{error}</p>}
+              {notice && <p className="success">{notice}</p>}
+              <p className="fine-print admin-login-note">OTP codes expire after 10 minutes.</p>
             </div>
           ) : (
             <form className="login-form" onSubmit={handleSubmit}>

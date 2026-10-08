@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import PageHero from '../components/PageHero.jsx';
+import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
 import FormPanel from '../components/FormPanel.jsx';
 import { volunteerAreas } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
@@ -57,7 +57,8 @@ export default function Volunteer() {
 
   return (
     <>
-      <PageHero
+      <PageHeroCarousel
+        pageKey="volunteer"
         eyebrow={t('navVolunteer')}
         title={t('volunteerTitle')}
         text={t('volunteerText')}
