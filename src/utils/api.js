@@ -79,6 +79,8 @@ function normalizeRegistration(row) {
     registrationType: row.registration_type || row.registrationType || 'member',
     rsvp: row.rsvp || null,
     priceMenu,
+    priceSelection: row.price_selection || row.priceSelection || paymentDetails?.priceSelection || (paymentDetails?.priceSelections || []).join(', '),
+    priceSelections: row.price_selections || row.priceSelections || paymentDetails?.priceSelections || [],
     paymentStatus: row.payment_status || row.paymentStatus || paymentDetails?.status || (paid ? 'Paid' : 'Pending'),
     invoiceId: row.invoice_id || row.invoiceId || paymentDetails?.invoiceId || '',
     paypalOrderId: row.paypal_order_id || row.paypalOrderId || paymentDetails?.orderId || '',

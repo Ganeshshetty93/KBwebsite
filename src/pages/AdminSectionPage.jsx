@@ -4616,6 +4616,8 @@ export default function AdminSectionPage({ view }) {
       const meta = getProgramMeta(row, programs, allEvents);
       return {
         ...row,
+        program: row.program || meta.title || '-',
+        eventId: row.eventId || meta.eventId || meta.id || '',
         eventCategory: meta.eventType || meta.category || row.registrationType || '-'
       };
     };
@@ -4644,6 +4646,7 @@ export default function AdminSectionPage({ view }) {
     const eventTypeFilterOptions = eventTypes.filter((item) => String(item).toLowerCase() !== 'classroom');
     const registrationColumns = [
       { key: 'slNo', label: 'Sl no.', render: (_row, index) => index + 1 },
+      { key: 'program', label: 'Class', render: (row) => row.program || '-' },
       { key: 'status', label: 'Status', render: (row) => row.status || 'Submitted' },
       { key: 'paid', label: 'Paid', render: (row) => isPaidRegistration(row) ? 'Paid' : 'Pending' },
       { key: 'amount', label: 'Amount', render: (row) => `$${Number(row.amount || 0).toFixed(2)}` },
@@ -4686,6 +4689,9 @@ export default function AdminSectionPage({ view }) {
     ];
     const eventRegistrationColumns = [
       { key: 'slNo', label: 'Sl no.', render: (_row, index) => index + 1 },
+      { key: 'program', label: 'Event', render: (row) => row.program || '-' },
+      { key: 'eventId', label: 'Event ID', render: (row) => row.eventId || '-' },
+      { key: 'eventCategory', label: 'Type', render: (row) => row.eventCategory || row.registrationType || '-' },
       { key: 'status', label: 'Status', render: (row) => row.status || 'Submitted' },
       { key: 'paid', label: 'Paid', render: (row) => isPaidRegistration(row) ? 'Paid' : 'Pending' },
       { key: 'createdAt', label: 'Registered on' },
@@ -5382,6 +5388,13 @@ export default function AdminSectionPage({ view }) {
         action: 'Reset Password'
       },
       {
+        title: 'Login verification',
+        key: 'two-factor-code',
+        subject: 'Your Kannada Bharati login code',
+        body: 'Secure login and two-factor authentication code with its expiration notice.',
+        action: 'Preview Login Code'
+      },
+      {
         title: 'Registration',
         key: 'registration',
         subject: 'Kannada Bharati registration received',
@@ -5394,6 +5407,13 @@ export default function AdminSectionPage({ view }) {
         subject: 'Kannada Bharati donation confirmation',
         body: 'Thank you for supporting Kannada Bharati.',
         action: 'View Donation'
+      },
+      {
+        title: 'Payment confirmation',
+        key: 'payment',
+        subject: 'Kannada Bharati payment confirmation',
+        body: 'Payment status and registration details are included for the recipient.',
+        action: 'View Payment'
       },
       {
         title: 'Admin message',

@@ -5,6 +5,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BlobServiceClient } from '@azure/storage-blob';
 import { requireSupabase } from './supabaseClient.js';
 import { submissionTables } from './tableMap.js';
@@ -30,12 +32,14 @@ const smtpUser = process.env.EMAIL_SMTP_USER || process.env.SMTP_USER || '';
 const smtpPass = (process.env.EMAIL_SMTP_PASS || process.env.SMTP_PASS || '').replace(/\s+/g, '');
 const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpUser || 'no-reply@kannadabharati.org';
 const emailFromHeader = /<.+@.+>/.test(emailFromAddress) ? emailFromAddress : `"Kannada Bharati" <${emailFromAddress}>`;
+const emailLogoPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets/kannada-bharati-logo.png');
 const recaptchaSecret = process.env.GOOGLE_RECAPTCHA_SECRET || '';
 const defaultVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true';
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || '';
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || '';
 const twilioFromPhone = process.env.TWILIO_FROM_PHONE || '';
-const paypalBaseUrl = (process.env.PAYPAL_ENV || 'live').toLowerCase() === 'sandbox'
+const paypalEnvironment = (process.env.PAYPAL_ENV || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
+const paypalBaseUrl = paypalEnvironment === 'sandbox'
   ? 'https://api-m.sandbox.paypal.com'
   : 'https://api-m.paypal.com';
 const appBaseUrl = process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'http://localhost:5174';
@@ -1535,9 +1539,13 @@ async function findEventByRegistrationPayload(payload) {
 
 function priceFromMenu(priceMenu, selection) {
   const values = Array.isArray(priceMenu) ? priceMenu : priceMenu?.items || priceMenu?.options || [];
-  const selected = String(selection || '').toLowerCase();
-  const match = values.find((item) => String(item.id || item.key || item.name || item.label || '').toLowerCase() === selected);
-  return numberValue(match?.price ?? match?.amount, 0);
+  const selected = [...new Set((Array.isArray(selection) ? selection : String(selection || '').split(','))
+    .map((item) => String(item).trim().toLowerCase())
+    .filter(Boolean))];
+  return values.reduce((total, item) => {
+    const key = String(item.id || item.key || item.name || item.label || '').trim().toLowerCase();
+    return selected.includes(key) ? total + numberValue(item.price ?? item.amount, 0) : total;
+  }, 0);
 }
 
 function mergePaymentDetails(priceMenu, details = {}) {
@@ -1676,8 +1684,11 @@ async function calculateRegistrationPayload(payload) {
   const usedSeats = registrations.reduce((sum, registration) => sum + numberValue(registration.total_members ?? registration.seats, 1), 0);
   const isWaitlist = capacity > 0 && usedSeats + requestedSeats > capacity;
   let amount = numberValue(payload.amount ?? payload.fee, 0);
+  const priceSelections = Array.isArray(payload.priceSelections)
+    ? payload.priceSelections
+    : String(payload.priceSelection || payload.price_selection || '').split(',').map((item) => item.trim()).filter(Boolean);
   if (event?.price_menu) {
-    amount = priceFromMenu(event.price_menu, payload.priceSelection || payload.price_selection) || amount;
+    amount = priceFromMenu(event.price_menu, priceSelections) || amount;
   }
   if (booleanValue(event?.free_for_volunteers, false) && booleanValue(payload.isVolunteer, false)) amount = 0;
   if (booleanValue(event?.enable_volunteer_discount, false) && booleanValue(payload.isVolunteer, false)) {
@@ -1694,7 +1705,10 @@ async function calculateRegistrationPayload(payload) {
     amount,
     status: isWaitlist ? 'Waitlist' : (booleanValue(event?.is_auto_approved, false) ? 'Confirmed' : (payload.status || 'Submitted')),
     rsvp: payload.rsvp || event?.rsvp || null,
-    priceMenu: payload.priceMenu || event?.price_menu || null
+    priceMenu: mergePaymentDetails(payload.priceMenu || event?.price_menu || null, {
+      priceSelection: priceSelections.join(', '),
+      priceSelections
+    })
   };
 }
 
@@ -1801,48 +1815,69 @@ function emailCopy(value) {
   return escapeHtml(value).replace(/\r?\n/g, '<br>');
 }
 
-function renderBulkMessageEmail(subject, message = {}) {
-  const intro = String(message.intro || 'Hello Kannada Bharati family,').trim();
-  const body = String(message.body || '').trim();
-  const footer = String(message.footer || '').trim();
-  const ctaUrl = safeEmailLink(message.ctaUrl);
-  const ctaLabel = String(message.ctaLabel || '').trim();
-  const contextLabel = message.target
-    ? `${message.audience === 'class' ? 'Class' : 'Event'} update · ${message.target}`
-    : 'Community update';
+function emailAssetUrl(assetPath) {
+  return `${String(appBaseUrl).replace(/\/+$/, '')}/${String(assetPath || '').replace(/^\/+/, '')}`;
+}
+
+function renderEmailDetails(rows = []) {
+  if (!rows.length) return '';
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:2px 0 22px;border-collapse:collapse;">
+    ${rows.map(([label, value]) => `<tr>
+      <td width="38%" style="padding:10px 12px;border:1px solid #dce3df;background:#f6f8f5;color:#52625d;font-size:13px;font-weight:700;vertical-align:top;">${escapeHtml(label)}</td>
+      <td style="padding:10px 12px;border:1px solid #dce3df;color:#172723;font-size:13px;vertical-align:top;word-break:break-word;">${escapeHtml(value)}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function renderBrandedEmail({
+  subject,
+  contextLabel = 'Kannada Bharati update',
+  intro = 'Namaskara,',
+  body = '',
+  rows = [],
+  ctaUrl = '',
+  ctaLabel = '',
+  highlight = '',
+  logoSrc = emailAssetUrl('assets/kannada-bharati-logo.png')
+}) {
+  const safeCtaUrl = safeEmailLink(ctaUrl);
+  const preview = String(body || intro).replace(/\s+/g, ' ').slice(0, 140);
   const text = [
-    'KANNADA BHARATI', subject, contextLabel, '', intro, '', body,
-    ctaUrl && ctaLabel ? `${ctaLabel}: ${ctaUrl}` : '', footer, '',
-    'Regards,', 'Kannada Bharati Team', appBaseUrl
+    'KANNADA BHARATI', subject, contextLabel, '', intro, body, '',
+    ...rows.map(([label, value]) => `${label}: ${value}`),
+    safeCtaUrl && ctaLabel ? `${ctaLabel}: ${safeCtaUrl}` : '',
+    highlight, '', 'Regards,', 'Kannada Bharati Team', appBaseUrl
   ].filter(Boolean).join('\n');
   const html = `<!doctype html>
     <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head>
       <body style="margin:0;padding:0;background:#f2f5f3;color:#172723;font-family:Arial,Helvetica,sans-serif;">
-        <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(body.slice(0, 140))}</div>
+        <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(preview)}</div>
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f2f5f3;"><tr><td align="center" style="padding:28px 12px;">
           <table role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;border:1px solid #d8e0dc;background:#ffffff;">
             <tr><td style="height:6px;background:#f2b51d;font-size:0;line-height:0;">&nbsp;</td></tr>
-            <tr><td align="center" style="padding:26px 28px 24px;background:#087345;color:#ffffff;">
+            <tr><td align="center" style="padding:24px 24px 22px;background:#087345;color:#ffffff;">
+              <img src="${escapeHtml(logoSrc)}" width="76" alt="Kannada Bharati logo" style="display:block;width:76px;max-width:76px;height:auto;margin:0 auto 10px;border:0;outline:none;text-decoration:none;">
               <div style="margin-bottom:8px;font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;">Kannada Bharati</div>
-              <h1 style="margin:0;font-size:27px;line-height:1.18;font-weight:700;color:#ffffff;">${escapeHtml(subject)}</h1>
-              <div style="margin-top:10px;font-size:12px;line-height:1.4;color:#d9f2e6;">${escapeHtml(contextLabel)}</div>
+              <h1 style="margin:0;font-size:27px;line-height:1.2;font-weight:700;color:#ffffff;">${escapeHtml(subject)}</h1>
+              <div style="margin-top:9px;font-size:12px;line-height:1.45;color:#e0f3e8;">${escapeHtml(contextLabel)}</div>
             </td></tr>
             <tr><td style="padding:30px 32px 10px;background:#ffffff;color:#172723;font-size:15px;line-height:1.7;">
-              <p style="margin:0 0 18px;color:#172723;">${emailCopy(intro)}</p>
-              <div style="margin:0;color:#33443f;">${emailCopy(body)}</div>
+              <p style="margin:0 0 18px;">${emailCopy(intro)}</p>
+              ${body ? `<div style="margin:0 0 22px;color:#33443f;">${emailCopy(body)}</div>` : ''}
+              ${renderEmailDetails(rows)}
             </td></tr>
-            ${ctaUrl && ctaLabel ? `<tr><td align="center" style="padding:22px 32px 26px;background:#ffffff;">
+            ${safeCtaUrl && ctaLabel ? `<tr><td align="center" style="padding:2px 32px 26px;background:#ffffff;">
               <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" style="border-radius:5px;background:#e85d2a;">
-                <a href="${escapeHtml(ctaUrl)}" style="display:inline-block;padding:13px 24px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">${escapeHtml(ctaLabel)}</a>
+                <a href="${escapeHtml(safeCtaUrl)}" style="display:inline-block;padding:13px 24px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">${escapeHtml(ctaLabel)}</a>
               </td></tr></table>
             </td></tr>` : ''}
-            ${footer ? `<tr><td style="padding:0 32px 24px;background:#ffffff;">
+            ${highlight ? `<tr><td style="padding:0 32px 24px;background:#ffffff;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f6f8f5;border-left:4px solid #087345;"><tr>
-                <td style="padding:16px 18px;color:#33443f;font-size:13px;line-height:1.6;">${emailCopy(footer)}</td>
+                <td style="padding:16px 18px;color:#33443f;font-size:13px;line-height:1.6;">${emailCopy(highlight)}</td>
               </tr></table>
             </td></tr>` : ''}
             <tr><td style="padding:4px 32px 30px;background:#ffffff;color:#33443f;font-size:13px;line-height:1.6;">Regards,<br><strong style="color:#172723;">Kannada Bharati Team</strong></td></tr>
-            <tr><td align="center" style="padding:20px 24px;background:#073f3c;color:#dcebe6;font-size:11px;line-height:1.6;">
+            <tr><td align="center" style="padding:20px 18px;background:#073f3c;color:#dcebe6;font-size:11px;line-height:1.7;">
               <strong style="color:#ffffff;">Kannada Bharati · A Washington Kannada Association</strong><br>
               <a href="${escapeHtml(appBaseUrl)}" style="color:#f4c343;text-decoration:none;">Website</a>&nbsp; · &nbsp;
               <a href="https://www.facebook.com/kannada.bharati.92" style="color:#f4c343;text-decoration:none;">Facebook</a>&nbsp; · &nbsp;
@@ -1856,11 +1891,26 @@ function renderBulkMessageEmail(subject, message = {}) {
   return { text, html };
 }
 
-function renderEmail({ subject, template, payload = {} }) {
+function renderBulkMessageEmail(subject, message = {}, logoSrc) {
+  return renderBrandedEmail({
+    subject,
+    contextLabel: message.target
+      ? `${message.audience === 'class' ? 'Class' : 'Event'} update · ${message.target}`
+      : 'Community update',
+    intro: String(message.intro || 'Hello Kannada Bharati family,').trim(),
+    body: String(message.body || '').trim(),
+    ctaUrl: message.ctaUrl,
+    ctaLabel: String(message.ctaLabel || '').trim(),
+    highlight: String(message.footer || '').trim(),
+    logoSrc
+  });
+}
+
+function renderEmail({ subject, template, payload = {}, logoSrc }) {
   const registration = payload.registration || {};
   const donation = payload.donation || {};
   const bulkMessage = payload.message || {};
-  if (template === 'bulk-message') return renderBulkMessageEmail(subject, bulkMessage);
+  if (template === 'bulk-message') return renderBulkMessageEmail(subject, bulkMessage, logoSrc);
   const amountDue = Number(registration.amount || 0);
   const registrationPaid = registration.paid === true || registration.payment_received === true;
   const payUrl = amountDue > 0 && !registrationPaid ? payload.payUrl || '' : '';
@@ -1881,45 +1931,55 @@ function renderEmail({ subject, template, payload = {} }) {
   ].filter(([, value]) => value !== undefined && value !== null && value !== '');
   const rows = template === 'donation-confirmation' ? donationRows : registrationRows;
   const cta = template === 'confirm-email' ? payload.confirmUrl : template === 'forgot-password' ? payload.resetUrl : payUrl;
-  const ctaLabel = payUrl ? 'Pay Registration Fee' : 'Open link';
+  const ctaLabels = {
+    'confirm-email': 'Confirm email address',
+    'forgot-password': 'Reset password',
+    'registration-update': 'Pay registration fee',
+    'class-registration': 'Pay registration fee'
+  };
   const introByTemplate = {
-    'confirm-email': 'Please confirm your Kannada Bharati account.',
-    'forgot-password': 'Use the link below to reset your Kannada Bharati password.',
-    'two-factor-code': `Use this code to finish signing in: ${payload.code || ''}`,
-    'registration-update': 'Your Kannada Bharati registration has been updated.',
-    'class-registration': 'Your class registration details are below.',
-    'bulk-message': bulkMessage.intro || 'Kannada Bharati has sent you an update.',
-    'payment-confirmation': 'Thank you. Your payment has been received.',
-    'donation-confirmation': 'Thank you for supporting Kannada Bharati.'
+    'confirm-email': 'Welcome to Kannada Bharati.',
+    'forgot-password': 'We received a request to reset your password.',
+    'two-factor-code': 'Use the verification code below to finish signing in.',
+    'registration-update': 'Your Kannada Bharati registration has been received or updated.',
+    'class-registration': 'Your Kannada Bharati class registration has been received.',
+    'payment-confirmation': 'Thank you. Your payment has been received successfully.',
+    'donation-confirmation': 'Thank you for supporting Kannada Bharati and our community programs.'
   };
   const intro = introByTemplate[template] || 'Kannada Bharati notification.';
-  const bodyText = template === 'bulk-message' ? String(bulkMessage.body || '').trim() : '';
-  const footerText = template === 'bulk-message' ? String(bulkMessage.footer || '').trim() : '';
-  const text = [
+  const bodyByTemplate = {
+    'confirm-email': 'Confirm your email address to finish setting up your account.',
+    'forgot-password': 'Use the secure button below to choose a new password. If you did not request this, you can ignore this email.',
+    'registration-update': payUrl ? 'Payment is pending. Review the registration details and use the button below to complete payment.' : 'Your registration details are listed below.',
+    'class-registration': payUrl ? 'Payment is pending. Review the class details and use the button below to complete payment.' : 'Your class registration details are listed below.',
+    'payment-confirmation': 'Keep this email for your records. Your registration details are listed below.',
+    'donation-confirmation': 'Your donation details are listed below.'
+  };
+  const contextByTemplate = {
+    'confirm-email': 'Account verification',
+    'forgot-password': 'Password assistance',
+    'two-factor-code': payload.purpose === 'two-factor-setup' ? 'Two-factor authentication setup' : 'Secure login verification',
+    'registration-update': 'Event registration update',
+    'class-registration': 'Class registration update',
+    'payment-confirmation': 'Payment confirmation',
+    'donation-confirmation': 'Donation confirmation'
+  };
+  const highlight = template === 'two-factor-code'
+    ? `Verification code: ${payload.code || ''}\nThis code expires in 10 minutes. Do not share it with anyone.`
+    : template === 'donation-confirmation'
+      ? 'Your support helps Kannada Bharati continue cultural, educational, and community programs.'
+      : '';
+  return renderBrandedEmail({
     subject,
-    '',
+    contextLabel: contextByTemplate[template] || 'Kannada Bharati update',
     intro,
-    bodyText,
-    cta ? `Link: ${cta}` : '',
-    payUrl ? `Pay online: ${cta}` : '',
-    ...rows.map(([label, value]) => `${label}: ${value}`),
-    footerText,
-    '',
-    'Kannada Bharati'
-  ].filter(Boolean).join('\n');
-  const html = `
-    <div style="font-family:Arial,sans-serif;color:#102a26;line-height:1.5;max-width:680px">
-      <h2 style="color:#004d46">${escapeHtml(subject)}</h2>
-      <p>${escapeHtml(intro)}</p>
-      ${bodyText ? `<div style="white-space:pre-line;margin:16px 0">${escapeHtml(bodyText)}</div>` : ''}
-      ${payUrl ? `<p style="margin:16px 0 8px"><strong>Payment is pending.</strong> Use the button below to open your account and pay this registration fee.</p>` : ''}
-      ${cta ? `<p><a style="display:inline-block;background:#edae13;color:#111;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700" href="${escapeHtml(cta)}">${escapeHtml(ctaLabel)}</a></p>` : ''}
-      ${rows.length ? `<table style="border-collapse:collapse;width:100%;margin-top:16px">${rows.map(([label, value]) => `<tr><th style="text-align:left;background:#f4f7f2;border:1px solid #d7dfda;padding:8px">${escapeHtml(label)}</th><td style="border:1px solid #d7dfda;padding:8px">${escapeHtml(value)}</td></tr>`).join('')}</table>` : ''}
-      ${footerText ? `<p style="margin-top:18px;color:#51615d">${escapeHtml(footerText)}</p>` : ''}
-      <p style="margin-top:18px">Kannada Bharati</p>
-    </div>
-  `;
-  return { text, html };
+    body: bodyByTemplate[template] || '',
+    rows,
+    ctaUrl: cta,
+    ctaLabel: ctaLabels[template] || (payUrl ? 'Pay registration fee' : ''),
+    highlight,
+    logoSrc
+  });
 }
 
 function sampleTemplateMessage(template) {
@@ -1953,6 +2013,11 @@ function sampleTemplateMessage(template) {
       template: 'forgot-password',
       payload: { resetUrl: `${appBaseUrl}/login?resetToken=sample-token` }
     },
+    'two-factor-code': {
+      subject: 'Your Kannada Bharati login code',
+      template: 'two-factor-code',
+      payload: { code: '482913', email: adminEmail, purpose: 'two-factor' }
+    },
     registration: {
       subject: 'Kannada Bharati registration received',
       template: 'registration-update',
@@ -1967,6 +2032,11 @@ function sampleTemplateMessage(template) {
       subject: 'Kannada Bharati donation confirmation',
       template: 'donation-confirmation',
       payload: { donation }
+    },
+    payment: {
+      subject: 'Kannada Bharati payment confirmation',
+      template: 'payment-confirmation',
+      payload: { registration: { ...registration, status: 'Confirmed', paid: true, payment_received: true } }
     },
     'bulk-message': {
       subject: 'Classes Registration Now Open',
@@ -2028,14 +2098,19 @@ async function sendEmailNow(message) {
       pass: smtpPass
     }
   });
-  const rendered = renderEmail(message);
+  const rendered = renderEmail({ ...message, logoSrc: 'cid:kannada-bharati-logo' });
   const info = await transporter.sendMail({
     from: emailFromHeader,
     replyTo: emailFromAddress,
     to: message.to,
     subject: message.subject,
     text: rendered.text,
-    html: rendered.html
+    html: rendered.html,
+    attachments: [{
+      filename: 'kannada-bharati-logo.png',
+      path: emailLogoPath,
+      cid: 'kannada-bharati-logo'
+    }]
   });
   return {
     accepted: info.accepted || [],
@@ -3416,6 +3491,8 @@ app.post('/api/payments/paypal/orders', asyncHandler(async (req, res) => {
 app.get('/api/payments/paypal/donate-link', asyncHandler(async (req, res) => {
   res.json({
     donateUrl: kbPaypalDonateUrl,
+    environment: paypalEnvironment,
+    gatewayConfigured: Boolean(paypalClientId && paypalClientSecret),
     legacyHostedButtonId: process.env.KB_PAYPAL_HOSTED_BUTTON_ID || 'EY5YVURQPDWEE',
     legacyFormUrl: 'https://www.paypal.com/cgi-bin/webscr'
   });

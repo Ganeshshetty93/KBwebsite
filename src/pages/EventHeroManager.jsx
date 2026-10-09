@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Eye, EyeOff, GalleryHorizontal, Image, ImagePlus, Save, Trash2, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, EyeOff, GalleryHorizontal, Image, ImagePlus, Save, Trash2, Upload } from 'lucide-react';
 import PageLoader from '../components/PageLoader.jsx';
 import { apiReadSiteSetting, apiSaveSiteSetting, apiUploadFile } from '../utils/api.js';
 import {
@@ -37,8 +37,10 @@ export default function EventHeroManager() {
   const [memoriesSaving, setMemoriesSaving] = useState(false);
   const [memoriesError, setMemoriesError] = useState('');
   const [memoriesNotice, setMemoriesNotice] = useState('');
+  const [tabScroll, setTabScroll] = useState({ atStart: true, atEnd: false });
   const inputRef = useRef(null);
   const memoriesInputRef = useRef(null);
+  const tabsRef = useRef(null);
 
   useEffect(() => {
     let ignore = false;
@@ -68,6 +70,27 @@ export default function EventHeroManager() {
     return () => { ignore = true; };
   }, []);
 
+  useEffect(() => {
+    const tabs = tabsRef.current;
+    if (!tabs || loading) return undefined;
+
+    function updateTabScroll() {
+      const maxScroll = Math.max(0, tabs.scrollWidth - tabs.clientWidth);
+      setTabScroll({
+        atStart: tabs.scrollLeft <= 2,
+        atEnd: tabs.scrollLeft >= maxScroll - 2
+      });
+    }
+
+    updateTabScroll();
+    tabs.addEventListener('scroll', updateTabScroll, { passive: true });
+    window.addEventListener('resize', updateTabScroll);
+    return () => {
+      tabs.removeEventListener('scroll', updateTabScroll);
+      window.removeEventListener('resize', updateTabScroll);
+    };
+  }, [loading]);
+
   const pageDefinition = heroPageDefinitions.find((page) => page.key === activePage) || heroPageDefinitions[0];
   const config = settings[activePage] || cloneDefaultPageHeroSettings()[activePage];
   const slides = config.slides || [];
@@ -82,6 +105,12 @@ export default function EventHeroManager() {
       [activePage]: updater(current[activePage] || cloneDefaultPageHeroSettings()[activePage])
     }));
     setNotice('');
+  }
+
+  function scrollPageTabs(direction) {
+    const tabs = tabsRef.current;
+    if (!tabs) return;
+    tabs.scrollBy({ left: direction * Math.max(148, tabs.clientWidth * 0.72), behavior: 'smooth' });
   }
 
   function updateSlide(id, field, value) {
@@ -291,7 +320,7 @@ export default function EventHeroManager() {
         </div>
         <div className="event-hero-admin-actions">
           <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={uploadPhotos} />
-          <button className="button secondary" type="button" onClick={() => inputRef.current?.click()} disabled={uploading || slides.length >= 12}>
+          <button className="button secondary-dark" type="button" onClick={() => inputRef.current?.click()} disabled={uploading || slides.length >= 12}>
             <Upload size={17} /> {uploading ? 'Uploading...' : `Upload to ${pageDefinition.label}`}
           </button>
           <button className="button" type="button" onClick={saveSettings} disabled={saving || uploading}>
@@ -300,23 +329,31 @@ export default function EventHeroManager() {
         </div>
       </header>
 
-      <nav className="page-hero-admin-tabs" aria-label="Choose page to edit">
-        {heroPageDefinitions.map((page) => (
-          <button
-            type="button"
-            className={activePage === page.key ? 'active' : ''}
-            key={page.key}
-            onClick={() => {
-              setActivePage(page.key);
-              setError('');
-              setNotice('');
-            }}
-          >
-            {page.label}
-            <span>{settings[page.key]?.slides?.filter((slide) => slide.enabled).length || 0}</span>
-          </button>
-        ))}
-      </nav>
+      <div className="page-hero-tabs-slider">
+        <button className="page-hero-tabs-arrow previous" type="button" onClick={() => scrollPageTabs(-1)} disabled={tabScroll.atStart} aria-label="Previous page menu items">
+          <ChevronLeft size={19} />
+        </button>
+        <nav className="page-hero-admin-tabs" aria-label="Choose page to edit" ref={tabsRef}>
+          {heroPageDefinitions.map((page) => (
+            <button
+              type="button"
+              className={activePage === page.key ? 'active' : ''}
+              key={page.key}
+              onClick={() => {
+                setActivePage(page.key);
+                setError('');
+                setNotice('');
+              }}
+            >
+              <span className="page-hero-tab-label">{page.label}</span>
+              <span className="page-hero-tab-count">{settings[page.key]?.slides?.filter((slide) => slide.enabled).length || 0}</span>
+            </button>
+          ))}
+        </nav>
+        <button className="page-hero-tabs-arrow next" type="button" onClick={() => scrollPageTabs(1)} disabled={tabScroll.atEnd} aria-label="Next page menu items">
+          <ChevronRight size={19} />
+        </button>
+      </div>
 
       <section className="page-hero-display-settings admin-page-panel">
         <div>
@@ -421,11 +458,25 @@ export default function EventHeroManager() {
               {memories.length} {memories.length === 1 ? 'photo' : 'photos'}
             </span>
             <input ref={memoriesInputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={uploadMemoryPhotos} />
-            <button className="button secondary compact" type="button" onClick={() => memoriesInputRef.current?.click()} disabled={memoriesUploading || memories.length >= 40}>
-              <Upload size={16} /> {memoriesUploading ? 'Uploading...' : 'Upload memories'}
+            <button
+              className="event-memory-icon-button"
+              type="button"
+              onClick={() => memoriesInputRef.current?.click()}
+              disabled={memoriesUploading || memories.length >= 40}
+              aria-label={memoriesUploading ? 'Uploading memories' : 'Upload memories'}
+              data-tooltip={memoriesUploading ? 'Uploading...' : memories.length >= 40 ? 'Maximum 40 photos' : 'Upload memories'}
+            >
+              <Upload size={19} />
             </button>
-            <button className="button compact" type="button" onClick={saveMemories} disabled={memoriesSaving || memoriesUploading}>
-              <Save size={16} /> {memoriesSaving ? 'Saving...' : 'Save memories'}
+            <button
+              className="event-memory-icon-button is-primary"
+              type="button"
+              onClick={saveMemories}
+              disabled={memoriesSaving || memoriesUploading}
+              aria-label={memoriesSaving ? 'Saving memories' : 'Save memories'}
+              data-tooltip={memoriesSaving ? 'Saving...' : 'Save memories'}
+            >
+              <Save size={19} />
             </button>
           </div>
         </div>
@@ -460,12 +511,12 @@ export default function EventHeroManager() {
                   </label>
                 </div>
                 <div className="event-hero-row-actions">
-                  <button type="button" onClick={() => updateMemory(item.id, 'enabled', !item.enabled)} aria-label={item.enabled ? 'Hide memory' : 'Show memory'} title={item.enabled ? 'Hide memory' : 'Show memory'}>
+                  <button className="event-memory-icon-button" type="button" onClick={() => updateMemory(item.id, 'enabled', !item.enabled)} aria-label={item.enabled ? 'Hide memory' : 'Show memory'} data-tooltip={item.enabled ? 'Hide memory' : 'Show memory'}>
                     {item.enabled ? <Eye size={18} /> : <EyeOff size={18} />}
                   </button>
-                  <button type="button" onClick={() => moveMemory(index, -1)} disabled={index === 0} aria-label="Move memory up" title="Move up"><ArrowUp size={18} /></button>
-                  <button type="button" onClick={() => moveMemory(index, 1)} disabled={index === memories.length - 1} aria-label="Move memory down" title="Move down"><ArrowDown size={18} /></button>
-                  <button className="danger" type="button" onClick={() => removeMemory(item.id)} aria-label="Delete memory" title="Delete memory"><Trash2 size={18} /></button>
+                  <button className="event-memory-icon-button" type="button" onClick={() => moveMemory(index, -1)} disabled={index === 0} aria-label="Move memory up" data-tooltip="Move up"><ArrowUp size={18} /></button>
+                  <button className="event-memory-icon-button" type="button" onClick={() => moveMemory(index, 1)} disabled={index === memories.length - 1} aria-label="Move memory down" data-tooltip="Move down"><ArrowDown size={18} /></button>
+                  <button className="event-memory-icon-button danger" type="button" onClick={() => removeMemory(item.id)} aria-label="Delete memory" data-tooltip="Delete memory"><Trash2 size={18} /></button>
                 </div>
               </article>
             ))}

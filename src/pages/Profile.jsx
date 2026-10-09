@@ -23,7 +23,7 @@ import {
   apiVerifyTwoFactorSetup,
   apiUploadFile
 } from '../utils/api.js';
-import { cleanText, firstError, validateDateOrder, validateImageFile, validatePhone, validateRequired } from '../utils/validation.js';
+import { cleanText, firstError, validateImageFile, validatePhone, validateRequired } from '../utils/validation.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 
@@ -378,7 +378,6 @@ export default function Profile() {
       validatePhone(payload.phone),
       validateRequired(payload.gender, 'Gender'),
       validateRequired(payload.company, 'Company'),
-      validateDateOrder(payload.birthDate, payload.spouseBirthDate, 'Spouse date of birth cannot be before member date of birth.'),
       imageError
     ]);
 
@@ -516,7 +515,7 @@ export default function Profile() {
               <label>Last name *<input name="lastName" defaultValue={profile.lastName || user.lastName || user.name?.split(' ').slice(1).join(' ') || ''} required /></label>
             </div>
             <div className="form-two">
-              <label>Date of birth *<DatePicker name="birthDate" defaultValue={profile.birthDate || ''} required placeholder="Choose date of birth" /></label>
+              <label>Birth month and year *<DatePicker name="birthDate" mode="month" defaultValue={profile.birthDate || ''} required placeholder="Choose month and year" /></label>
               <label>Phone number *<input name="phone" type="tel" defaultValue={profile.phone || user.phone || ''} required /></label>
             </div>
             <div className="form-two">
@@ -541,7 +540,7 @@ export default function Profile() {
               <label>First name<input name="spouseFirstName" defaultValue={profile.spouseFirstName || ''} /></label>
               <label>Last name<input name="spouseLastName" defaultValue={profile.spouseLastName || ''} /></label>
             </div>
-            <label>Date of birth<DatePicker name="spouseBirthDate" defaultValue={profile.spouseBirthDate || ''} placeholder="Choose date of birth" /></label>
+            <label>Birth month and year<DatePicker name="spouseBirthDate" mode="month" defaultValue={profile.spouseBirthDate || ''} placeholder="Choose month and year" /></label>
 
             {error && <p className="form-error">{error}</p>}
             {saved && <p className="success">Profile saved.</p>}

@@ -46,6 +46,7 @@ export default function DatePicker({
   quickOptions = []
 }) {
   const includeTime = mode === 'datetime';
+  const monthOnly = mode === 'month';
   const controlled = value !== undefined;
   const [internalValue, setInternalValue] = useState(defaultValue || '');
   const currentValue = controlled ? value || '' : internalValue;
@@ -53,6 +54,8 @@ export default function DatePicker({
   const [open, setOpen] = useState(false);
   const [viewDate, setViewDate] = useState(() => selectedDate || new Date());
   const [timeValue, setTimeValue] = useState(() => readTime(currentValue));
+  const [monthPanel, setMonthPanel] = useState('months');
+  const [yearPageStart, setYearPageStart] = useState(() => (selectedDate || new Date()).getFullYear() - 5);
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -97,6 +100,134 @@ export default function DatePicker({
       return date;
     });
   }, [viewDate]);
+
+  if (monthOnly) {
+    const today = new Date();
+    const currentMonth = toDateValue(today).slice(0, 7);
+    const minMonth = min ? String(min).slice(0, 7) : '';
+    const maxMonth = max ? String(max).slice(0, 7) : currentMonth;
+    const viewYear = viewDate.getFullYear();
+    const minYear = minMonth ? Number(minMonth.slice(0, 4)) : today.getFullYear() - 100;
+    const maxYear = Number(maxMonth.slice(0, 4));
+    const years = Array.from({ length: 12 }, (_item, index) => yearPageStart + index);
+    const displayValue = selectedDate
+      ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(selectedDate)
+      : placeholder;
+
+    function commitMonth(year, monthIndex) {
+      const monthValue = `${year}-${pad(monthIndex + 1)}`;
+      if ((minMonth && monthValue < minMonth) || (maxMonth && monthValue > maxMonth)) return;
+      const nextValue = `${monthValue}-01`;
+      if (!controlled) setInternalValue(nextValue);
+      onChange?.(nextValue);
+      setViewDate(new Date(year, monthIndex, 1));
+      setOpen(false);
+    }
+
+    function clearMonth() {
+      if (!controlled) setInternalValue('');
+      onChange?.('');
+      setOpen(false);
+    }
+
+    return (
+      <div className="kb-date-picker" ref={rootRef}>
+        {label && <span className="kb-date-label">{label}</span>}
+        {name && <input type="hidden" name={name} value={currentValue} required={required} />}
+        <button
+          className={currentValue ? 'kb-date-trigger has-value' : 'kb-date-trigger'}
+          type="button"
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          onClick={() => {
+            setMonthPanel('months');
+            setOpen((state) => !state);
+          }}
+        >
+          <CalendarDays size={18} aria-hidden="true" />
+          <span>{displayValue}</span>
+        </button>
+        {open && (
+          <div className="kb-date-popover kb-month-popover" role="dialog" aria-label="Choose birth month and year">
+            <div className="kb-date-popover-head kb-month-popover-head">
+              <button
+                type="button"
+                aria-label={monthPanel === 'months' ? 'Previous year' : 'Previous years'}
+                disabled={monthPanel === 'months' ? viewYear <= minYear : yearPageStart <= minYear}
+                onClick={() => {
+                  if (monthPanel === 'months') setViewDate(new Date(viewYear - 1, viewDate.getMonth(), 1));
+                  else setYearPageStart((start) => Math.max(minYear, start - 12));
+                }}
+              ><ChevronLeft size={18} /></button>
+              <button
+                type="button"
+                className="kb-year-switch"
+                aria-label={monthPanel === 'months' ? 'Choose a year' : 'Return to month selection'}
+                onClick={() => {
+                  if (monthPanel === 'months') setYearPageStart(Math.max(minYear, Math.min(viewYear - 5, maxYear - 11)));
+                  setMonthPanel((panel) => panel === 'months' ? 'years' : 'months');
+                }}
+              >
+                {monthPanel === 'months' ? viewYear : `${years[0]} - ${years[years.length - 1]}`}
+              </button>
+              <button
+                type="button"
+                aria-label={monthPanel === 'months' ? 'Next year' : 'Next years'}
+                disabled={monthPanel === 'months' ? viewYear >= maxYear : years[years.length - 1] >= maxYear}
+                onClick={() => {
+                  if (monthPanel === 'months') setViewDate(new Date(viewYear + 1, viewDate.getMonth(), 1));
+                  else setYearPageStart((start) => Math.min(maxYear - 11, start + 12));
+                }}
+              ><ChevronRight size={18} /></button>
+            </div>
+
+            {monthPanel === 'months' ? (
+              <div className="kb-month-grid">
+                {Array.from({ length: 12 }, (_item, monthIndex) => {
+                  const monthValue = `${viewYear}-${pad(monthIndex + 1)}`;
+                  const disabled = (minMonth && monthValue < minMonth) || monthValue > maxMonth;
+                  const selected = selectedDate?.getFullYear() === viewYear && selectedDate?.getMonth() === monthIndex;
+                  const isCurrent = today.getFullYear() === viewYear && today.getMonth() === monthIndex;
+                  return (
+                    <button
+                      key={monthValue}
+                      type="button"
+                      disabled={disabled}
+                      className={[selected ? 'is-selected' : '', isCurrent ? 'is-current' : ''].filter(Boolean).join(' ')}
+                      onClick={() => commitMonth(viewYear, monthIndex)}
+                    >
+                      <span>{new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(viewYear, monthIndex, 1))}</span>
+                      <small>{new Intl.DateTimeFormat('en-US', { month: 'long' }).format(new Date(viewYear, monthIndex, 1))}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="kb-year-grid">
+                {years.map((year) => (
+                  <button
+                    key={year}
+                    type="button"
+                    disabled={year < minYear || year > maxYear}
+                    className={[year === viewYear ? 'is-selected' : '', year === today.getFullYear() ? 'is-current' : ''].filter(Boolean).join(' ')}
+                    onClick={() => {
+                      setViewDate(new Date(year, viewDate.getMonth(), 1));
+                      setMonthPanel('months');
+                    }}
+                  >{year}</button>
+                ))}
+              </div>
+            )}
+
+            <div className="kb-date-actions kb-month-actions">
+              <button type="button" onClick={clearMonth}><X size={14} /> Clear</button>
+              <button type="button" onClick={() => commitMonth(today.getFullYear(), today.getMonth())}>This month</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const displayValue = currentValue
     ? new Intl.DateTimeFormat('en-US', {
