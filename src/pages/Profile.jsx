@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Camera, CheckCircle2, ReceiptText, Plus, Trash2, X } from 'lucide-react';
+import { Camera, CheckCircle2, ReceiptText, Plus, Trash2, X, UserRound, Lock, ListChecks, MapPin, UsersRound } from 'lucide-react';
 import { getCurrentUser, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
 import {
   apiAddProfileChild,
@@ -97,6 +97,7 @@ export default function Profile() {
   const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [paymentMessage, setPaymentMessage] = useState('');
   const [paymentError, setPaymentError] = useState('');
+  const [activeProfileTab, setActiveProfileTab] = useState('profile');
   const googleTokenClientRef = useRef(null);
 
   useEffect(() => {
@@ -483,33 +484,58 @@ export default function Profile() {
     window.dispatchEvent(new Event('kb-data-change'));
   }
 
+  const profileName = [
+    profile.firstName || user.firstName || user.name?.split(' ')[0],
+    profile.lastName || user.lastName || user.name?.split(' ').slice(1).join(' ')
+  ].filter(Boolean).join(' ').trim() || user.name || user.email;
+  const profileInitials = profileName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join('')
+    .toUpperCase();
+
   return (
     <main className="member-profile-page">
       <section className="member-profile-shell">
-        <aside className="member-account-card">
+        <header className="profile-account-hero">
+          <div>
+            <h1>Manage your account</h1>
+            <p>Update your profile and account settings</p>
+          </div>
+        </header>
+
+        <nav className="profile-tab-strip" aria-label="Profile sections" role="tablist">
+          <button className={activeProfileTab === 'profile' ? 'is-active' : ''} type="button" role="tab" aria-selected={activeProfileTab === 'profile'} onClick={() => setActiveProfileTab('profile')}><UserRound size={18} /> Profile information</button>
+          <button className={activeProfileTab === 'security' ? 'is-active' : ''} type="button" role="tab" aria-selected={activeProfileTab === 'security'} onClick={() => setActiveProfileTab('security')}><Lock size={18} /> Account security</button>
+          <button className={activeProfileTab === 'registrations' ? 'is-active' : ''} type="button" role="tab" aria-selected={activeProfileTab === 'registrations'} onClick={() => setActiveProfileTab('registrations')}><ListChecks size={18} /> My registrations</button>
+        </nav>
+
+        <div className="profile-identity-strip">
           <div className="member-avatar">
-            {profile.photo ? <img src={profile.photo} alt="Profile" /> : <Camera size={34} />}
+            {profile.photo ? <img src={profile.photo} alt="Profile" /> : <span>{profileInitials}</span>}
           </div>
-          <h1>Manage your account</h1>
-          <p>{user.email}</p>
-          <div className="member-account-lines">
-            <button type="button" onClick={() => scrollToProfileSection('account-password')}><strong>Password</strong><em>Create</em></button>
-            <button type="button" onClick={() => scrollToProfileSection('external-logins')}><strong>External logins</strong><em>Manage</em></button>
-            <button type="button" onClick={() => scrollToProfileSection('two-factor') }><strong>Two-factor</strong><em>{twoFactorEnabled ? 'Enabled' : 'Disabled'}</em></button>
+          <div>
+            <strong>{profileName}</strong>
+            <span>{user.email}</span>
           </div>
-        </aside>
+          <div className="profile-photo-control">
+            <label className="profile-photo-field profile-photo-button">
+              <Camera size={16} /> Change photo
+              <input name="profilePhoto" type="file" accept="image/png,image/jpeg" form="profile-information" />
+            </label>
+            <small>JPG or PNG (max 5MB)</small>
+          </div>
+        </div>
 
         <section className="member-profile-content">
+          {activeProfileTab === 'profile' && (
+          <>
           <form id="profile-information" className="member-profile-form" onSubmit={handleProfileSubmit}>
             <div className="profile-section-heading">
-              <span>Account</span>
-              <h2>Profile information</h2>
-              <p>Update member, spouse, address, and profile image details.</p>
+              <span><UserRound size={18} /> Personal information</span>
             </div>
-            <label className="profile-photo-field">
-              Profile picture <small>(jpg/jpeg/png)</small>
-              <input name="profilePhoto" type="file" accept="image/png,image/jpeg" />
-            </label>
             <div className="form-two">
               <label>First name *<input name="firstName" defaultValue={profile.firstName || user.firstName || user.name?.split(' ')[0] || ''} required /></label>
               <label>Last name *<input name="lastName" defaultValue={profile.lastName || user.lastName || user.name?.split(' ').slice(1).join(' ') || ''} required /></label>
@@ -524,30 +550,76 @@ export default function Profile() {
             </div>
             <label>Description<textarea name="description" defaultValue={profile.description || ''} maxLength="500" /></label>
 
-            <h3>Address</h3>
-            <div className="form-two">
-              <label>Address line1<input name="address1" defaultValue={profile.address1 || ''} /></label>
-              <label>Address line2<input name="address2" defaultValue={profile.address2 || ''} /></label>
-            </div>
-            <div className="form-three">
-              <label>City<input name="city" defaultValue={profile.city || ''} /></label>
-              <label>State<input name="state" defaultValue={profile.state || ''} /></label>
-              <label>Zip code<input name="zipCode" defaultValue={profile.zipCode || ''} /></label>
-            </div>
+            <div className="profile-form-split">
+              <section>
+                <div className="profile-section-heading compact-heading"><span><MapPin size={18} /> Address</span></div>
+                <div className="form-two">
+                  <label>Address line1<input name="address1" defaultValue={profile.address1 || ''} /></label>
+                  <label>Address line2<input name="address2" defaultValue={profile.address2 || ''} /></label>
+                </div>
+                <div className="form-three">
+                  <label>City<input name="city" defaultValue={profile.city || ''} /></label>
+                  <label>State<input name="state" defaultValue={profile.state || ''} /></label>
+                  <label>Zip code<input name="zipCode" defaultValue={profile.zipCode || ''} /></label>
+                </div>
+              </section>
 
-            <h3>Spouse info</h3>
-            <div className="form-two">
-              <label>First name<input name="spouseFirstName" defaultValue={profile.spouseFirstName || ''} /></label>
-              <label>Last name<input name="spouseLastName" defaultValue={profile.spouseLastName || ''} /></label>
+              <section>
+                <div className="profile-section-heading compact-heading"><span><UsersRound size={18} /> Spouse information</span></div>
+                <div className="form-two">
+                  <label>First name<input name="spouseFirstName" defaultValue={profile.spouseFirstName || ''} /></label>
+                  <label>Last name<input name="spouseLastName" defaultValue={profile.spouseLastName || ''} /></label>
+                </div>
+                <label>Birth month and year<DatePicker name="spouseBirthDate" mode="month" defaultValue={profile.spouseBirthDate || ''} placeholder="Choose month and year" /></label>
+              </section>
             </div>
-            <label>Birth month and year<DatePicker name="spouseBirthDate" mode="month" defaultValue={profile.spouseBirthDate || ''} placeholder="Choose month and year" /></label>
 
             {error && <p className="form-error">{error}</p>}
             {saved && <p className="success">Profile saved.</p>}
-            <button className="button primary" type="submit">Save Profile</button>
+            <div className="profile-save-bar">
+              <button className="button ghost" type="reset">Cancel</button>
+              <button className="button primary" type="submit"><CheckCircle2 size={16} /> Save Profile</button>
+            </div>
           </form>
 
-          <section className="member-profile-form account-security-panel">
+          <section className="member-profile-form">
+            <div className="profile-section-heading">
+              <span>Family</span>
+              <h2>Children info</h2>
+              <p>Add children here so class registration can show them in the member dropdown.</p>
+            </div>
+            <form className="child-inline-form" onSubmit={handleChildSubmit}>
+              <input name="firstName" placeholder="First name" />
+              <input name="lastName" placeholder="Last name" />
+              <select name="gender" defaultValue="">
+                <option value="" disabled>Gender</option>
+                <option>Male</option>
+                <option>Female</option>
+                <option>Prefer not to say</option>
+              </select>
+              <DatePicker name="birthDate" placeholder="Child date of birth" />
+              <button className="button compact" type="submit"><Plus size={16} /> Add child</button>
+            </form>
+            {childError && <p className="form-error">{childError}</p>}
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>First name</th><th>Last name</th><th>Gender</th><th>Date of birth</th><th>Action</th></tr></thead>
+                <tbody>
+                  {children.length ? children.map((child) => (
+                    <tr key={child.id}>
+                      <td>{child.firstName}</td><td>{child.lastName}</td><td>{child.gender}</td><td>{child.birthDate}</td>
+                      <td><button className="table-icon-button" type="button" onClick={() => removeChild(child.id)}><Trash2 size={15} /> Remove</button></td>
+                    </tr>
+                  )) : <tr><td colSpan="5">No children added yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          </>
+          )}
+
+          {activeProfileTab === 'security' && (
+          <section className="member-profile-form account-security-panel" role="tabpanel">
             <div className="profile-section-heading">
               <span>Security</span>
               <h2>Account security</h2>
@@ -632,8 +704,10 @@ export default function Profile() {
               </form>
             )}
           </section>
+          )}
 
-          <section className="member-profile-form">
+          {activeProfileTab === 'registrations' && (
+          <section id="profile-registrations" className="member-profile-form">
             <div className="profile-section-heading">
               <span>Payments</span>
               <h2>My class and event registrations</h2>
@@ -668,40 +742,7 @@ export default function Profile() {
               </table>
             </div>
           </section>
-
-          <section className="member-profile-form">
-            <div className="profile-section-heading">
-              <span>Family</span>
-              <h2>Children info</h2>
-              <p>Add children here so class registration can show them in the member dropdown.</p>
-            </div>
-            <form className="child-inline-form" onSubmit={handleChildSubmit}>
-              <input name="firstName" placeholder="First name" />
-              <input name="lastName" placeholder="Last name" />
-              <select name="gender" defaultValue="">
-                <option value="" disabled>Gender</option>
-                <option>Male</option>
-                <option>Female</option>
-                <option>Prefer not to say</option>
-              </select>
-              <DatePicker name="birthDate" placeholder="Child date of birth" />
-              <button className="button compact" type="submit"><Plus size={16} /> Add child</button>
-            </form>
-            {childError && <p className="form-error">{childError}</p>}
-            <div className="table-scroll">
-              <table>
-                <thead><tr><th>First name</th><th>Last name</th><th>Gender</th><th>Date of birth</th><th>Action</th></tr></thead>
-                <tbody>
-                  {children.length ? children.map((child) => (
-                    <tr key={child.id}>
-                      <td>{child.firstName}</td><td>{child.lastName}</td><td>{child.gender}</td><td>{child.birthDate}</td>
-                      <td><button className="table-icon-button" type="button" onClick={() => removeChild(child.id)}><Trash2 size={15} /> Remove</button></td>
-                    </tr>
-                  )) : <tr><td colSpan="5">No children added yet.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          )}
         </section>
       </section>
       {selectedRegistration && (

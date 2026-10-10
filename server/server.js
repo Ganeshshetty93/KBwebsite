@@ -33,6 +33,7 @@ const smtpPass = (process.env.EMAIL_SMTP_PASS || process.env.SMTP_PASS || '').re
 const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpUser || 'no-reply@kannadabharati.org';
 const emailFromHeader = /<.+@.+>/.test(emailFromAddress) ? emailFromAddress : `"Kannada Bharati" <${emailFromAddress}>`;
 const emailLogoPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets/kannada-bharati-logo.png');
+const emailBackgroundPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets/kannada-bharati-email-background.png');
 const recaptchaSecret = process.env.GOOGLE_RECAPTCHA_SECRET || '';
 const defaultVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true';
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || '';
@@ -1838,7 +1839,8 @@ function renderBrandedEmail({
   ctaUrl = '',
   ctaLabel = '',
   highlight = '',
-  logoSrc = emailAssetUrl('assets/kannada-bharati-logo.png')
+  logoSrc = emailAssetUrl('assets/kannada-bharati-logo.png'),
+  backgroundSrc = emailAssetUrl('assets/kannada-bharati-email-background.png')
 }) {
   const safeCtaUrl = safeEmailLink(ctaUrl);
   const preview = String(body || intro).replace(/\s+/g, ' ').slice(0, 140);
@@ -1850,10 +1852,11 @@ function renderBrandedEmail({
   ].filter(Boolean).join('\n');
   const html = `<!doctype html>
     <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head>
-      <body style="margin:0;padding:0;background:#f2f5f3;color:#172723;font-family:Arial,Helvetica,sans-serif;">
+      <body bgcolor="#650014" style="margin:0;padding:0;background-color:#650014;background-image:url('${escapeHtml(backgroundSrc)}');background-repeat:no-repeat;background-position:center bottom;background-size:cover;color:#172723;font-family:Arial,Helvetica,sans-serif;">
         <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(preview)}</div>
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f2f5f3;"><tr><td align="center" style="padding:28px 12px;">
-          <table role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;border:1px solid #d8e0dc;background:#ffffff;">
+        <!--[if gte mso 9]><v:background xmlns:v="urn:schemas-microsoft-com:vml" fill="t"><v:fill type="frame" src="${escapeHtml(backgroundSrc)}" color="#650014" /></v:background><![endif]-->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" background="${escapeHtml(backgroundSrc)}" bgcolor="#650014" style="width:100%;background-color:#650014;background-image:url('${escapeHtml(backgroundSrc)}');background-repeat:no-repeat;background-position:center bottom;background-size:cover;"><tr><td align="center" style="padding:34px 12px 120px;">
+          <table role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;border:1px solid #d8e0dc;background:#ffffff;box-shadow:0 12px 32px rgba(48,0,7,0.24);">
             <tr><td style="height:6px;background:#f2b51d;font-size:0;line-height:0;">&nbsp;</td></tr>
             <tr><td align="center" style="padding:24px 24px 22px;background:#087345;color:#ffffff;">
               <img src="${escapeHtml(logoSrc)}" width="76" alt="Kannada Bharati logo" style="display:block;width:76px;max-width:76px;height:auto;margin:0 auto 10px;border:0;outline:none;text-decoration:none;">
@@ -1891,7 +1894,7 @@ function renderBrandedEmail({
   return { text, html };
 }
 
-function renderBulkMessageEmail(subject, message = {}, logoSrc) {
+function renderBulkMessageEmail(subject, message = {}, logoSrc, backgroundSrc) {
   return renderBrandedEmail({
     subject,
     contextLabel: message.target
@@ -1902,15 +1905,16 @@ function renderBulkMessageEmail(subject, message = {}, logoSrc) {
     ctaUrl: message.ctaUrl,
     ctaLabel: String(message.ctaLabel || '').trim(),
     highlight: String(message.footer || '').trim(),
-    logoSrc
+    logoSrc,
+    backgroundSrc
   });
 }
 
-function renderEmail({ subject, template, payload = {}, logoSrc }) {
+function renderEmail({ subject, template, payload = {}, logoSrc, backgroundSrc }) {
   const registration = payload.registration || {};
   const donation = payload.donation || {};
   const bulkMessage = payload.message || {};
-  if (template === 'bulk-message') return renderBulkMessageEmail(subject, bulkMessage, logoSrc);
+  if (template === 'bulk-message') return renderBulkMessageEmail(subject, bulkMessage, logoSrc, backgroundSrc);
   const amountDue = Number(registration.amount || 0);
   const registrationPaid = registration.paid === true || registration.payment_received === true;
   const payUrl = amountDue > 0 && !registrationPaid ? payload.payUrl || '' : '';
@@ -1978,7 +1982,8 @@ function renderEmail({ subject, template, payload = {}, logoSrc }) {
     ctaUrl: cta,
     ctaLabel: ctaLabels[template] || (payUrl ? 'Pay registration fee' : ''),
     highlight,
-    logoSrc
+    logoSrc,
+    backgroundSrc
   });
 }
 
@@ -2098,7 +2103,11 @@ async function sendEmailNow(message) {
       pass: smtpPass
     }
   });
-  const rendered = renderEmail({ ...message, logoSrc: 'cid:kannada-bharati-logo' });
+  const rendered = renderEmail({
+    ...message,
+    logoSrc: 'cid:kannada-bharati-logo',
+    backgroundSrc: 'cid:kannada-bharati-email-background'
+  });
   const info = await transporter.sendMail({
     from: emailFromHeader,
     replyTo: emailFromAddress,
@@ -2106,11 +2115,18 @@ async function sendEmailNow(message) {
     subject: message.subject,
     text: rendered.text,
     html: rendered.html,
-    attachments: [{
-      filename: 'kannada-bharati-logo.png',
-      path: emailLogoPath,
-      cid: 'kannada-bharati-logo'
-    }]
+    attachments: [
+      {
+        filename: 'kannada-bharati-logo.png',
+        path: emailLogoPath,
+        cid: 'kannada-bharati-logo'
+      },
+      {
+        filename: 'kannada-bharati-email-background.png',
+        path: emailBackgroundPath,
+        cid: 'kannada-bharati-email-background'
+      }
+    ]
   });
   return {
     accepted: info.accepted || [],
@@ -2135,6 +2151,43 @@ function uniqueEmailRows(rows = []) {
     });
 }
 
+function newsletterSubscriberFromContact(row = {}) {
+  return {
+    id: row.id,
+    email: row.email,
+    status: 'Active',
+    source: 'website-footer',
+    subscribed_at: row.created_at,
+    created_at: row.created_at,
+    updated_at: row.created_at
+  };
+}
+
+function isMissingNewsletterTable(error) {
+  return error?.code === 'PGRST205'
+    || error?.code === '42P01'
+    || String(error?.message || '').includes('kb_newsletter_subscribers');
+}
+
+async function listNewsletterSubscribers() {
+  const supabase = requireSupabase();
+  const subscriberResult = await supabase
+    .from('kb_newsletter_subscribers')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (!subscriberResult.error) return subscriberResult.data || [];
+  if (!isMissingNewsletterTable(subscriberResult.error)) throw subscriberResult.error;
+
+  const fallbackResult = await supabase
+    .from('kb_contacts')
+    .select('*')
+    .eq('topic', 'Newsletter')
+    .order('created_at', { ascending: false });
+  if (fallbackResult.error) throw fallbackResult.error;
+  return (fallbackResult.data || []).map(newsletterSubscriberFromContact);
+}
+
 function matchesProgram(row, target) {
   const value = String(target || '').trim().toLowerCase();
   if (!value) return false;
@@ -2146,6 +2199,11 @@ async function resolveBulkEmailRecipients({ audience, target }) {
   const scope = String(audience || '').toLowerCase();
   if (scope === 'all-users') {
     return uniqueEmailRows(await listTable('kb_users'));
+  }
+
+  if (scope === 'newsletter') {
+    const subscribers = await listNewsletterSubscribers();
+    return uniqueEmailRows(subscribers.filter((row) => String(row.status || 'Active').toLowerCase() === 'active'));
   }
 
   if (scope === 'event' || scope === 'class') {
@@ -2161,7 +2219,7 @@ async function resolveBulkEmailRecipients({ audience, target }) {
     }));
   }
 
-  const error = new Error('Choose all users, an event, or a class audience.');
+  const error = new Error('Choose all users, newsletter subscribers, an event, or a class audience.');
   error.status = 400;
   throw error;
 }
@@ -4019,6 +4077,75 @@ app.get('/api/submissions/:type', authenticate, requireAdmin, asyncHandler(async
   res.json(await listTable(table));
 }));
 
+app.post('/api/newsletter/subscribe', authRateLimit, asyncHandler(async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const atIndex = email.indexOf('@');
+  const lastDotIndex = email.lastIndexOf('.');
+  const hasWhitespace = [...email].some((character) => character.charCodeAt(0) <= 32);
+  const isValidEmail = email.length <= 254
+    && atIndex > 0
+    && atIndex === email.lastIndexOf('@')
+    && lastDotIndex > atIndex + 1
+    && lastDotIndex < email.length - 1
+    && !hasWhitespace;
+  if (!isValidEmail) {
+    return res.status(400).json({ error: 'Enter a valid email address.' });
+  }
+
+  const now = new Date().toISOString();
+  const supabase = requireSupabase();
+  const { data, error } = await supabase
+    .from('kb_newsletter_subscribers')
+    .upsert({
+      email,
+      status: 'Active',
+      source: 'website-footer',
+      subscribed_at: now,
+      unsubscribed_at: null,
+      updated_at: now
+    }, { onConflict: 'email' })
+    .select('*')
+    .single();
+
+  let subscriber = data;
+  if (error && isMissingNewsletterTable(error)) {
+    const existingResult = await supabase
+      .from('kb_contacts')
+      .select('*')
+      .eq('topic', 'Newsletter')
+      .ilike('email', email)
+      .limit(1)
+      .maybeSingle();
+    if (existingResult.error) throw existingResult.error;
+
+    if (existingResult.data) {
+      subscriber = newsletterSubscriberFromContact(existingResult.data);
+    } else {
+      const fallbackResult = await supabase
+        .from('kb_contacts')
+        .insert({
+          name: 'Newsletter subscriber',
+          email,
+          topic: 'Newsletter',
+          message: 'Active newsletter subscription',
+          created_at: now
+        })
+        .select('*')
+        .single();
+      if (fallbackResult.error) throw fallbackResult.error;
+      subscriber = newsletterSubscriberFromContact(fallbackResult.data);
+    }
+  } else if (error) {
+    throw error;
+  }
+
+  res.status(201).json({
+    ok: true,
+    message: 'You are subscribed to Kannada Bharati updates.',
+    subscriber
+  });
+}));
+
 app.post('/api/submissions/:type', requireSubmissionCreateAccess, asyncHandler(async (req, res) => {
   const table = submissionTables[req.params.type];
   if (!table) return res.status(404).json({ error: 'Unknown submission type.' });
@@ -4102,6 +4229,7 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
       donations: donations.data || [],
       volunteers: [],
       contacts: [],
+      newsletterSubscribers: [],
       logins: [],
       classes: classes.data || [],
       events: events.data || [],
@@ -4146,6 +4274,7 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
       donations,
       volunteers,
       contacts,
+      newsletterSubscribers: [],
       logins: [],
       classes,
       events,
@@ -4159,12 +4288,13 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
     });
   }
 
-  const [users, registrations, donations, volunteers, contacts, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory] = await Promise.all([
+  const [users, registrations, donations, volunteers, contacts, newsletterSubscribers, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory] = await Promise.all([
     listTable('kb_users'),
     listTable('kb_registrations'),
     listTable('kb_donations'),
     listTable('kb_volunteers'),
     listTable('kb_contacts'),
+    listNewsletterSubscribers(),
     listTable('kb_logins'),
     listTable('kb_classes'),
     listTable('kb_events'),
@@ -4177,7 +4307,7 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
     listOptionalTable('kb_defaulter_history')
   ]);
 
-  res.json({ users, registrations, donations, volunteers, contacts, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory });
+  res.json({ users, registrations, donations, volunteers, contacts, newsletterSubscribers, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory });
 }));
 
 app.use((error, req, res, next) => {

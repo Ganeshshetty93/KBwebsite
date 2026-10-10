@@ -1,9 +1,9 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { BellRing, Camera, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Megaphone, Menu, MessagesSquare, Play, UserCircle, X } from 'lucide-react';
+import { BellRing, Camera, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Mail, Megaphone, Menu, MessagesSquare, Play, UserCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
 import { getCurrentUser, readJson, setCurrentUser, writeJson } from './utils/storage.js';
-import { apiReadRecords, apiReadSiteSetting } from './utils/api.js';
+import { apiReadRecords, apiReadSiteSetting, apiSubscribeNewsletter } from './utils/api.js';
 import PageLoader from './components/PageLoader.jsx';
 
 const nav = [
@@ -48,6 +48,7 @@ export default function App() {
   const [siteMessage, setSiteMessage] = useState(() => readJson('kb-site-message', { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
   const [messageOpen, setMessageOpen] = useState(false);
   const [routeLoading, setRouteLoading] = useState(true);
+  const [newsletter, setNewsletter] = useState({ email: '', status: 'idle', message: '' });
   const { t, toggleLanguage } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -116,6 +117,32 @@ export default function App() {
     setOpen(false);
     setProfileOpen(false);
     navigate('/');
+  }
+
+  async function handleNewsletterSubmit(event) {
+    event.preventDefault();
+    const email = newsletter.email.trim().toLowerCase();
+    const atIndex = email.indexOf('@');
+    const lastDotIndex = email.lastIndexOf('.');
+    const hasWhitespace = [...email].some((character) => character.charCodeAt(0) <= 32);
+    const isValidEmail = email.length <= 254
+      && atIndex > 0
+      && atIndex === email.lastIndexOf('@')
+      && lastDotIndex > atIndex + 1
+      && lastDotIndex < email.length - 1
+      && !hasWhitespace;
+    if (!isValidEmail) {
+      setNewsletter((current) => ({ ...current, status: 'error', message: 'Enter a valid email address.' }));
+      return;
+    }
+
+    setNewsletter((current) => ({ ...current, status: 'submitting', message: '' }));
+    try {
+      const result = await apiSubscribeNewsletter(email);
+      setNewsletter({ email: '', status: 'success', message: result.message || 'You are subscribed to Kannada Bharati updates.' });
+    } catch (error) {
+      setNewsletter((current) => ({ ...current, status: 'error', message: error.message || 'Subscription failed. Please try again.' }));
+    }
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -250,48 +277,94 @@ export default function App() {
         </div>
       )}
 
-      <section className="footer-motto" aria-label="Kannada cultural motto">
-        <span aria-hidden="true" />
-        <div>
-          <strong lang="kn">ಸಿರಿಗನ್ನಡಂ ಗೆಲ್ಗೆ, ಸಿರಿಗನ್ನಡಂ ಬಾಳ್ಗೆ</strong>
-          <p>Siri Gannadam Gelge, Siri Gannadam Balge</p>
-        </div>
-        <span aria-hidden="true" />
-      </section>
-
-      <footer className="footer">
-        <div>
-          <strong>ಕನ್ನಡ ಭಾರತಿ</strong>
-          <p>{t('footerLine')}</p>
-          <div className="footer-social">
-            <span>Connect with Kannada Bharati</span>
+      {!isAdminRoute && (
+        <>
+          <section className="footer-motto" aria-label="Kannada cultural motto">
+            <span aria-hidden="true" />
             <div>
-              <a href="https://www.facebook.com/kannada.bharati.92" target="_blank" rel="noopener noreferrer" aria-label="Kannada Bharati on Facebook" title="Facebook">
-                <MessagesSquare size={18} aria-hidden="true" />
-              </a>
-              <a href="https://www.youtube.com/@KannadaBharati" target="_blank" rel="noopener noreferrer" aria-label="Kannada Bharati on YouTube" title="YouTube">
-                <Play size={19} aria-hidden="true" />
-              </a>
-              <a href="https://www.instagram.com/kannadabharati/" target="_blank" rel="noopener noreferrer" aria-label="Kannada Bharati on Instagram" title="Instagram">
-                <Camera size={18} aria-hidden="true" />
-              </a>
+              <strong lang="kn">ಸಿರಿಗನ್ನಡಂ ಗೆಲ್ಗೆ, ಸಿರಿಗನ್ನಡಂ ಬಾಳ್ಗೆ</strong>
+              <p>Siri Gannadam Gelge, Siri Gannadam Balge</p>
             </div>
-          </div>
-        </div>
-        <div className="footer-actions">
-          <Link className="footer-link" to="/volunteer">
-            <HeartHandshake size={18} /> {t('navVolunteer')}
-          </Link>
-          <Link className="footer-link" to="/donate">{t('navDonate')}</Link>
-          <Link className="footer-link" to="/kannada-literature">Kannada Literature</Link>
-          <Link className="footer-link" to="/calendar">Calendar</Link>
-          <Link className="footer-link" to="/sportsdayrules">Sports Rules</Link>
-          <Link className="footer-link" to="/webrequirements">Web Requirements</Link>
-          <Link className="footer-link" to="/privacy">Privacy</Link>
-          {user && <Link className="footer-link" to="/admin">{t('navDashboard')}</Link>}
-          <Link className="footer-link" to="/login">{t('memberLogin')}</Link>
-        </div>
-      </footer>
+            <span aria-hidden="true" />
+          </section>
+
+          <footer className="footer">
+            <section className="footer-brand-column">
+              <Link className="footer-brand-lockup" to="/">
+                <img src="/assets/kannada-bharati-logo.png" alt="Kannada Bharati logo" />
+                <span><strong lang="kn">ಕನ್ನಡ ಭಾರತಿ</strong><small>Kannada Bharati</small></span>
+              </Link>
+              <p>{t('footerLine')}</p>
+              <div className="footer-social">
+                <span>Connect with Kannada Bharati</span>
+                <div>
+                  <a href="https://www.facebook.com/kannada.bharati.92" target="_blank" rel="noopener noreferrer" aria-label="Kannada Bharati on Facebook" title="Facebook">
+                    <MessagesSquare size={18} aria-hidden="true" />
+                  </a>
+                  <a href="https://www.youtube.com/@KannadaBharati" target="_blank" rel="noopener noreferrer" aria-label="Kannada Bharati on YouTube" title="YouTube">
+                    <Play size={19} aria-hidden="true" />
+                  </a>
+                  <a href="https://www.instagram.com/kannadabharati/" target="_blank" rel="noopener noreferrer" aria-label="Kannada Bharati on Instagram" title="Instagram">
+                    <Camera size={18} aria-hidden="true" />
+                  </a>
+                </div>
+              </div>
+            </section>
+            <nav className="footer-nav-column" aria-label="Get involved">
+              <h2>Get Involved</h2>
+              <Link className="footer-link" to="/volunteer"><HeartHandshake size={17} /> {t('navVolunteer')}</Link>
+              <Link className="footer-link" to="/donate">{t('navDonate')}</Link>
+              <Link className="footer-link" to="/calendar">Calendar</Link>
+            </nav>
+            <nav className="footer-nav-column" aria-label="Resources">
+              <h2>Resources</h2>
+              <Link className="footer-link" to="/kannada-literature">Kannada Literature</Link>
+              <Link className="footer-link" to="/sportsdayrules">Sports Rules</Link>
+              <Link className="footer-link" to="/webrequirements">Web Requirements</Link>
+            </nav>
+            <nav className="footer-nav-column" aria-label="Member area">
+              <h2>Member Area</h2>
+              {user && <Link className="footer-link" to="/admin">{t('navDashboard')}</Link>}
+              <Link className="footer-link" to="/login">{t('memberLogin')}</Link>
+              <Link className="footer-link" to="/privacy">Privacy</Link>
+            </nav>
+            <section className="footer-connect-column">
+              <h2>Newsletter</h2>
+              <p>Stay connected with Kannada culture, upcoming events, classes, and community updates.</p>
+              <form className="footer-newsletter-form" onSubmit={handleNewsletterSubmit} noValidate>
+                <div className="footer-newsletter-control">
+                  <Mail size={18} aria-hidden="true" />
+                  <input
+                    type="email"
+                    value={newsletter.email}
+                    onChange={(event) => setNewsletter({ email: event.target.value, status: 'idle', message: '' })}
+                    placeholder="Your email address"
+                    aria-label="Email address for newsletter"
+                    autoComplete="email"
+                    maxLength="254"
+                    disabled={newsletter.status === 'submitting'}
+                    required
+                  />
+                  <button type="submit" disabled={newsletter.status === 'submitting'}>
+                    {newsletter.status === 'submitting' ? 'Subscribing...' : 'Subscribe'}
+                  </button>
+                </div>
+                {newsletter.message && (
+                  <p
+                    className={newsletter.status === 'error' ? 'footer-newsletter-message is-error' : 'footer-newsletter-message is-success'}
+                    role={newsletter.status === 'error' ? 'alert' : 'status'}
+                  >
+                    {newsletter.message}
+                  </p>
+                )}
+              </form>
+              <small className="footer-newsletter-note">
+                Occasional updates only. <Link to="/contact">Contact Kannada Bharati</Link>
+              </small>
+            </section>
+          </footer>
+        </>
+      )}
     </div>
   );
 }

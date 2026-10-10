@@ -200,7 +200,7 @@ function SponsorCarousel({ sponsors }) {
   const [isInteracting, setIsInteracting] = useState(false);
   const realSponsors = sponsors.filter(hasSponsorContent);
   const supplementalSlides = sponsorShowcaseSlides.filter((slide) => !realSponsors.some((sponsor) => sponsor.id === slide.id));
-  const visibleSponsors = [...realSponsors, ...supplementalSlides].slice(0, Math.max(6, realSponsors.length));
+  const visibleSponsors = [...realSponsors, ...supplementalSlides].slice(0, Math.max(8, realSponsors.length));
   const sponsorHasDetails = (sponsor) => Boolean(sponsor.name || sponsor.level || sponsor.note || sponsor.website);
 
   const moveCarousel = (direction) => {
@@ -259,7 +259,7 @@ function SponsorCarousel({ sponsors }) {
             const distance = Math.abs(offset);
             return (
               <button
-                className={`home-sponsor-card${index === activeIndex ? ' is-active' : ''}${hasDetails ? ' has-details' : ' image-only'}${distance > 3 ? ' is-hidden' : ''}`}
+                className={`home-sponsor-card${index === activeIndex ? ' is-active' : ''}${hasDetails ? ' has-details' : ' image-only'}${distance > 4 ? ' is-hidden' : ''}`}
                 type="button"
                 key={sponsor.id || `${sponsor.name || 'sponsor'}-${index}`}
                 onClick={() => handleSponsorClick(sponsor, index)}

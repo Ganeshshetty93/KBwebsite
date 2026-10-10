@@ -129,6 +129,17 @@ function normalizeContact(row) {
   };
 }
 
+function normalizeNewsletterSubscriber(row) {
+  return {
+    ...normalizeBase(row),
+    email: row.email,
+    status: row.status || 'Active',
+    source: row.source || 'website-footer',
+    subscribedAt: row.subscribed_at || row.subscribedAt || row.created_at || row.createdAt,
+    unsubscribedAt: row.unsubscribed_at || row.unsubscribedAt || ''
+  };
+}
+
 function normalizeLogin(row) {
   return {
     ...normalizeBase(row),
@@ -549,6 +560,13 @@ export async function apiSendBulkEmail(payload) {
   });
 }
 
+export async function apiSubscribeNewsletter(email) {
+  return request('/newsletter/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({ email })
+  });
+}
+
 export async function apiCreateFlowPayment(kind, payload) {
   return request(`/payments/${encodeURIComponent(kind)}/create`, {
     method: 'POST',
@@ -860,6 +878,7 @@ export async function apiAdminDashboard() {
     donations: data.donations.map(normalizeDonation),
     volunteers: data.volunteers.map(normalizeVolunteer),
     contacts: data.contacts.map(normalizeContact),
+    newsletterSubscribers: (data.newsletterSubscribers || []).map(normalizeNewsletterSubscriber),
     logins: data.logins.map(normalizeLogin),
     classes: data.classes.map(normalizeClass),
     events: data.events.map(normalizeEvent),

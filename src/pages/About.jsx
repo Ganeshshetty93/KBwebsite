@@ -320,11 +320,12 @@ export default function About() {
             <span><Award size={18} /> Past Committees</span>
             <strong>{pastCount}</strong>
           </div>
-          <AutoSlideTrack
-            className="past-committee-grid"
+          <AboutCoverFlow
+            className="is-past"
+            label="Past committees"
             items={aboutContent.pastCommittees}
-            renderItem={(committee, key) => (
-              <article className="past-committee-card" key={key}>
+            renderItem={(committee) => (
+              <article className="past-committee-card">
                 <div className="past-committee-image">
                   {committee.photo ? <img src={committee.photo} alt={committee.title || committee.term} /> : <Award size={32} />}
                 </div>

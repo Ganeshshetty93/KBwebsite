@@ -316,10 +316,10 @@ function AdminTable({ title, rows, columns, filters = [], emptyText = 'No record
 function PageHeader({ root = 'Admin', area, title, action }) {
   const { tr } = useLanguage();
   return (
-    <div className="admin-page-header">
+    <div className={`admin-page-header ${title ? '' : 'is-breadcrumb-only'}`}>
       <div>
         <p><span>{tr(root)}</span> / {tr(area)}</p>
-        <h1>{tr(title)}</h1>
+        {title ? <h1>{tr(title)}</h1> : null}
       </div>
       {action}
     </div>
@@ -2385,6 +2385,7 @@ function useAdminData() {
     donations: readJson('kb-donation-submissions', []),
     volunteers: readJson('kb-volunteer-submissions', []),
     contacts: readJson('kb-contact-submissions', []),
+    newsletterSubscribers: [],
     expenses: readJson('kb-expense-submissions', []),
     announcements: initialAnnouncements.rows,
     classes: [],
@@ -2502,7 +2503,8 @@ export default function AdminSectionPage({ view }) {
   const users = dashboard.users || [];
   const donations = dashboard.donations || [];
   const volunteers = dashboard.volunteers || [];
-  const contacts = dashboard.contacts || [];
+  const contacts = (dashboard.contacts || []).filter((row) => row.topic !== 'Newsletter');
+  const newsletterSubscribers = dashboard.newsletterSubscribers || [];
   const expenses = dashboard.expenses || [];
   const programs = dashboard.classes?.length ? dashboard.classes : fallbackPrograms;
   const allEvents = dashboard.events?.length ? dashboard.events : events;
@@ -2591,6 +2593,12 @@ export default function AdminSectionPage({ view }) {
   const bulkRecipientCount = (() => {
     if (bulkEmail.audience === 'all-users') {
       return new Set(registeredUsers.map((row) => String(row.email || '').toLowerCase()).filter(Boolean)).size;
+    }
+    if (bulkEmail.audience === 'newsletter') {
+      return new Set(newsletterSubscribers
+        .filter((row) => String(row.status || 'Active').toLowerCase() === 'active')
+        .map((row) => String(row.email || '').toLowerCase())
+        .filter(Boolean)).size;
     }
     const rows = registrations.filter((row) => {
       const enabled = row.enabled !== false;
@@ -3225,7 +3233,7 @@ export default function AdminSectionPage({ view }) {
     const ctaUrl = cleanText(payload.ctaUrl);
     const validationError = firstError([
       validateRequired(audience, 'Audience'),
-      audience !== 'all-users' ? validateRequired(target, 'Target') : '',
+      ['event', 'class'].includes(audience) ? validateRequired(target, 'Target') : '',
       validateRequired(payload.subject, 'Subject'),
       cleanText(payload.subject).length < 4 ? 'Subject must be at least 4 characters.' : '',
       validateRequired(payload.body, 'Message'),
@@ -4265,7 +4273,7 @@ export default function AdminSectionPage({ view }) {
     return (
       <>
         <PageHeader area="Fund Raising" title="Manage fundraising causes" action={<button className="button primary" type="button" onClick={() => setModalType('fundraiser')}>Create</button>} />
-        <section className="admin-dashboard-hero-grid">
+        <section className="admin-dashboard-hero-grid checkin-metric-grid">
           <article><HandCoins size={24} /><span>Total causes</span><strong>{fundraisers.length}</strong></article>
           <article><ReceiptText size={24} /><span>Target amount</span><strong>${fundraisers.reduce((sum, item) => sum + Number(item.goal || 0), 0).toLocaleString()}</strong></article>
           <article><UsersRound size={24} /><span>Raised</span><strong>${fundraisers.reduce((sum, item) => sum + Number(item.raised || 0), 0).toLocaleString()}</strong></article>
@@ -4366,11 +4374,12 @@ export default function AdminSectionPage({ view }) {
                 onChange={(event) => setBulkEmail((current) => ({ ...current, audience: event.target.value, target: '', notice: '', error: '' }))}
               >
                 <option value="all-users">All users</option>
+                <option value="newsletter">Newsletter subscribers</option>
                 <option value="event">Specific event registrations</option>
                 <option value="class">Specific class registrations</option>
               </select>
             </label>
-            {bulkEmail.audience !== 'all-users' && (
+            {['event', 'class'].includes(bulkEmail.audience) && (
               <label>
                 {bulkEmail.audience === 'class' ? 'Class' : 'Event'}
                 <select
@@ -4384,7 +4393,7 @@ export default function AdminSectionPage({ view }) {
                 </select>
               </label>
             )}
-            {bulkEmail.audience === 'all-users' && <input type="hidden" name="target" value="" />}
+            {!['event', 'class'].includes(bulkEmail.audience) && <input type="hidden" name="target" value="" />}
             <label className="bulk-email-wide">
               Subject
               <input name="subject" minLength="4" maxLength="140" required placeholder="Kannada Bharati update" />
@@ -4419,6 +4428,18 @@ export default function AdminSectionPage({ view }) {
           {bulkEmail.notice && <p className="success">{bulkEmail.notice}</p>}
           {bulkEmail.error && <p className="form-error">{bulkEmail.error}</p>}
         </form>
+        <AdminTable
+          title="Newsletter subscribers"
+          rows={newsletterSubscribers}
+          emptyText="No newsletter subscribers yet."
+          filters={[{ key: 'status', label: 'Status', options: uniqueOptions(newsletterSubscribers, 'status') }]}
+          columns={[
+            { key: 'subscribedAt', label: 'Subscribed on' },
+            { key: 'email', label: 'Email' },
+            { key: 'status', label: 'Status' },
+            { key: 'source', label: 'Source' }
+          ]}
+        />
         <AdminTable
           title="Contact messages"
           rows={contacts}
@@ -4553,31 +4574,33 @@ export default function AdminSectionPage({ view }) {
           <article><HandCoins size={24} /><span>Amount</span><strong>${checkinAmountTotal.toLocaleString()}</strong></article>
         </section>
         <section className="checkin-control-panel">
-          <form className="checkin-filter-form" onSubmit={handleCheckinSubmit}>
-            <label>Events:
-              <select value={selectedCheckinEvent.title || ''} onChange={(event) => { setCheckinProgram(event.target.value); setCheckinApplied(false); setCheckinError(''); setCheckinEventId(''); }} required>
-                {eventOptions.map((item) => <option key={item.title} value={item.title}>{item.title}</option>)}
-              </select>
-            </label>
-            <span>/</span>
-            <label className="event-id-field">
-              <input value={checkinEventId} onChange={(event) => setCheckinEventId(event.target.value)} placeholder="Event id optional" />
-            </label>
-            <button className="button primary" type="submit">Go</button>
-          </form>
+          <div className="checkin-control-forms">
+            <form className="checkin-filter-form" onSubmit={handleCheckinSubmit}>
+              <label>Events:
+                <select value={selectedCheckinEvent.title || ''} onChange={(event) => { setCheckinProgram(event.target.value); setCheckinApplied(false); setCheckinError(''); setCheckinEventId(''); }} required>
+                  {eventOptions.map((item) => <option key={item.title} value={item.title}>{item.title}</option>)}
+                </select>
+              </label>
+              <span>/</span>
+              <label className="event-id-field">
+                <input value={checkinEventId} onChange={(event) => setCheckinEventId(event.target.value)} placeholder="Event id optional" />
+              </label>
+              <button className="button primary" type="submit">Go</button>
+            </form>
+            <form className="checkin-filter-form phone-lookup-form" onSubmit={handlePhoneLookup}>
+              <label>Phone lookup:
+                <input name="email" type="email" placeholder="member@example.com" />
+              </label>
+              <button className="button secondary-dark" type="submit">Find Phone</button>
+              {phoneLookup.phone && <strong>{phoneLookup.email}: {phoneLookup.phone}</strong>}
+              {phoneLookup.error && <span className="form-error inline-error">{phoneLookup.error}</span>}
+            </form>
+          </div>
           <div className="checkin-summary-table" aria-label="Registration summary" style={{ gridTemplateColumns: `repeat(${Math.max(1, checkinAnalytics.length)}, minmax(112px, 1fr))` }}>
             {checkinAnalytics.map((item) => <span key={`head-${item.key}`}>{item.key}</span>)}
             {checkinAnalytics.map((item) => <strong key={`total-${item.key}`}>{item.value}</strong>)}
             {checkinAnalytics.map((item) => <strong key={`checked-${item.key}`} className="checked-analytics-value">{item.checkedValue}</strong>)}
           </div>
-          <form className="checkin-filter-form phone-lookup-form" onSubmit={handlePhoneLookup}>
-            <label>Phone lookup:
-              <input name="email" type="email" placeholder="member@example.com" />
-            </label>
-            <button className="button secondary-dark" type="submit">Find Phone</button>
-            {phoneLookup.phone && <strong>{phoneLookup.email}: {phoneLookup.phone}</strong>}
-            {phoneLookup.error && <span className="form-error inline-error">{phoneLookup.error}</span>}
-          </form>
         </section>
         {topCheckinPrograms.length > 0 && (
           <section className="insight-grid">
@@ -5571,50 +5594,98 @@ export default function AdminSectionPage({ view }) {
   }
 
   const dashboardRows = [...programs.slice(0, 4), ...allEvents.slice(0, 3)];
+  const dashboardName = [
+    profile.firstName || user?.firstName || user?.name,
+    profile.lastName || user?.lastName
+  ].filter(Boolean).join(' ').trim() || user?.email || 'Member';
+  const dashboardFirstName = profile.firstName || user?.firstName || user?.name?.split(' ')?.[0] || user?.email?.split('@')?.[0] || 'Member';
+  const dashboardInitials = dashboardName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join('')
+    .toUpperCase();
+  const dashboardSpouseName = [profile.spouseFirstName, profile.spouseLastName].filter(Boolean).join(' ') || '-';
 
   return (
     <>
-      <PageHeader area="Dashboard" title="Member dashboard" />
-      <section className="admin-dashboard-hero-grid">
-        <article><UsersRound size={24} /><span>My registrations</span><strong>{userRegistrations.length}</strong></article>
-        <article><CalendarDays size={24} /><span>My classes</span><strong>{userClassRegistrations.length}</strong></article>
-        <article><ReceiptText size={24} /><span>My events</span><strong>{userEventRegistrations.length}</strong></article>
-        <article><Megaphone size={24} /><span>Announcements</span><strong>{announcements.length}</strong></article>
-      </section>
-      <section className="admin-page-panel member-dashboard-profile">
-        <div className="admin-page-panel-heading"><h2>My information</h2><a className="mini-action-link secondary" href="/admin/profile">Update profile</a></div>
-        <div className="detail-popup-grid">
-          <article><span>Name</span><strong>{[profile.firstName || user.firstName || user.name, profile.lastName || user.lastName].filter(Boolean).join(' ') || user.email}</strong></article>
-          <article><span>{tr('Email')}</span><strong>{user.email}</strong></article>
-          <article><span>Phone</span><strong>{profile.phone || user.phone || '-'}</strong></article>
-          <article><span>Company</span><strong>{profile.company || '-'}</strong></article>
-          <article><span>Spouse</span><strong>{[profile.spouseFirstName, profile.spouseLastName].filter(Boolean).join(' ') || '-'}</strong></article>
-          <article><span>Children</span><strong>{profileChildren.length}</strong></article>
+      <PageHeader area="Dashboard" title="" />
+      <section className="member-dashboard-welcome">
+        <div className="member-dashboard-welcome-copy">
+          <span>Member area</span>
+          <h1>Member dashboard</h1>
+          <p>Welcome, {dashboardFirstName}</p>
         </div>
+        <div className="member-dashboard-welcome-art" aria-hidden="true" />
       </section>
-      {isAdmin(user) && (
-        <section className="admin-dashboard-hero-grid">
-          <article><UsersRound size={24} /><span>All registrations</span><strong>{registrations.length}</strong></article>
-        <article><CalendarDays size={24} /><span>Current Events</span><strong>{allEvents.length}</strong></article>
-        <article><ReceiptText size={24} /><span>Expenses</span><strong>{expenses.length}</strong></article>
-          <article><Megaphone size={24} /><span>Announcements</span><strong>{announcements.length}</strong></article>
-        </section>
-      )}
-      <AdminTable
-        title="Current events"
-        rows={dashboardRows}
-        columns={[
-          { key: 'title', label: 'Name' },
-          { key: 'summary', label: 'Details', render: (row) => (
-            <div className="dashboard-row-summary">
-              <strong>{row.date || row.month || row.startOn || 'Date to be announced'}</strong>
-              <span>{row.time || row.location || row.eventType || '-'}</span>
-              <button className="mini-action-link secondary" type="button" onClick={() => setDetailRecord(row)}>{tr('Details')}</button>
+      <section className="member-dashboard-metrics" aria-label="Member summary">
+        <article className="member-dashboard-metric">
+          <span className="member-dashboard-metric-icon"><UsersRound size={22} /></span>
+          <span><small>My registrations</small><strong>{userRegistrations.length}</strong></span>
+        </article>
+        <article className="member-dashboard-metric">
+          <span className="member-dashboard-metric-icon"><CalendarDays size={22} /></span>
+          <span><small>My classes</small><strong>{userClassRegistrations.length}</strong></span>
+        </article>
+        <article className="member-dashboard-metric">
+          <span className="member-dashboard-metric-icon"><ReceiptText size={22} /></span>
+          <span><small>My events</small><strong>{userEventRegistrations.length}</strong></span>
+        </article>
+        <article className="member-dashboard-metric">
+          <span className="member-dashboard-metric-icon"><Megaphone size={22} /></span>
+          <span><small>Announcements</small><strong>{announcements.length}</strong></span>
+        </article>
+      </section>
+
+      <section className={`member-dashboard-main-grid ${isAdmin(user) ? '' : 'is-member-only'}`}>
+        <article className="member-dashboard-card member-dashboard-profile-card">
+          <div className="member-dashboard-card-heading">
+            <h2>My information</h2>
+            <a className="member-dashboard-edit" href="/admin/profile"><Edit3 size={15} />Update profile</a>
+          </div>
+          <div className="member-dashboard-identity">
+            <span className="member-dashboard-avatar">{dashboardInitials}</span>
+            <strong>{dashboardName}</strong>
+          </div>
+          <div className="member-dashboard-profile-details">
+            <div><Mail size={16} /><span>{tr('Email')}</span><strong>{user?.email || '-'}</strong></div>
+            <div><UsersRound size={16} /><span>Spouse</span><strong>{dashboardSpouseName}</strong></div>
+            <div><Phone size={16} /><span>Phone</span><strong>{profile.phone || user?.phone || '-'}</strong></div>
+            <div><UserPlus size={16} /><span>Children</span><strong>{profileChildren.length}</strong></div>
+            <div><BookOpen size={16} /><span>Company</span><strong>{profile.company || '-'}</strong></div>
+          </div>
+        </article>
+
+        {isAdmin(user) && (
+          <article className="member-dashboard-card member-dashboard-community-card">
+            <div className="member-dashboard-card-heading"><h2>Community overview</h2></div>
+            <div className="member-dashboard-community-grid">
+              <div><span className="member-dashboard-metric-icon"><UsersRound size={21} /></span><span><small>All registrations</small><strong>{registrations.length}</strong></span></div>
+              <div><span className="member-dashboard-metric-icon"><CalendarDays size={21} /></span><span><small>Current events</small><strong>{allEvents.length}</strong></span></div>
+              <div><span className="member-dashboard-metric-icon"><ReceiptText size={21} /></span><span><small>Expenses</small><strong>{expenses.length}</strong></span></div>
+              <div><span className="member-dashboard-metric-icon"><Megaphone size={21} /></span><span><small>Announcements</small><strong>{announcements.length}</strong></span></div>
             </div>
-          ) },
-          { key: 'register', label: 'Register', render: (row) => <a className="mini-action-link" href={`/admin/register-member?program=${encodeURIComponent(row.title)}`}>{tr('Register')}</a> }
-        ]}
-      />
+          </article>
+        )}
+      </section>
+      <div className="member-dashboard-current-events">
+        <AdminTable
+          title="Current events"
+          rows={dashboardRows}
+          columns={[
+            { key: 'title', label: 'Name' },
+            { key: 'summary', label: 'Details', render: (row) => (
+              <div className="dashboard-row-summary">
+                <strong>{row.date || row.month || row.startOn || 'Date to be announced'}</strong>
+                <span>{row.time || row.location || row.eventType || '-'}</span>
+                <button className="mini-action-link secondary" type="button" onClick={() => setDetailRecord(row)}>{tr('Details')}</button>
+              </div>
+            ) },
+            { key: 'register', label: 'Register', render: (row) => <a className="mini-action-link" href={`/admin/register-member?program=${encodeURIComponent(row.title)}`}>{tr('Register')}</a> }
+          ]}
+        />
+      </div>
       <AdminTable
         title="My class registrations"
         rows={userClassRegistrations}

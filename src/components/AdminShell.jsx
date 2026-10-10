@@ -174,16 +174,16 @@ export default function AdminShell() {
         <div className="admin-side-menu-content" id="admin-navigation-panel">
           <div className="admin-kannada-motto" title="ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ">
             <span>ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ</span>
+            <button
+              className="admin-side-collapse"
+              type="button"
+              aria-label={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
+              title={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
+              onClick={() => setSideCollapsed((value) => !value)}
+            >
+              {sideCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
           </div>
-          <button
-            className="admin-side-collapse"
-            type="button"
-            aria-label={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
-            title={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
-            onClick={() => setSideCollapsed((value) => !value)}
-          >
-            {sideCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          </button>
           <NavLink className="admin-side-root" to="/admin" title={sideCollapsed ? tr('Dashboard') : undefined}>
             <Gauge size={18} /> <span className="admin-nav-label">{tr('Dashboard')}</span>
           </NavLink>
