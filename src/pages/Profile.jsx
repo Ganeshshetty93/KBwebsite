@@ -26,6 +26,7 @@ import {
 import { cleanText, firstError, validateImageFile, validatePhone, validateRequired } from '../utils/validation.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import DatePicker from '../components/DatePicker.jsx';
+import ModalTitle from '../components/ModalTitle.jsx';
 
 function profileKey(email) {
   return `kb-member-profile-${String(email || 'guest').toLowerCase()}`;
@@ -751,7 +752,7 @@ export default function Profile() {
             <button className="popup-close" type="button" aria-label="Close payment details" onClick={() => setSelectedRegistration(null)}><X size={20} /></button>
             <div className="payment-detail-heading">
               <span>{selectedRegistration.registrationType || 'Registration'}</span>
-              <h2>{selectedRegistration.program || 'Registration details'}</h2>
+              <ModalTitle matchText="Registration payment details">{selectedRegistration.program || 'Registration details'}</ModalTitle>
               <p>{selectedRegistration.familyMember || selectedRegistration.studentName || user.email}</p>
             </div>
             <section className="payment-confirmation-grid">

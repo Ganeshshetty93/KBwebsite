@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext.jsx';
 import { getCurrentUser, readJson, writeJson } from '../utils/storage.js';
 import { apiAppendRecord } from '../utils/api.js';
 import { cleanText, firstError, validateEmail, validatePhone, validateRequired } from '../utils/validation.js';
+import ModalTitle from './ModalTitle.jsx';
 
 function getClassImage(item) {
   if (item.photo) return item.photo;
@@ -286,7 +287,7 @@ export default function ClassCard({ item, registerSignal = 0 }) {
               <img src={classImage} alt={`${item.title} class`} />
               <div>
                 <span>{item.category || 'Language'}</span>
-                <h2>{item.title}</h2>
+                <ModalTitle matchText="Class details">{item.title}</ModalTitle>
                 <p>{item.focus || `${item.title} classes for Kannada Bharati families and community learners.`}</p>
               </div>
             </div>
@@ -362,8 +363,7 @@ export default function ClassCard({ item, registerSignal = 0 }) {
             <button className="popup-close" type="button" aria-label="Close message" onClick={() => setRegistrationNotice(null)}>
               <X size={20} />
             </button>
-            <span className="registration-message-icon"><CheckCircle2 size={34} /></span>
-            <h2>{registrationNotice.title}</h2>
+            <ModalTitle matchText="Registration success">{registrationNotice.title}</ModalTitle>
             <p>{registrationNotice.message}</p>
             <button className="button primary" type="button" onClick={() => setRegistrationNotice(null)}>{tr('Done')}</button>
           </div>

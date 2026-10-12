@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
-import { BookOpen, CalendarDays, Copy, Edit3, Eye, GraduationCap, HandCoins, ImagePlus, Mail, Megaphone, Phone, Plus, ReceiptText, Save, Trash2, UserPlus, UsersRound, X } from 'lucide-react';
+import { BookOpen, Building2, CalendarDays, CheckCircle, ChevronRight, Clock3, CloudUpload, Copy, CreditCard, Download, Edit3, ExternalLink, Eye, FileSpreadsheet, FileText, GraduationCap, HandCoins, ImagePlus, ListChecks, Mail, MapPin, Megaphone, MoreHorizontal, Phone, Plus, Printer, ReceiptText, RefreshCw, Save, Search, Send, Trash2, UserRound, UserPlus, UsersRound, X } from 'lucide-react';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
+import ContentSettingsNav, { contentSettingsTitles } from '../components/ContentSettingsNav.jsx';
 import DatePicker from '../components/DatePicker.jsx';
+import ModalTitle from '../components/ModalTitle.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { culturalClasses, events, paataShaaleLevels } from '../data/siteData.js';
 import { adminPageCatalog, appendAdminRecordAsync, appendRecord, builtInAssignableRoles, canAccessAdminPath, defaultAdminPath, getAllowedFieldKeysForPath, getAssignableRoles, getCurrentUser, hasAnyRole, isAdmin, normalizeRoleId, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
@@ -29,6 +31,7 @@ import {
   apiSendOutboxEmail,
   apiSendTestEmail,
   apiUploadFile,
+  apiUpdateSeat,
   apiUpdateSubmission,
   apiUpdateUser
 } from '../utils/api.js';
@@ -45,6 +48,96 @@ const referenceVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIp
 const defaultVolunteerGoogleForm = {
   enabled: false,
   url: referenceVolunteerGoogleFormUrl
+};
+
+const sampleFindUsers = [
+  {
+    id: 'sample-member',
+    createdAt: '2026-01-14',
+    email: 'member@example.com',
+    name: 'Ganesh Shetty',
+    phone: '(408) 555-0123',
+    role: 'Member',
+    children: [
+      { id: 'sample-child-1', name: 'Arjun Shetty', phone: '(408) 555-0198', classLevel: 'Class 2' },
+      { id: 'sample-child-2', name: 'Sneha Shetty', phone: '(408) 555-0156', classLevel: 'Class 5' }
+    ],
+    registrations: [
+      { id: 'sample-registration-1', registeredOn: '2026-03-15', registrationType: 'Event', program: 'Ugadi Celebration', status: 'Confirmed' },
+      { id: 'sample-registration-2', registeredOn: '2026-04-05', registrationType: 'Class', program: 'Kannada Koota', status: 'Confirmed' }
+    ]
+  },
+  {
+    id: 'sample-teacher',
+    createdAt: '2026-02-02',
+    email: 'priya@example.com',
+    name: 'Priya Kulkarni',
+    phone: '(408) 555-0456',
+    role: 'Teacher',
+    children: [],
+    registrations: [{ id: 'sample-registration-3' }, { id: 'sample-registration-4' }, { id: 'sample-registration-5' }]
+  },
+  {
+    id: 'sample-volunteer',
+    createdAt: '2026-01-28',
+    email: 'rohan@example.com',
+    name: 'Rohan Kulkarni',
+    phone: '(510) 555-0789',
+    role: 'Volunteer',
+    children: [],
+    registrations: [{ id: 'sample-registration-6' }]
+  }
+];
+
+const sampleStudentView = {
+  profile: {
+    id: 'KB00125',
+    name: 'Aarav Sinha',
+    birthDate: 'Mar 14, 2010',
+    email: 'aarav.sinha@example.com',
+    phone: '(408) 555-0136',
+    address: '123 Maple Ave\nSan Jose, CA 95129',
+    parentName: 'Suresh Sinha',
+    parentEmail: 'suresh.sinha@example.com',
+    parentPhone: '(408) 555-0179'
+  },
+  family: [
+    { name: 'Aarav Sinha', level: 'Level 2', initials: 'AS', tone: 'blue' },
+    { name: 'Priya Sinha', level: 'Level 3', initials: 'PK', tone: 'pink' },
+    { name: 'Sai Sinha', level: 'Level 1', initials: 'SS', tone: 'blue' }
+  ],
+  classRegistrations: [
+    { id: 'sample-class-1', studentName: 'Aarav Sinha', program: 'Level 2', term: 'Spring 2026', programDates: 'Jan 10, 2026 – May 16, 2026', amount: 280, status: 'Confirmed', registrationType: 'class' },
+    { id: 'sample-class-2', studentName: 'Aarav Sinha', program: 'Conversational Kannada', term: 'Spring 2026', programDates: 'Jan 10, 2026 – May 16, 2026', amount: 280, status: 'Confirmed', registrationType: 'class' },
+    { id: 'sample-class-3', studentName: 'Aarav Sinha', program: 'Cultural Arts (Dance)', term: 'Spring 2026', programDates: 'Feb 07, 2026 – May 16, 2026', amount: 120, status: 'Pending', registrationType: 'class' }
+  ],
+  eventRegistrations: [
+    { id: 'sample-event-1', studentName: 'Aarav Sinha', program: 'Ugadi Celebration', date: 'Mar 15, 2026', location: 'Community Center', amount: 30, status: 'Confirmed', registrationType: 'event' },
+    { id: 'sample-event-2', studentName: 'Aarav Sinha', program: 'Summer Camp 2026', date: 'Jun 08, 2026 – Jun 12, 2026', location: 'KB School', amount: 250, status: 'Confirmed', registrationType: 'event' },
+    { id: 'sample-event-3', studentName: 'Aarav Sinha', program: 'Sahitya Vaachana', date: 'May 10, 2026', location: 'Community Center', amount: 10, status: 'Confirmed', registrationType: 'event' }
+  ],
+  availablePrograms: [
+    { id: 'sample-program-1', title: 'Level 3', type: 'Kannada Class', level: 'Level 3', schedule: 'Jan 10, 2026 – May 16, 2026', fee: 280 },
+    { id: 'sample-program-2', title: 'Advanced Reading', type: 'Kannada Class', level: 'Level 3+', schedule: 'Jan 10, 2026 – May 16, 2026', fee: 280 },
+    { id: 'sample-program-3', title: 'Folk Arts Workshop', type: 'Special Program', level: 'All Levels', schedule: 'Feb 07, 2026 – Apr 11, 2026', fee: 120 }
+  ]
+};
+
+const eventTypeDescriptions = {
+  Classroom: 'Kannada class registration and classroom programs',
+  Festival: 'Cultural celebration with performances and activities',
+  Workshop: 'Learning sessions and hands-on activities',
+  Competition: 'Contests and talent showcases',
+  Seminar: 'Community learning sessions and presentations',
+  Cultural: 'Cultural programs, performances and celebrations'
+};
+
+const recurrenceDescriptions = {
+  OneTime: 'Occurs once on a specific date',
+  Daily: 'Repeats every day',
+  Weekly: 'Repeats every week on selected day(s)',
+  Monthly: 'Repeats every month on selected day(s)',
+  Yearly: 'Repeats every year on selected date'
 };
 
 function normalizeVolunteerGoogleForm(setting = defaultVolunteerGoogleForm) {
@@ -120,6 +213,19 @@ function formatFileSize(size = 0) {
   if (!bytes) return '-';
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDateShort(value) {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+}
+
+function getInitials(value = '') {
+  const words = String(value || '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 'KB';
+  return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase();
 }
 
 function normalizeRoleDefinitions(rows = []) {
@@ -207,16 +313,24 @@ function AdminTable({ title, rows, columns, filters = [], emptyText = 'No record
   const location = useLocation();
   const allowedFieldKeys = getAllowedFieldKeysForPath(getCurrentUser(), location.pathname);
   const visibleColumns = useMemo(() => {
-    if (!allowedFieldKeys) return columns;
-    const allowed = allowedFieldKeys.map((field) => String(field).toLowerCase());
-    return columns.filter((column) => (
-      allowed.includes(String(column.key || '').toLowerCase())
-      || allowed.includes(String(column.label || '').toLowerCase())
-    ));
+    const permittedColumns = !allowedFieldKeys ? columns : columns.filter((column) => {
+      const allowed = allowedFieldKeys.map((field) => String(field).toLowerCase());
+      return (
+        allowed.includes(String(column.key || '').toLowerCase())
+        || allowed.includes(String(column.label || '').toLowerCase())
+      );
+    });
+    return permittedColumns.slice().sort((left, right) => {
+      const leftIsAction = ['action', 'actions'].includes(String(left.key || '').toLowerCase());
+      const rightIsAction = ['action', 'actions'].includes(String(right.key || '').toLowerCase());
+      return Number(leftIsAction) - Number(rightIsAction);
+    });
   }, [allowedFieldKeys, columns]);
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState({});
   const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(pageSize);
+  const [exportOpen, setExportOpen] = useState(false);
   const visibleRows = useMemo(() => rows.filter((row) => {
     const text = Object.values(row).join(' ').toLowerCase();
     const matchesQuery = !query.trim() || text.includes(query.trim().toLowerCase());
@@ -226,13 +340,37 @@ function AdminTable({ title, rows, columns, filters = [], emptyText = 'No record
     });
     return matchesQuery && matchesFilters;
   }), [activeFilters, filters, query, rows]);
-  const totalPages = Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / rowsPerPage));
   const currentPage = Math.min(page, totalPages);
-  const pageStart = (currentPage - 1) * pageSize;
-  const pagedRows = visibleRows.slice(pageStart, pageStart + pageSize);
+  const pageStart = (currentPage - 1) * rowsPerPage;
+  const pagedRows = visibleRows.slice(pageStart, pageStart + rowsPerPage);
+  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .filter((number) => number === 1 || number === totalPages || Math.abs(number - currentPage) <= 1);
   const filename = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'table';
-  const renderValue = (value) => {
+  const renderValue = (value, column = {}) => {
     if (value === null || value === undefined || value === '') return '-';
+    const normalizedKey = String(column.key || '').toLowerCase();
+    const isStatusField = normalizedKey.endsWith('status') || ['payment', 'paid', 'enabled', 'email_status'].includes(normalizedKey);
+    if (isStatusField && ['string', 'number', 'boolean'].includes(typeof value)) {
+      const label = tr(String(value));
+      const normalizedValue = String(value).toLowerCase();
+      const tone = /failed|rejected|deleted|disabled|inactive|not paid|^no$|error/.test(normalizedValue)
+        ? 'danger'
+        : /pending|queued|waiting|review|not checked|submitted/.test(normalizedValue)
+          ? 'warning'
+          : /paid|confirmed|active|enabled|approved|sent|healthy|available|connected|checked|^yes$/.test(normalizedValue)
+            ? 'success'
+            : 'info';
+      return (
+        <span className={`admin-status-pill is-${tone}`}>
+          {tone === 'success' && <CheckCircle size={16} />}
+          {tone === 'warning' && <Clock3 size={16} />}
+          {tone === 'danger' && <X size={16} />}
+          {tone === 'info' && <i />}
+          {label}
+        </span>
+      );
+    }
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return tr(value);
     return value;
   };
@@ -250,6 +388,14 @@ function AdminTable({ title, rows, columns, filters = [], emptyText = 'No record
     }
   }
 
+  const exportActions = [
+    { label: 'Copy to clipboard', icon: <Copy size={16} />, onClick: handleCopy },
+    { label: 'CSV', icon: <FileText size={16} />, onClick: () => downloadFile(`${filename}.csv`, makeCsv(visibleRows, visibleColumns), 'text/csv;charset=utf-8') },
+    { label: 'Excel', icon: <FileSpreadsheet size={16} />, onClick: () => downloadFile(`${filename}.xls`, makeHtmlTable(title, visibleRows, visibleColumns), 'application/vnd.ms-excel;charset=utf-8') },
+    { label: 'PDF', icon: <ReceiptText size={16} />, onClick: () => openPrintableTable(title, visibleRows, visibleColumns) },
+    { label: 'Print', icon: <Printer size={16} />, onClick: () => openPrintableTable(title, visibleRows, visibleColumns) }
+  ];
+
   return (
     <section className="admin-page-panel">
       <div className="admin-page-panel-heading">
@@ -259,37 +405,55 @@ function AdminTable({ title, rows, columns, filters = [], emptyText = 'No record
           <span>{visibleRows.length}</span>
         </div>
       </div>
-      <div className="admin-page-filters">
+      <div className="admin-table-toolbar">
+        <label className="admin-table-search-control">
+          <span>{tr('Search')}</span>
+          <div><Search size={19} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr('Search records...')} /></div>
+        </label>
         {filters.map((filter) => (
-          <label key={filter.key}>
-            {tr(filter.label)}
+          <label className="admin-table-filter-control" key={filter.key}>
+            <span>{tr(filter.label)}</span>
             <select value={activeFilters[filter.key] || 'All'} onChange={(event) => setActiveFilters((current) => ({ ...current, [filter.key]: event.target.value }))}>
-              <option value="All">{tr('All')}</option>
+              <option value="All">{filter.key === 'status' ? tr('All statuses') : tr('All')}</option>
               {filter.options.map((option) => <option key={option} value={option}>{tr(option)}</option>)}
             </select>
           </label>
         ))}
-        <label>
-          {tr('Search')}
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr('Search')} />
-        </label>
+        <div className="admin-table-export-menu">
+          <button className="admin-table-export-trigger" type="button" onClick={() => setExportOpen((value) => !value)} aria-expanded={exportOpen}>
+            <Download size={21} /> {tr('Export')} <ChevronRight size={18} />
+          </button>
+          {exportOpen && (
+            <div className="admin-table-export-dropdown">
+              {exportActions.map((item, index) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    item.onClick();
+                    setExportOpen(false);
+                  }}
+                >
+                  <span className={`export-icon-tone export-icon-tone-${index + 1}`}>{item.icon}</span>
+                  {tr(item.label)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-      <div className="admin-table-actions">
-        <button type="button" onClick={handleCopy}>{tr('Copy')}</button>
-        <button type="button" onClick={() => downloadFile(`${filename}.csv`, makeCsv(visibleRows, visibleColumns), 'text/csv;charset=utf-8')}>CSV</button>
-        <button type="button" onClick={() => downloadFile(`${filename}.xls`, makeHtmlTable(title, visibleRows, visibleColumns), 'application/vnd.ms-excel;charset=utf-8')}>Excel</button>
-        <button type="button" onClick={() => openPrintableTable(title, visibleRows, visibleColumns)}>PDF</button>
-        <button type="button" onClick={() => openPrintableTable(title, visibleRows, visibleColumns)}>{tr('Print')}</button>
+      <div className="admin-table-filter-note">
+        {tr('Filters apply to the current table.')}
       </div>
-      <div className="table-scroll">
-        <table>
+      <div className="table-scroll admin-data-table-scroll">
+        <table className="admin-data-table">
           <thead>
-            <tr>{visibleColumns.map((column) => <th key={column.key}>{tr(column.label)}</th>)}</tr>
+            <tr>{visibleColumns.map((column) => <th key={column.key} data-column={column.key}>{tr(column.label)}</th>)}</tr>
           </thead>
           <tbody>
             {pagedRows.length ? pagedRows.map((row, index) => (
               <tr key={`${row.id || row.email || row.title || row.text || pageStart + index}-${pageStart + index}`}>
-                {visibleColumns.map((column) => <td key={column.key}>{column.render ? column.render(row, pageStart + index) : renderValue(row[column.key])}</td>)}
+                {visibleColumns.map((column) => <td key={column.key} data-column={column.key}>{column.render ? column.render(row, pageStart + index) : renderValue(row[column.key], column)}</td>)}
               </tr>
             )) : (
               <tr><td colSpan={visibleColumns.length || 1}>{tr(visibleColumns.length ? emptyText : 'No fields are enabled for this role.')}</td></tr>
@@ -297,15 +461,26 @@ function AdminTable({ title, rows, columns, filters = [], emptyText = 'No record
           </tbody>
         </table>
       </div>
-      {visibleRows.length > pageSize && (
+      {visibleRows.length > rowsPerPage && (
         <div className="admin-pagination" aria-label={`${title} pagination`}>
           <span>
-            {tr('Showing')} {pageStart + 1}-{Math.min(pageStart + pageSize, visibleRows.length)} {tr('of')} {visibleRows.length}
+            {tr('Showing')} {pageStart + 1}-{Math.min(pageStart + rowsPerPage, visibleRows.length)} {tr('of')} {visibleRows.length}
           </span>
+          <label>
+            {tr('Rows per page')}
+            <select value={rowsPerPage} onChange={(event) => { setRowsPerPage(Number(event.target.value)); setPage(1); }}>
+              {[10, 25, 50].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
           <div>
-            <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1}>{tr('Previous')}</button>
-            <strong>{currentPage} / {totalPages}</strong>
-            <button type="button" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={currentPage === totalPages}>{tr('Next')}</button>
+            <button type="button" aria-label={tr('Previous')} onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1}>‹</button>
+            {pageNumbers.map((number, index) => (
+              <span key={number}>
+                {index > 0 && number - pageNumbers[index - 1] > 1 ? <i>…</i> : null}
+                <button className={number === currentPage ? 'is-active' : ''} type="button" onClick={() => setPage(number)}>{number}</button>
+              </span>
+            ))}
+            <button type="button" aria-label={tr('Next')} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={currentPage === totalPages}>›</button>
           </div>
         </div>
       )}
@@ -315,14 +490,55 @@ function AdminTable({ title, rows, columns, filters = [], emptyText = 'No record
 
 function PageHeader({ root = 'Admin', area, title, action }) {
   const { tr } = useLanguage();
+  const headerTitle = title || (area === 'Dashboard' ? 'Dashboard' : area);
+  const isContentSettings = contentSettingsTitles.has(headerTitle);
+  const displayTitle = isContentSettings ? 'Content & Settings' : headerTitle;
+  const descriptions = {
+    'Content & Settings': 'Manage events, galleries, announcements and site content',
+    Dashboard: 'Overview of your Kannada Bharathi community',
+    Profile: 'Manage your personal information, family details and account settings',
+    'Member registration': 'Register yourself and your family for Kannada Bharathi classes and programs',
+    'Expense Submission': 'Submit and track your volunteer related expenses',
+    'Manage events': 'Create, edit and manage events for the Kannada Bharathi community',
+    'Manage classes': 'Create and manage classes, set schedules, fees and locations',
+    'Role and access control': 'Create and manage custom roles with page and field visibility',
+    'Teacher allotment': 'Manage class to teacher assignments and access permissions',
+    'Manage event dropdowns': 'Manage event types, recurrence options and volunteer registration form.',
+    'About page content': 'Manage the content displayed on the public About page',
+    'Teacher details': 'Manage paata teachers, class levels and teacher information',
+    'Paata teacher details': 'Manage paata teachers, class levels and teacher information',
+    'Manage announcements': 'Manage events, galleries, announcements and site content',
+    'Manage fundraising causes': "Create and manage fundraising causes to support Kannada Bharathi's programs and community initiatives.",
+    'Donation payment details': 'View and manage donation payments for Kannada Bharati',
+    'Group email and contact messages': 'Send group emails to your community and manage newsletter subscribers and contact messages.',
+    'Volunteer submissions': 'View and manage volunteer interest form submissions.',
+    'Event check-in': 'Manage event check-in, search registrations and track attendance',
+    'Event registration details': 'View and manage event registrations, payments and attendance',
+    'Guest registration and check-in': 'Register event guests, manage family details and check them in on arrival.',
+    'Seat management': 'Manage event seating, assign registered attendees and track check-ins',
+    'Teacher class area': 'Manage your classes, view student registrations and track readiness.',
+    'Treasurer expense workflow': 'Review, approve and track expenses, reimbursements and payments',
+    'Find user by email': 'Search for a member and view their profile, children and registrations',
+    'Email outbox': 'Track and manage queued, sent and failed emails to members and participants',
+    'Student View': "Inspect a student's registrations, classes and event participation",
+    'Admin developer tools': 'System diagnostics, email templates and local storage utilities',
+    'Manage users': 'View and manage user accounts, roles and access permissions'
+  };
+  const description = descriptions[displayTitle] || descriptions[headerTitle] || descriptions[title] || (area ? `Manage ${String(area).toLowerCase()} details` : '');
+  const titleClass = String(displayTitle || '').length > 27 ? 'has-long-title' : '';
+  const descriptionClass = String(description || '').length > 62 ? 'has-long-description' : '';
   return (
-    <div className={`admin-page-header ${title ? '' : 'is-breadcrumb-only'}`}>
-      <div>
-        <p><span>{tr(root)}</span> / {tr(area)}</p>
-        {title ? <h1>{tr(title)}</h1> : null}
+    <>
+      <div className={`admin-page-header ${titleClass} ${descriptionClass} ${displayTitle ? '' : 'is-breadcrumb-only'} ${isContentSettings ? 'is-content-settings-header' : ''} ${displayTitle === 'Dashboard' ? 'is-dashboard-header' : ''} ${displayTitle === 'Find user by email' ? 'is-find-user-header' : ''}`}>
+        <div className="admin-page-header-copy">
+          <p><span>{tr(root)}</span> / {tr(area)}</p>
+          {displayTitle ? <h1>{tr(displayTitle)}</h1> : null}
+          {description ? <small>{tr(description)}</small> : null}
+        </div>
+        {action}
       </div>
-      {action}
-    </div>
+      {isContentSettings ? <ContentSettingsNav /> : null}
+    </>
   );
 }
 
@@ -343,6 +559,9 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
       .sort((a, b) => b.registeredCount - a.registeredCount || a.title.localeCompare(b.title));
   }, [programs, registrations]);
   const [selectedClass, setSelectedClass] = useState(() => classOptions[0]?.title || '');
+  const [classSearch, setClassSearch] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
+  const [coverageSearch, setCoverageSearch] = useState('');
   const [attendanceDate, setAttendanceDate] = useState(today);
   const [draft, setDraft] = useState({});
   const [notice, setNotice] = useState('');
@@ -358,6 +577,29 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
     .filter((row) => !selectedClass || row.program === selectedClass)
     .sort((a, b) => String(a.familyMember || a.studentName || a.parentName || '').localeCompare(String(b.familyMember || b.studentName || b.parentName || ''))),
   [programs, registrations, selectedClass]);
+  const filteredClassOptions = useMemo(() => {
+    const query = classSearch.trim().toLowerCase();
+    if (!query) return classOptions;
+    return classOptions.filter((item) => [item.title, item.key]
+      .some((value) => String(value || '').toLowerCase().includes(query)));
+  }, [classOptions, classSearch]);
+  const filteredCoverageOptions = useMemo(() => {
+    const query = coverageSearch.trim().toLowerCase();
+    if (!query) return classOptions;
+    return classOptions.filter((item) => [item.title, item.key]
+      .some((value) => String(value || '').toLowerCase().includes(query)));
+  }, [classOptions, coverageSearch]);
+  const visibleClassRows = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase();
+    if (!query) return classRows;
+    return classRows.filter((row) => [
+      row.familyMember,
+      row.studentName,
+      row.parentName,
+      row.email,
+      row.phone
+    ].some((value) => String(value || '').toLowerCase().includes(query)));
+  }, [classRows, studentSearch]);
   const selectedClassMeta = classOptions.find((item) => item.title === selectedClass) || {};
 
   const savedForSelection = useMemo(() => attendanceRecords.filter((row) => (
@@ -446,71 +688,152 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
   return (
     <>
       <PageHeader root="Teacher" area="Attendance" title="Student attendance" />
-      <section className="workflow-hero attendance-hero">
-        <div>
-          <p className="eyebrow">{tr('Teacher workspace')}</p>
-          <h2>{tr('Take class attendance')}</h2>
-          <p>{tr('Select a class and date, mark each student, add notes when needed, and save the roster for Welcome Desk/admin visibility.')}</p>
-          <div className="attendance-hero-meta">
-            <span><BookOpen size={16} /> {tr(selectedClass || 'No class selected')}</span>
-            <span><CalendarDays size={16} /> {attendanceDate}</span>
+      <section className="teacher-attendance-workspace">
+        <aside className="teacher-attendance-class-panel">
+          <div className="teacher-attendance-panel-heading">
+            <span><UsersRound size={20} /></span>
+            <div>
+              <h2>{tr('Classes')}</h2>
+              <p>{tr('Select a class to view and mark attendance.')}</p>
+            </div>
           </div>
-        </div>
-        <div className="workflow-action-list">
-          <article><strong>{classRows.length}</strong><span>{tr('Students')}</span></article>
-          <article><strong>{presentCount}</strong><span>{tr('Present or late')}</span></article>
-          <article><strong>{attendanceRate}%</strong><span>{tr('Attendance')}</span></article>
-        </div>
-      </section>
-      <section className="attendance-command-center admin-page-panel">
-        <div className="attendance-command-heading">
-          <div>
-            <span>{tr('Attendance register')}</span>
-            <strong>{tr(selectedClass || 'Select class')}</strong>
+          <label className="teacher-attendance-search">
+            <Search size={16} />
+            <input value={classSearch} onChange={(event) => setClassSearch(event.target.value)} placeholder={tr('Search classes...')} />
+          </label>
+          <div className="teacher-attendance-class-list">
+            {filteredClassOptions.length ? filteredClassOptions.map((item) => (
+              <button
+                key={item.title}
+                className={item.title === selectedClass ? 'is-active' : ''}
+                type="button"
+                onClick={() => setSelectedClass(item.title)}
+              >
+                <span>
+                  <strong>{tr(item.title)}</strong>
+                  <small>{item.registeredCount} {item.registeredCount === 1 ? tr('student') : tr('students')}</small>
+                  {item.key && <em>ID {item.key}</em>}
+                </span>
+                <ChevronRight size={18} />
+              </button>
+            )) : <p className="teacher-attendance-empty-text">{tr('No classes found.')}</p>}
           </div>
-          <div className="attendance-quick-actions">
-            <button type="button" onClick={() => markAll('Present')} disabled={!classRows.length}>{tr('Mark all present')}</button>
-            <button type="button" onClick={() => markAll('Absent')} disabled={!classRows.length}>{tr('Mark all absent')}</button>
-            <button type="button" onClick={clearNotes} disabled={!classRows.length}>{tr('Clear notes')}</button>
+        </aside>
+        <section className="teacher-attendance-main-panel">
+          <div className="teacher-attendance-title-row">
+            <div className="teacher-attendance-title">
+              <span><CalendarDays size={20} /></span>
+              <div>
+                <h2>{tr(selectedClass || 'Select class')}</h2>
+                <p>{selectedClassMeta.key ? `Class ID: ${selectedClassMeta.key}` : tr('Choose a class to manage attendance')}</p>
+              </div>
+            </div>
+            <div className="teacher-attendance-date">
+              <label>{tr('Date')}<DatePicker value={attendanceDate} onChange={setAttendanceDate} placeholder={tr('Choose date')} /></label>
+              <button className="button secondary" type="button" onClick={() => setAttendanceDate(today)}>{tr('Today')}</button>
+            </div>
           </div>
-        </div>
-        <div className="attendance-class-strip">
-          {classOptions.slice(0, 6).map((item) => (
-            <button
-              key={item.title}
-              className={item.title === selectedClass ? 'is-active' : ''}
-              type="button"
-              onClick={() => setSelectedClass(item.title)}
-            >
-              <strong>{tr(item.title)}</strong>
-              <span>{item.registeredCount} {tr('students')}</span>
+          <div className="teacher-attendance-stats">
+            <article><span>{tr('Registered in selected class')}:</span><strong>{selectedClassMeta.registeredCount || 0}</strong></article>
+            <article><span>{tr('Present/Late')}:</span><strong>{presentCount}</strong></article>
+            <article><span>{tr('Absent')}:</span><strong>{absentCount}</strong></article>
+            <article><span>{tr('Saved records')}:</span><strong>{savedForSelection.length}</strong></article>
+          </div>
+          <div className="teacher-attendance-tools">
+            <label className="teacher-attendance-search">
+              <Search size={16} />
+              <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder={tr('Search student by name or email...')} />
+            </label>
+            <div className="attendance-quick-actions">
+              <button type="button" onClick={() => markAll('Present')} disabled={!classRows.length}>{tr('Mark all present')}</button>
+              <button type="button" onClick={() => markAll('Absent')} disabled={!classRows.length}>{tr('Mark all absent')}</button>
+              <button className="teacher-attendance-more" type="button" onClick={clearNotes} disabled={!classRows.length} title={tr('Clear notes')} aria-label={tr('Clear notes')}>
+                <MoreHorizontal size={19} />
+              </button>
+              <span>{tr('More')}</span>
+            </div>
+          </div>
+          <div className="teacher-attendance-table-shell">
+            <table className="teacher-attendance-table">
+              <thead>
+                <tr>
+                  <th>{tr('Student')}</th>
+                  <th>{tr('Attendance')}</th>
+                  <th>{tr('Notes')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleClassRows.length ? visibleClassRows.map((row, index) => {
+                  const originalIndex = classRows.indexOf(row);
+                  const key = getRegistrationKey(row, originalIndex >= 0 ? originalIndex : index);
+                  const value = draft[key] || { status: 'Present', notes: '' };
+                  const student = row.familyMember || row.studentName || row.parentName || row.email || 'Student';
+                  return (
+                    <tr key={key}>
+                      <td>
+                        <div className="teacher-attendance-student">
+                          <span>{student.charAt(0).toUpperCase() || 'S'}</span>
+                          <div>
+                            <strong>{student}</strong>
+                            <small>{row.email || tr('Sample student')}</small>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="attendance-status-picker" role="group" aria-label={`${student} attendance`}>
+                          {['Present', 'Absent', 'Late', 'Excused'].map((status) => (
+                            <button
+                              key={status}
+                              type="button"
+                              className={value.status === status ? 'is-active' : ''}
+                              onClick={() => setDraft((current) => ({ ...current, [key]: { ...(current[key] || {}), status } }))}
+                            >
+                              {status === 'Present' && <CheckCircle size={15} />}
+                              {status === 'Absent' && <span className="attendance-radio-dot" />}
+                              {status === 'Late' && <Clock3 size={15} />}
+                              {status === 'Excused' && <X size={15} />}
+                              {tr(status)}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        <input
+                          value={value.notes}
+                          onChange={(event) => setDraft((current) => ({ ...current, [key]: { ...(current[key] || {}), notes: event.target.value } }))}
+                          placeholder={tr('Add a note...')}
+                        />
+                        <button type="button" onClick={() => setDraft((current) => ({ ...current, [key]: { ...(current[key] || {}), notes: '' } }))}>
+                          {tr('Clear notes')}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td colSpan={3}>
+                      <div className="attendance-empty-state">
+                        <div><UsersRound size={34} /></div>
+                        <strong>{tr('No students found for this class.')}</strong>
+                        <p>{allClassRows.length
+                          ? tr('Choose another class above. Classes with enrolled students are shown first.')
+                          : tr('Class registrations will appear here after members register.')}</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {notice && <p className="teacher-attendance-inline-notice"><CheckCircle size={16} /> {tr(notice)}</p>}
+          {!notice && <p className="teacher-attendance-inline-notice"><Clock3 size={16} /> {savedForSelection.length ? tr('Attendance has saved records for this date.') : tr('Attendance is not saved yet.')}</p>}
+          <div className="teacher-attendance-save-row">
+            <span>{classRows.length} {classRows.length === 1 ? tr('student marked') : tr('students marked')}</span>
+            <button className="button primary" type="button" onClick={handleSave} disabled={!classRows.length || saving}>
+              <Save size={16} /> {saving ? tr('Saving...') : tr('Save attendance')}
             </button>
-          ))}
-        </div>
-        <div className="attendance-toolbar">
-          <label>
-            {tr('Class')}
-            <select value={selectedClass} onChange={(event) => setSelectedClass(event.target.value)}>
-              {classOptions.map((item) => <option key={item.title} value={item.title}>{tr(item.title)} ({item.registeredCount})</option>)}
-            </select>
-          </label>
-          <label>
-            {tr('Date')}
-            <DatePicker value={attendanceDate} onChange={setAttendanceDate} placeholder={tr('Choose date')} />
-          </label>
-          <button className="mini-action-link secondary attendance-today-button" type="button" onClick={() => setAttendanceDate(today)}>
-            {tr('Today')}
-          </button>
-          <button className="button primary" type="button" onClick={handleSave} disabled={!classRows.length || saving}>
-            {saving ? tr('Saving...') : tr(savedForSelection.length ? 'Update attendance' : 'Save attendance')}
-          </button>
-        </div>
-        <div className="attendance-status-summary">
-          <span>{tr('Registered in selected class')}: <strong>{selectedClassMeta.registeredCount || 0}</strong></span>
-          <span>{tr('Present/Late')}: <strong>{presentCount}</strong></span>
-          <span>{tr('Absent')}: <strong>{absentCount}</strong></span>
-          <span>{tr('Saved records')}: <strong>{savedForSelection.length}</strong></span>
-        </div>
+          </div>
+        </section>
       </section>
       {notice && <p className="animated-form-message">{tr(notice)}</p>}
       <div className="attendance-mobile-save">
@@ -522,7 +845,7 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
           {saving ? tr('Saving...') : tr(savedForSelection.length ? 'Update' : 'Save')}
         </button>
       </div>
-      <section className="attendance-roster">
+      <section className="attendance-roster is-legacy-hidden">
         {classRows.length ? classRows.map((row, index) => {
           const key = getRegistrationKey(row, index);
           const value = draft[key] || { status: 'Present', notes: '' };
@@ -562,36 +885,81 @@ function TeacherAttendanceView({ programs, registrations, attendanceRecords, cur
           </article>
         )}
       </section>
-      <section className="attendance-history-grid">
-        <article>
-          <div className="panel-mini-heading">
-            <span>{tr('Recent sessions')}</span>
+      <section className="teacher-attendance-lower-grid">
+        <article className="teacher-attendance-lower-card teacher-recent-session-card">
+          <div className="teacher-attendance-lower-heading">
+            <div>
+              <span className="teacher-class-section-icon teacher-class-section-icon--gold"><CalendarDays size={20} /></span>
+              <h2>{tr('Recent sessions')}</h2>
+            </div>
             <strong>{recentSessionRows.length}</strong>
           </div>
-          {recentSessionRows.length ? recentSessionRows.map((session) => (
-            <div className="attendance-history-row" key={`${session.className}-${session.attendanceDate}`}>
-              <div>
-                <strong>{tr(session.className)}</strong>
-                <span>{session.attendanceDate}</span>
+          {recentSessionRows.length ? recentSessionRows.slice(0, 1).map((session) => {
+            const date = new Date(`${session.attendanceDate}T00:00:00`);
+            const month = Number.isNaN(date.getTime()) ? String(session.attendanceDate).slice(5, 7) : date.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+            const day = Number.isNaN(date.getTime()) ? String(session.attendanceDate).slice(-2) : String(date.getDate()).padStart(2, '0');
+            return (
+              <div className="teacher-recent-session" key={`${session.className}-${session.attendanceDate}`}>
+                <div className="teacher-recent-date">
+                  <span>{month}</span>
+                  <strong>{day}</strong>
+                </div>
+                <div className="teacher-recent-copy">
+                  <h3>{tr(session.className)}</h3>
+                  <p>{session.attendanceDate}</p>
+                </div>
+                <div className="teacher-recent-counts">
+                  <strong>{session.present} / {session.total} {tr('present')}</strong>
+                  <span>{Math.max(0, session.total - session.present)} {tr('not present')}</span>
+                </div>
               </div>
-              <span>{session.present}/{session.total} {tr('present')}</span>
+            );
+          }) : (
+            <div className="teacher-recent-empty">
+              <Clock3 size={28} />
+              <strong>{tr('No recent sessions yet')}</strong>
+              <p>{tr('Saved attendance sessions will appear here.')}</p>
             </div>
-          )) : <p>{tr('Saved attendance sessions will appear here.')}</p>}
+          )}
+          <button className="teacher-outline-button" type="button" disabled={!recentSessionRows.length}>
+            <ReceiptText size={17} /> {tr('View session outline')} <ChevronRight size={18} />
+          </button>
         </article>
-        <article>
-          <div className="panel-mini-heading">
-            <span>{tr('Class coverage')}</span>
-            <strong>{classOptions.filter((item) => item.registeredCount).length}</strong>
-          </div>
-          {classOptions.slice(0, 5).map((item) => (
-            <div className="attendance-history-row" key={item.title}>
-              <div>
-                <strong>{tr(item.title)}</strong>
-                <span>{item.registeredCount ? tr('Ready for attendance') : tr('No registrations yet')}</span>
-              </div>
-              <span>{item.registeredCount}</span>
+        <article className="teacher-attendance-lower-card teacher-class-coverage-card">
+          <div className="teacher-attendance-lower-heading">
+            <div>
+              <span className="teacher-class-section-icon teacher-class-section-icon--gold"><UsersRound size={20} /></span>
+              <h2>{tr('Class coverage')}</h2>
             </div>
-          ))}
+            <strong>{classOptions.length} {tr('classes')}</strong>
+          </div>
+          <label className="teacher-attendance-search teacher-coverage-search">
+            <Search size={16} />
+            <input value={coverageSearch} onChange={(event) => setCoverageSearch(event.target.value)} placeholder={tr('Search classes...')} />
+          </label>
+          <div className="teacher-coverage-list">
+            {filteredCoverageOptions.slice(0, 5).map((item, index) => (
+              <div className="teacher-coverage-row" key={item.title}>
+                <span className={`teacher-coverage-icon teacher-coverage-icon-${(index % 4) + 1}`}>
+                  {index % 4 === 0 ? <GraduationCap size={18} /> : index % 4 === 1 ? <CreditCard size={18} /> : index % 4 === 2 ? <UsersRound size={18} /> : <BookOpen size={18} />}
+                </span>
+                <div>
+                  <strong>{tr(item.title)}</strong>
+                  {item.key && <small>ID {item.key}</small>}
+                </div>
+                <em><CheckCircle size={15} /> {item.registeredCount ? tr('Ready') : tr('Waiting')}</em>
+                <b><UsersRound size={15} /> {item.registeredCount} {item.registeredCount === 1 ? tr('student') : tr('students')}</b>
+                <button type="button" onClick={() => setSelectedClass(item.title)}>
+                  {tr('Take attendance')} <ChevronRight size={18} />
+                </button>
+              </div>
+            ))}
+            {!filteredCoverageOptions.length && <p className="teacher-attendance-empty-text">{tr('No classes found.')}</p>}
+          </div>
+          <div className="teacher-coverage-footer">
+            <span>{tr('Showing')} {Math.min(5, filteredCoverageOptions.length)} {tr('of')} {filteredCoverageOptions.length} {tr('classes')}</span>
+            <button type="button" onClick={() => setCoverageSearch('')}>{tr('View all classes')} <ChevronRight size={16} /></button>
+          </div>
         </article>
       </section>
     </>
@@ -795,7 +1163,7 @@ function isPaidRegistration(row = {}) {
   return row.paid === true || row.paymentReceived === true || row.paymentReceived === 'true' || String(row.paid || '').toLowerCase() === 'paid';
 }
 
-function EnabledToggle({ enabled, onChange, onLabel = 'Yes', offLabel = 'No', label = 'Enabled' }) {
+function EnabledToggle({ enabled, onChange, onLabel = 'Enabled', offLabel = 'Disabled', label = 'Enabled' }) {
   const { tr } = useLanguage();
   const isOn = Boolean(enabled);
   return (
@@ -829,9 +1197,42 @@ function ReceiptLink({ row }) {
   return (
     <a className="receipt-link" href={row.receiptUrl} target="_blank" rel="noreferrer" title={row.receiptName || 'Open receipt'}>
       <ReceiptText size={16} />
-      <span>{tr('View receipt')}</span>
+      <span>{tr('View')}</span>
       <small>{row.receiptName || formatFileSize(row.receiptSize)}</small>
     </a>
+  );
+}
+
+function TableActionMenu({ primary, items = [] }) {
+  const { tr } = useLanguage();
+  const visibleItems = items.filter(Boolean);
+  return (
+    <div className="table-action-cluster">
+      {primary}
+      {visibleItems.length ? (
+        <details className="table-more-menu">
+          <summary aria-label={tr('More actions')} title={tr('More actions')}>
+            <MoreHorizontal size={18} />
+          </summary>
+          <div className="table-more-menu-list">
+            {visibleItems.map((item) => (
+              <button
+                key={item.label}
+                className={item.danger ? 'is-danger' : ''}
+                type="button"
+                onClick={(event) => {
+                  event.currentTarget.closest('details')?.removeAttribute('open');
+                  item.onClick();
+                }}
+              >
+                {item.icon}
+                <span>{tr(item.label)}</span>
+              </button>
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </div>
   );
 }
 
@@ -956,7 +1357,7 @@ function EventDetailModal({ item, onClose }) {
           <img src={getProgramImage(item)} alt={item.title} />
           <div>
             <span>{item.eventType || item.category || 'Kannada Bharati'}</span>
-            <h2>{item.title}</h2>
+            <ModalTitle matchText="Event details">{item.title}</ModalTitle>
             <p>{item.focus || item.body || item.description || 'Program details are available below.'}</p>
           </div>
         </div>
@@ -1039,7 +1440,7 @@ function RegistrationDetailModal({ row, onClose }) {
           </div>
           <div>
             <span>Registration profile</span>
-            <h2>{profile.firstName || row.parentName || row.email}</h2>
+            <ModalTitle matchText="Registration profile">{profile.firstName || row.parentName || row.email}</ModalTitle>
             <p>{profile.description || 'Member profile and registration details are shown below.'}</p>
           </div>
         </div>
@@ -1233,18 +1634,70 @@ function UserRoleEditor({ row, onChange }) {
   );
 }
 
+function getRolePageIcon(page = {}) {
+  const text = `${page.label || ''} ${page.path || ''}`.toLowerCase();
+  if (/dashboard|report|developer/.test(text)) return ListChecks;
+  if (/check|registration|attendance|seat/.test(text)) return CheckCircle;
+  if (/user|profile|member|guest|student/.test(text)) return UserRound;
+  if (/event|calendar|announcement|gallery/.test(text)) return CalendarDays;
+  if (/class|teacher|paata/.test(text)) return GraduationCap;
+  if (/donation|fund|expense|treasurer|payment/.test(text)) return HandCoins;
+  if (/message|email|contact/.test(text)) return Mail;
+  if (/role|access|setting|content/.test(text)) return ListChecks;
+  return Building2;
+}
+
+function getRolePageDescription(page = {}) {
+  const text = `${page.label || ''} ${page.path || ''}`.toLowerCase();
+  if (/seat/.test(text)) return 'Manage event seating, assign guests to seats and track check-in status.';
+  if (/check/.test(text)) return 'Check in attendees and review arrival details.';
+  if (/event/.test(text)) return 'Create, update and monitor community events.';
+  if (/class|teacher/.test(text)) return 'Manage classes, teachers, students and attendance.';
+  if (/donation|fund|expense|treasurer|payment/.test(text)) return 'Review payment, donation and expense records.';
+  if (/message|email/.test(text)) return 'Send messages and review email communication.';
+  if (/role|access/.test(text)) return 'Control page permissions and visible table fields.';
+  return 'Allow access to this admin page and configure visible fields.';
+}
+
+function formatRoleFieldLabel(field = '') {
+  return String(field)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getRoleFieldDescription(field = '') {
+  const label = formatRoleFieldLabel(field).toLowerCase();
+  if (/action|actions/.test(label)) return 'Row level actions such as view, edit, approve or assign.';
+  if (/id|key|ref|reference/.test(label)) return 'Identifier used to connect related records.';
+  if (/status|enabled|paid|payment/.test(label)) return 'Status shown for review and follow-up.';
+  if (/email|phone|name|profile/.test(label)) return 'Member or attendee contact information.';
+  if (/date|created|start|end|sent|attendance/.test(label)) return 'Date or time information shown in the table.';
+  if (/amount|fee|goal|raised|price/.test(label)) return 'Financial value for the selected record.';
+  return `${formatRoleFieldLabel(field)} field`;
+}
+
 function RoleAccessManager({ roles, onSave, notice, error }) {
   const [editingId, setEditingId] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedPage, setSelectedPage] = useState(adminPageCatalog[0]?.path || '/admin');
+  const [pageQuery, setPageQuery] = useState('');
   const [formError, setFormError] = useState('');
   const [draft, setDraft] = useState({ name: '', description: '', pages: [], fields: {} });
   const editing = roles.find((role) => role.id === editingId);
   const selectedPageMeta = adminPageCatalog.find((page) => page.path === selectedPage) || adminPageCatalog[0];
+  const selectedFields = draft.fields?.[selectedPage] || [];
+  const allSelectedPageFields = selectedPageMeta?.fields || [];
+  const filteredPages = adminPageCatalog.filter((page) => {
+    const text = `${page.label} ${page.path}`.toLowerCase();
+    return !pageQuery.trim() || text.includes(pageQuery.trim().toLowerCase());
+  });
+  const SelectedPageIcon = getRolePageIcon(selectedPageMeta);
 
   function resetDraft() {
     setEditingId('');
     setSelectedPage(adminPageCatalog[0]?.path || '/admin');
+    setPageQuery('');
     setFormError('');
     setDraft({ name: '', description: '', pages: [], fields: {} });
   }
@@ -1360,10 +1813,13 @@ function RoleAccessManager({ roles, onSave, notice, error }) {
           { key: 'pages', label: 'Pages', render: (role) => `${(role.pages || []).length} page(s)` },
           { key: 'fields', label: 'Fields', render: (role) => Object.values(role.fields || {}).reduce((total, fields) => total + fields.length, 0) },
           { key: 'actions', label: 'Actions', render: (role) => (
-            <div className="admin-row-actions">
-              <button className="icon-button table-icon-button" type="button" onClick={() => editRole(role)} aria-label="Edit role"><Edit3 size={15} /></button>
-              <button className="icon-button table-icon-button danger" type="button" onClick={() => removeRole(role.id)} aria-label="Delete role"><Trash2 size={15} /></button>
-            </div>
+            <TableActionMenu
+              primary={<button className="mini-action-link secondary" type="button" onClick={() => editRole(role)}><Edit3 size={15} /> Edit</button>}
+              items={[
+                { label: 'Edit', icon: <Edit3 size={15} />, onClick: () => editRole(role) },
+                { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => removeRole(role.id) }
+              ]}
+            />
           ) }
         ]}
       />
@@ -1376,59 +1832,89 @@ function RoleAccessManager({ roles, onSave, notice, error }) {
             <form className="admin-create-form role-access-form" onSubmit={saveRole}>
               <div className="role-modal-heading">
                 <div>
-                  <h2>{editing ? 'Edit role' : 'Add role'}</h2>
-                  <p className="admin-form-note">Create a role, choose pages, then select exactly which fields should be visible.</p>
+                  <ModalTitle>{editing ? 'Edit role' : 'Add role'}</ModalTitle>
+                  <p className="admin-form-note">{editing ? 'Update page access and field permissions' : 'Create a new role with page access and field permissions'}</p>
                 </div>
-                <span>{draft.pages.length} page(s)</span>
               </div>
               {formError && <p className="form-error">{formError}</p>}
               <div className="role-modal-basics">
-                <label>Role name<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Event coordinator" required /></label>
-                <label>Description<input value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Can manage selected event pages" /></label>
+                <label>Role name <b aria-hidden="true">*</b><input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Event coordinator" required /></label>
+                <label>Description <b aria-hidden="true">*</b><input value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Can manage selected event pages" required /></label>
               </div>
               <div className="role-permission-builder">
                 <aside className="role-page-side">
-                  <div className="panel-mini-heading">
-                    <span>Page access</span>
-                    <strong>{draft.pages.length}</strong>
+                  <div className="role-builder-title">
+                    <h3>1. Select pages</h3>
+                    <p>Choose which pages this role can access. Select one or more pages.</p>
                   </div>
-                  <div className="role-page-list">
-                    {adminPageCatalog.map((page) => (
-                      <button
-                        key={page.path}
-                        className={`${selectedPage === page.path ? 'is-active' : ''} ${draft.pages.includes(page.path) ? 'is-selected' : ''}`}
-                        type="button"
-                        onClick={() => setSelectedPage(page.path)}
-                      >
-                        <input type="checkbox" checked={draft.pages.includes(page.path)} onChange={() => togglePage(page.path)} onClick={(event) => event.stopPropagation()} />
-                        <span><strong>{page.label}</strong><small>{page.path}</small></span>
-                      </button>
-                    ))}
+                  <label className="role-page-search" aria-label="Search pages">
+                    <input value={pageQuery} onChange={(event) => setPageQuery(event.target.value)} placeholder="Search pages..." />
+                    <Search size={18} />
+                  </label>
+                  <div className="role-page-list" role="list">
+                    {filteredPages.map((page) => {
+                      const PageIcon = getRolePageIcon(page);
+                      const isSelected = draft.pages.includes(page.path);
+                      return (
+                        <button
+                          key={page.path}
+                          className={`${selectedPage === page.path ? 'is-active' : ''} ${isSelected ? 'is-selected' : ''}`}
+                          type="button"
+                          onClick={() => setSelectedPage(page.path)}
+                        >
+                          <span className="role-check" aria-hidden="true">{isSelected ? <CheckCircle size={16} /> : null}</span>
+                          <PageIcon size={18} />
+                          <span><strong>{page.label}</strong><small>{page.path}</small></span>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            aria-label={`Allow ${page.label}`}
+                            onChange={() => togglePage(page.path)}
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        </button>
+                      );
+                    })}
+                    {!filteredPages.length && <p className="muted-cell">No matching pages.</p>}
                   </div>
                 </aside>
                 <section className="role-field-side">
-                  <div className="panel-mini-heading">
-                    <span>{selectedPageMeta?.label || 'Fields'}</span>
-                    <strong>{(draft.fields?.[selectedPage] || []).length}/{selectedPageMeta?.fields?.length || 0}</strong>
+                  <div className="role-builder-title">
+                    <h3>2. Configure field access</h3>
+                    <p>These fields control which table columns this role can see.</p>
                   </div>
-                  <p className="admin-form-note">These fields control what table columns this role can see on the selected page.</p>
+                  <div className="role-selected-page-card">
+                    <span><SelectedPageIcon size={28} /></span>
+                    <div>
+                      <h4>{selectedPageMeta?.label || 'Selected page'}</h4>
+                      <p>{selectedPageMeta?.path}</p>
+                      <small>{getRolePageDescription(selectedPageMeta)}</small>
+                    </div>
+                  </div>
                   <div className="role-field-actions">
-                    <button className="mini-action-link secondary" type="button" onClick={() => setAllFields(selectedPage, selectedPageMeta?.fields || [])}>Select all</button>
-                    <button className="mini-action-link danger" type="button" onClick={() => setAllFields(selectedPage, [])}>Clear fields</button>
+                    <strong><CheckCircle size={17} /> {selectedFields.length} of {allSelectedPageFields.length} fields selected</strong>
+                    <button className="mini-action-link secondary" type="button" onClick={() => setAllFields(selectedPage, allSelectedPageFields)}><CheckCircle size={15} /> Select all</button>
+                    <button className="mini-action-link secondary" type="button" onClick={() => setAllFields(selectedPage, [])}>Clear fields</button>
                   </div>
                   <div className="role-field-grid">
-                    {(selectedPageMeta?.fields || []).map((field) => (
-                      <label key={field} className={(draft.fields?.[selectedPage] || []).includes(field) ? 'is-selected' : ''}>
-                        <input type="checkbox" checked={(draft.fields?.[selectedPage] || []).includes(field)} onChange={() => toggleField(selectedPage, field)} />
-                        <span>{field}</span>
+                    {allSelectedPageFields.map((field) => (
+                      <label key={field} className={selectedFields.includes(field) ? 'is-selected' : ''}>
+                        <input type="checkbox" checked={selectedFields.includes(field)} onChange={() => toggleField(selectedPage, field)} />
+                        <span className="role-check" aria-hidden="true">{selectedFields.includes(field) ? <CheckCircle size={16} /> : null}</span>
+                        <span>
+                          <strong>{formatRoleFieldLabel(field)}</strong>
+                          <small>{getRoleFieldDescription(field)}</small>
+                        </span>
+                        <code>{field}</code>
+                        <em>String</em>
                       </label>
                     ))}
                   </div>
                 </section>
               </div>
               <div className="paata-teacher-form-actions">
-                <button className="button primary" type="submit"><Save size={16} /> {editing ? 'Update role' : 'Add role'}</button>
                 <button className="button ghost" type="button" onClick={closeModal}>Cancel</button>
+                <button className="button primary" type="submit"><Plus size={18} /> {editing ? 'Update role' : 'Add role'}</button>
               </div>
             </form>
           </div>
@@ -1492,18 +1978,6 @@ function TeacherAllotmentManager({ allotments, classes, teachers, onSave, notice
 
   return (
     <>
-      <section className="workflow-hero teacher-allotment-hero">
-        <div>
-          <p className="eyebrow">Class ownership</p>
-          <h2>Assign teachers to classes</h2>
-          <p>Choose a class, assign a teacher account, and keep the roster ownership clear for attendance and class operations.</p>
-        </div>
-        <div className="workflow-action-list">
-          <article><strong>{classOptions.length}</strong><span>Classes</span></article>
-          <article><strong>{teacherOptions.length}</strong><span>Teachers</span></article>
-          <article><strong>{allotments.length}</strong><span>Assignments</span></article>
-        </div>
-      </section>
       {notice && <p className="success admin-floating-message">{notice}</p>}
       {error && <p className="form-error admin-floating-message">{error}</p>}
       <AdminTable
@@ -1518,10 +1992,13 @@ function TeacherAllotmentManager({ allotments, classes, teachers, onSave, notice
           { key: 'notes', label: 'Notes' },
           { key: 'enabled', label: 'Enabled', render: (row) => row.enabled !== false ? 'Yes' : 'No' },
           { key: 'actions', label: 'Actions', render: (row) => (
-            <div className="admin-row-actions">
-              <button className="icon-button table-icon-button" type="button" onClick={() => editAllotment(row)} aria-label="Edit allotment"><Edit3 size={15} /></button>
-              <button className="icon-button table-icon-button danger" type="button" onClick={() => onSave(allotments.filter((item) => item.id !== row.id))} aria-label="Delete allotment"><Trash2 size={15} /></button>
-            </div>
+            <TableActionMenu
+              primary={<button className="mini-action-link secondary" type="button" onClick={() => editAllotment(row)}><Edit3 size={15} /> Edit</button>}
+              items={[
+                { label: 'Edit', icon: <Edit3 size={15} />, onClick: () => editAllotment(row) },
+                { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => onSave(allotments.filter((item) => item.id !== row.id)) }
+              ]}
+            />
           ) }
         ]}
       />
@@ -1532,7 +2009,7 @@ function TeacherAllotmentManager({ allotments, classes, teachers, onSave, notice
               <X size={20} />
             </button>
             <form className="admin-create-form" onSubmit={saveAllotment}>
-              <h2>{editingId ? 'Edit allotment' : 'Add allotment'}</h2>
+              <ModalTitle>{editingId ? 'Edit allotment' : 'Add allotment'}</ModalTitle>
               <p className="admin-form-note">Assign one teacher to one class. The teacher attendance and class area will use these assignments.</p>
               <div className="admin-form-grid">
                 <label>Class<select value={draft.classTitle} onChange={(event) => setDraft((current) => ({ ...current, classTitle: event.target.value }))} required><option value="">Choose class</option>{classOptions.map((item) => <option key={item.id || item.title} value={item.title}>{item.title}</option>)}</select></label>
@@ -1751,7 +2228,7 @@ function AdminEditModal({ kind, row, eventTypes = [], recurrences = [], onClose,
           <X size={20} />
         </button>
         <form className="admin-create-form" onSubmit={handleSubmit}>
-          <h2>{title}</h2>
+          <ModalTitle>{title}</ModalTitle>
           <p className="admin-form-note">Update the existing record and save changes back to the admin table.</p>
           {kind === 'event' && (
             <>
@@ -2115,10 +2592,10 @@ function AboutContentEditor({ content, setContent, onSave, saving, notice, error
                     {getRowNote(section.key, row) && <p>{getRowNote(section.key, row)}</p>}
                   </div>
                   <div className="about-admin-directory-actions">
-                    <button className="icon-button table-icon-button" type="button" onClick={() => openEdit(section.key, row)} title={tr('Edit')} aria-label={tr('Edit')}>
+                    <button className="icon-button table-icon-button" type="button" data-label={tr('Edit')} onClick={() => openEdit(section.key, row)} title={tr('Edit')} aria-label={tr('Edit')}>
                       <Edit3 size={15} />
                     </button>
-                    <button className="icon-button table-icon-button danger" type="button" onClick={() => removeRow(section.key, row.id)} title={tr('Remove')} aria-label={tr('Remove')}>
+                    <button className="icon-button table-icon-button danger" type="button" data-label={tr('Remove')} onClick={() => removeRow(section.key, row.id)} title={tr('Remove')} aria-label={tr('Remove')}>
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -2275,16 +2752,6 @@ function PaataTeacherEditor({ teachers, setTeachers, onSave, saving, notice, err
 
   return (
     <>
-      <section className="about-admin-hero paata-admin-hero">
-        <div>
-          <p className="eyebrow">{tr('Kannada Paata Shaale')}</p>
-          <h2>{tr('Manage teacher details')}</h2>
-          <p>{tr('Upload teacher photos and update role, level, contact, and short bio shown on the public Paata Shaale page.')}</p>
-        </div>
-        <button className="button" type="button" onClick={onSave} disabled={saving}>
-          <Save size={17} /> {saving ? tr('Saving...') : tr('Save Teachers')}
-        </button>
-      </section>
       {error && <p className="form-error admin-floating-message">{error}</p>}
       {notice && <p className="success admin-floating-message">{notice}</p>}
       <div className="paata-admin-workspace">
@@ -2292,19 +2759,23 @@ function PaataTeacherEditor({ teachers, setTeachers, onSave, saving, notice, err
           <div className="paata-admin-section-title">
             <span><UserPlus size={18} /></span>
             <div>
-              <h2>{editingId ? tr('Edit teacher') : tr('Add teacher')}</h2>
-              <p>{tr('Fill teacher details once, then add or update the saved teacher list.')}</p>
+              <h2>{editingId ? tr('Edit teacher') : tr('Add new teacher')}</h2>
             </div>
           </div>
           {draftError && <p className="form-error">{draftError}</p>}
           <form className="paata-teacher-admin-form" onSubmit={saveDraft}>
             <div className="paata-teacher-photo-editor">
-              <div className="paata-teacher-photo-preview">
-                {draft.photo ? <img src={draft.photo} alt={draft.name || 'Teacher'} /> : <ImagePlus size={34} />}
-              </div>
-              <label>
+              <label className="paata-teacher-upload-box">
                 <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => uploadTeacherPhoto(event.target.files?.[0])} />
-                <ImagePlus size={16} /> {tr('Upload photo')}
+                {draft.photo ? (
+                  <img src={draft.photo} alt={draft.name || 'Teacher'} />
+                ) : (
+                  <>
+                    <ImagePlus size={34} />
+                    <span>{tr('Click to upload photo')}</span>
+                    <small>{tr('PNG, JPG or JPEG (Max 5MB)')}</small>
+                  </>
+                )}
               </label>
             </div>
             <div className="paata-teacher-form-grid">
@@ -2329,10 +2800,11 @@ function PaataTeacherEditor({ teachers, setTeachers, onSave, saving, notice, err
         <section className="admin-page-panel paata-teacher-list-panel">
           <div className="admin-page-panel-heading">
             <div>
-              <h2>{tr('Saved teachers')}</h2>
-              <p>{tr('These teacher cards appear on the Kannada Paata Shaale page after saving.')}</p>
+              <h2>{tr('Saved teachers')} <span>({teachers.length})</span></h2>
             </div>
-            <span>{teachers.length}</span>
+            <button className="button paata-save-list-button" type="button" onClick={onSave} disabled={saving}>
+              <Save size={17} /> {saving ? tr('Saving...') : tr('Save Teachers')}
+            </button>
           </div>
           <div className="paata-admin-teacher-list">
             {teachers.map((teacher) => (
@@ -2342,12 +2814,15 @@ function PaataTeacherEditor({ teachers, setTeachers, onSave, saving, notice, err
                 </div>
                 <div className="paata-admin-teacher-summary">
                   <strong>{teacher.name || tr('Unnamed teacher')}</strong>
-                  <span>{teacher.role || tr('Teacher')} · {teacher.level || tr('Level not set')}</span>
-                  {teacher.bio && <p>{teacher.bio}</p>}
+                  <div className="paata-admin-teacher-badges">
+                    <span>{teacher.role || tr('Teacher')}</span>
+                    <span>{teacher.level || tr('Level not set')}</span>
+                  </div>
                   <div>
                     {teacher.email && <small><Mail size={13} /> {teacher.email}</small>}
                     {teacher.phone && <small><Phone size={13} /> {teacher.phone}</small>}
                   </div>
+                  {teacher.bio && <p>{teacher.bio}</p>}
                 </div>
                 <div className="paata-admin-teacher-actions">
                   <button className="icon-button" type="button" onClick={() => editTeacher(teacher)} title={tr('Edit teacher')} aria-label={tr('Edit teacher')}>
@@ -2367,9 +2842,6 @@ function PaataTeacherEditor({ teachers, setTeachers, onSave, saving, notice, err
               </div>
             )}
           </div>
-          <button className="button paata-save-list-button" type="button" onClick={onSave} disabled={saving}>
-            <Save size={17} /> {saving ? tr('Saving...') : tr('Save teacher list')}
-          </button>
         </section>
       </div>
     </>
@@ -2452,6 +2924,8 @@ export default function AdminSectionPage({ view }) {
   const [expenseError, setExpenseError] = useState('');
   const [expenseSaved, setExpenseSaved] = useState(false);
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
+  const [expenseQuery, setExpenseQuery] = useState('');
+  const [expenseReceiptName, setExpenseReceiptName] = useState('');
   const [announcementError, setAnnouncementError] = useState('');
   const [announcementSaved, setAnnouncementSaved] = useState(false);
   const [siteMessage, setSiteMessage] = useState(() => readJson('kb-site-message', { enabled: false, title: '', message: '', ctaText: '', ctaUrl: '' }));
@@ -2469,6 +2943,7 @@ export default function AdminSectionPage({ view }) {
   const [detailRecord, setDetailRecord] = useState(null);
   const [registrationDetail, setRegistrationDetail] = useState(null);
   const [editRecord, setEditRecord] = useState(null);
+  const [guestRegistrationOpen, setGuestRegistrationOpen] = useState(false);
   const [checkedInIds, setCheckedInIds] = useState(() => readJson('kb-checkin-records', []));
   const [eventTypes, setEventTypes] = useState(() => readJson('kb-event-types', defaultEventTypes));
   const [recurrences, setRecurrences] = useState(() => readJson('kb-recurrence-options', defaultRecurrences));
@@ -2495,10 +2970,21 @@ export default function AdminSectionPage({ view }) {
   const [userSearchResult, setUserSearchResult] = useState(null);
   const [userSearchError, setUserSearchError] = useState('');
   const [seatError, setSeatError] = useState('');
+  const [seatNotice, setSeatNotice] = useState('');
+  const [seatLoading, setSeatLoading] = useState(false);
+  const [seatLoaded, setSeatLoaded] = useState(false);
+  const [seatSaving, setSeatSaving] = useState(false);
+  const [seatActionId, setSeatActionId] = useState('');
   const [seatRecords, setSeatRecords] = useState([]);
+  const [seatApiRegistrations, setSeatApiRegistrations] = useState([]);
   const [seatEventTitle, setSeatEventTitle] = useState('');
   const [selectedSeatNumber, setSelectedSeatNumber] = useState('');
   const [selectedSeatRegistrationId, setSelectedSeatRegistrationId] = useState('');
+  const [selectedSeatAssignedName, setSelectedSeatAssignedName] = useState('');
+  const [studentViewTab, setStudentViewTab] = useState('registrations');
+  const [studentViewSelectedName, setStudentViewSelectedName] = useState('');
+  const [dashboardEventSearch, setDashboardEventSearch] = useState('');
+  const [teacherDirectoryQuery, setTeacherDirectoryQuery] = useState('');
   const registrations = dashboard.registrations || [];
   const users = dashboard.users || [];
   const donations = dashboard.donations || [];
@@ -2514,11 +3000,25 @@ export default function AdminSectionPage({ view }) {
   const attendanceRecords = dashboard.attendance || [];
   const profile = readJson(memberProfileKey(user?.email), {});
   const profileChildren = readJson(memberChildrenKey(user?.email), []);
-  const eventOptions = [...new Map([
-    ...allEvents.map((item) => [item.title, item]),
-    ...programs.map((item) => [item.title, item]),
-    ...registrations.filter((item) => item.program).map((item) => [item.program, { title: item.program }])
-  ].filter(([title]) => title).map(([title, item], index) => [title, { ...item, title, eventId: item.eventId || makeEventId(title, index) }])).values()];
+  const eventOptionMap = new Map();
+  const addEventOption = (title, item = {}, preferExisting = false) => {
+    if (!title) return;
+    const current = eventOptionMap.get(title) || {};
+    if (preferExisting && current.title) return;
+    eventOptionMap.set(title, {
+      ...current,
+      ...item,
+      title,
+      eventId: item.eventId || item.id || current.eventId || current.id || makeEventId(title),
+      capacity: Number(item.capacity ?? current.capacity ?? item.totalSeats ?? current.totalSeats ?? item.seats ?? current.seats ?? 0)
+    });
+  };
+  allEvents.forEach((item) => addEventOption(item.title, item));
+  programs.forEach((item) => addEventOption(item.title, item, true));
+  registrations
+    .filter((item) => item.program)
+    .forEach((item) => addEventOption(item.program, { title: item.program, eventId: item.eventId }, true));
+  const eventOptions = [...eventOptionMap.values()];
   const selectedCheckinEvent = eventOptions.find((item) => item.title === checkinProgram) || eventOptions[0] || {};
   const expectedEventId = selectedCheckinEvent.eventId || '';
   const firstSeatEventTitle = eventOptions[0]?.title || '';
@@ -2627,16 +3127,40 @@ export default function AdminSectionPage({ view }) {
       setSeatEventTitle(firstSeatEventTitle);
       return;
     }
+    if (!selectedSeatEventId) return;
+    let ignore = false;
+    setSeatLoading(true);
+    setSeatLoaded(false);
+    setSeatError('');
+    setSeatNotice('');
     apiReadSeats(selectedSeatEventId)
-      .then((records) => setSeatRecords(records.seats || []))
-      .catch(() => setSeatRecords([]));
+      .then((records) => {
+        if (ignore) return;
+        setSeatRecords(records.seats || []);
+        setSeatApiRegistrations(records.registrations || []);
+        setSeatLoaded(true);
+      })
+      .catch((error) => {
+        if (ignore) return;
+        setSeatRecords([]);
+        setSeatApiRegistrations([]);
+        setSeatError(error.message || 'Could not load seats. Check your login and API connection.');
+      })
+      .finally(() => {
+        if (!ignore) setSeatLoading(false);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [firstSeatEventTitle, seatEventTitle, selectedSeatEventId, view]);
 
   useEffect(() => {
     if (view !== 'seats') return;
     setSelectedSeatNumber('');
     setSelectedSeatRegistrationId('');
+    setSelectedSeatAssignedName('');
     setSeatError('');
+    setSeatNotice('');
   }, [seatEventTitle, view]);
 
   useEffect(() => {
@@ -3069,23 +3593,42 @@ export default function AdminSectionPage({ view }) {
   function AdminRecordActions({ kind, row, canEdit = true, canDelete = true }) {
     const canClone = kind === 'event' || kind === 'class';
     return (
-      <div className="admin-row-actions compact-actions">
-        {canClone && (
-          <button className="icon-button table-icon-button" type="button" onClick={() => cloneAdminRecord(kind, row)} title={`Clone ${kind}`} aria-label={`Clone ${kind}`}>
-            <Copy size={15} />
+      <TableActionMenu
+        primary={canEdit ? (
+          <button className="mini-action-link secondary" type="button" onClick={() => setEditRecord({ kind, row })}>
+            <Edit3 size={15} /> {tr('Edit')}
           </button>
-        )}
-        {canEdit && (
-          <button className="icon-button table-icon-button" type="button" onClick={() => setEditRecord({ kind, row })} title={`Edit ${kind}`} aria-label={`Edit ${kind}`}>
-            <Edit3 size={15} />
-          </button>
-        )}
-        {canDelete && (
-          <button className="icon-button table-icon-button danger" type="button" onClick={() => deleteAdminRecord(kind, row)} title={`Delete ${kind}`} aria-label={`Delete ${kind}`}>
-            <Trash2 size={15} />
-          </button>
-        )}
-      </div>
+        ) : null}
+        items={[
+          canClone && { label: 'Clone', icon: <Copy size={15} />, onClick: () => cloneAdminRecord(kind, row) },
+          canEdit && { label: 'Edit', icon: <Edit3 size={15} />, onClick: () => setEditRecord({ kind, row }) },
+          canDelete && { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => deleteAdminRecord(kind, row) }
+        ]}
+      />
+    );
+  }
+
+  function RegistrationActionMenu({ row, checkinAction = null, checkedLabel = '' }) {
+    const confirmed = (row.status || 'Submitted') === 'Confirmed';
+    const paid = isPaidRegistration(row);
+    const primary = checkinAction || (!confirmed
+      ? <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'confirm', { status: 'Confirmed' })}>{tr('Confirm')}</button>
+      : !paid
+        ? <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' })}>{tr('Mark paid')}</button>
+        : <span className="confirmed-badge">{checkedLabel || tr('Confirmed')}</span>);
+    return (
+      <TableActionMenu
+        primary={primary}
+        items={[
+          { label: 'View details', icon: <Eye size={15} />, onClick: () => setRegistrationDetail(row) },
+          { label: 'Edit', icon: <Edit3 size={15} />, onClick: () => setEditRecord({ kind: 'registration', row }) },
+          !confirmed && { label: 'Confirm', icon: <CheckCircle size={15} />, onClick: () => runRegistrationAction(row, 'confirm', { status: 'Confirmed' }) },
+          !paid && { label: 'Mark paid', icon: <CheckCircle size={15} />, onClick: () => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' }) },
+          { label: 'Email', icon: <Mail size={15} />, onClick: () => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' }) },
+          { label: 'Reset status', icon: <RefreshCw size={15} />, onClick: () => runRegistrationAction(row, 'reset', { status: 'Submitted' }) },
+          { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => deleteAdminRecord('registration', row) }
+        ]}
+      />
     );
   }
 
@@ -3148,6 +3691,10 @@ export default function AdminSectionPage({ view }) {
   function handleGuestRegistrationSubmit(event) {
     event.preventDefault();
     const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const adults = Number(payload.adults || 1);
+    const kids = Number(payload.kids || 0);
+    const youngKids = Number(payload.youngKids || 0);
+    const totalMembers = Math.max(1, adults + kids + youngKids);
     const record = appendRecord('kb-registration-submissions', {
       parentName: cleanText(payload.name),
       studentName: cleanText(payload.familyMember || payload.name),
@@ -3158,20 +3705,26 @@ export default function AdminSectionPage({ view }) {
       eventId: cleanText(payload.eventId || expectedEventId),
       status: 'Submitted',
       registrationType: 'guest',
-      adults: Number(payload.adults || 1),
-      kids: Number(payload.kids || 0),
-      youngKids: Number(payload.youngKids || 0),
-      totalMembers: Number(payload.totalMembers || payload.adults || 1),
-      seats: Number(payload.totalMembers || payload.adults || 1),
+      adults,
+      kids,
+      youngKids,
+      totalMembers,
+      seats: totalMembers,
       amount: Number(payload.amount || 0)
     });
     setDashboard((current) => ({ ...current, registrations: [...(current.registrations || []), record] }));
     event.currentTarget.reset();
+    setGuestRegistrationOpen(false);
   }
 
   async function handleSeatSubmit(event) {
     event.preventDefault();
     setSeatError('');
+    setSeatNotice('');
+    if (!seatLoaded) {
+      setSeatError('Seats are not loaded. Resolve the API or login error before saving.');
+      return;
+    }
     const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
     const eventId = cleanText(payload.eventId || selectedSeatEventId);
     const seatNumber = cleanText(payload.seatNumber || selectedSeatNumber);
@@ -3180,21 +3733,59 @@ export default function AdminSectionPage({ view }) {
       return;
     }
     const registrationId = payload.registrationId || selectedSeatRegistrationId || '';
-    const selectedRegistration = registrations.find((row) => row.id === registrationId);
+    const selectedRegistration = [...seatApiRegistrations, ...registrations].find((row) => row.id === registrationId);
+    const assignedTo = cleanText(payload.assignedTo)
+      || selectedRegistration?.familyMember
+      || selectedRegistration?.studentName
+      || selectedRegistration?.parentName
+      || null;
+    const currentSeat = seatRecords.find((seat) => String(seat.seat_number || seat.seatNumber) === seatNumber);
+    const status = assignedTo || registrationId
+      ? (/checked/i.test(currentSeat?.status || '') ? 'Checked In' : 'Assigned')
+      : 'Available';
 
+    setSeatSaving(true);
     try {
       await apiCreateSeat({
         eventId,
         seatNumber,
         registrationId: registrationId || null,
-        assignedTo: payload.assignedTo || selectedRegistration?.familyMember || selectedRegistration?.studentName || selectedRegistration?.parentName || null
+        assignedTo,
+        status
       });
       const records = await apiReadSeats(eventId);
       setSeatRecords(records.seats || []);
+      setSeatApiRegistrations(records.registrations || []);
       setSelectedSeatRegistrationId('');
+      setSelectedSeatAssignedName('');
+      setSeatNotice(status === 'Available' ? `Seat ${seatNumber} is now available.` : `Seat ${seatNumber} assignment saved.`);
       refresh();
     } catch (error) {
       setSeatError(error.message || 'Could not save seat.');
+    } finally {
+      setSeatSaving(false);
+    }
+  }
+
+  async function handleSeatCheckIn(seat, checkedIn) {
+    setSeatError('');
+    setSeatNotice('');
+    if (!seat?.id) {
+      setSeatError('Save this seat assignment before changing its check-in status.');
+      return;
+    }
+    const actionKey = String(seat.id);
+    setSeatActionId(actionKey);
+    try {
+      await apiUpdateSeat(seat.id, { status: checkedIn ? 'Checked In' : 'Assigned' });
+      const records = await apiReadSeats(selectedSeatEventId);
+      setSeatRecords(records.seats || []);
+      setSeatApiRegistrations(records.registrations || []);
+      setSeatNotice(`Seat ${seat.seatNumber} marked ${checkedIn ? 'checked in' : 'assigned'}.`);
+    } catch (error) {
+      setSeatError(error.message || 'Could not update the seat check-in status.');
+    } finally {
+      setSeatActionId('');
     }
   }
 
@@ -3254,8 +3845,19 @@ export default function AdminSectionPage({ view }) {
         audience,
         target,
         subject: cleanText(payload.subject),
+        contextLabel: cleanText(payload.contextLabel),
         intro: cleanText(payload.intro),
         body: cleanText(payload.body),
+        eventDate: cleanText(payload.eventDate),
+        eventTime: cleanText(payload.eventTime),
+        eventVenue: cleanText(payload.eventVenue),
+        highlights: cleanText(payload.highlights),
+        agenda: cleanText(payload.agenda),
+        registrationTitle: cleanText(payload.registrationTitle),
+        registrationFee: cleanText(payload.registrationFee),
+        registrationNote: cleanText(payload.registrationNote),
+        communityNote: cleanText(payload.communityNote),
+        sponsorAcknowledgement: cleanText(payload.sponsorAcknowledgement),
         footer: cleanText(payload.footer),
         ctaLabel,
         ctaUrl
@@ -3468,6 +4070,7 @@ export default function AdminSectionPage({ view }) {
       record ||= appendRecord('kb-expense-submissions', expensePayload);
       setDashboard((current) => ({ ...current, expenses: [record, ...(current.expenses || [])] }));
       form.reset();
+      setExpenseReceiptName('');
       setExpenseSaved(true);
     } catch (submitError) {
       setExpenseError(submitError.message || 'Could not submit expense. Please try again.');
@@ -3603,7 +4206,20 @@ export default function AdminSectionPage({ view }) {
   function saveEventSettings(key, setter, values) {
     writeJson(key, values);
     setter(values);
+    setSettingsSaved(true);
     window.dispatchEvent(new Event('kb-data-change'));
+  }
+
+  function addSettingPrompt(key, values, setter, label, placeholder) {
+    setSettingsError('');
+    setSettingsSaved(false);
+    const value = cleanText(window.prompt(`Add ${label.toLowerCase()}`, placeholder || ''));
+    if (!value) return;
+    if (values.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      setSettingsError(`${label} already exists.`);
+      return;
+    }
+    saveEventSettings(key, setter, [...values, value].sort());
   }
 
   function handleSettingSubmit(event, key, values, setter, label) {
@@ -3626,6 +4242,18 @@ export default function AdminSectionPage({ view }) {
 
   function removeSetting(key, values, setter, value) {
     saveEventSettings(key, setter, values.filter((item) => item !== value));
+  }
+
+  function editSetting(key, values, setter, value, label) {
+    setSettingsError('');
+    setSettingsSaved(false);
+    const nextValue = cleanText(window.prompt(`Edit ${label.toLowerCase()}`, value));
+    if (!nextValue || nextValue === value) return;
+    if (values.some((item) => item !== value && item.toLowerCase() === nextValue.toLowerCase())) {
+      setSettingsError(`${label} already exists.`);
+      return;
+    }
+    saveEventSettings(key, setter, values.map((item) => (item === value ? nextValue : item)).sort());
   }
 
   async function handleVolunteerGoogleFormSubmit(event) {
@@ -3838,103 +4466,104 @@ export default function AdminSectionPage({ view }) {
 
   if (view === 'expense') {
     const myExpenseRows = expenses.filter((row) => !row.submittedBy || String(row.submittedBy || '').toLowerCase() === String(user?.email || '').toLowerCase());
-    const myReceiptCount = myExpenseRows.filter((row) => row.receiptUrl).length;
+    const pendingExpenseCount = statusCount(myExpenseRows, (status) => status.includes('submitted') || status.includes('pending') || status.includes('review'));
+    const approvedExpenseCount = statusCount(myExpenseRows, (status) => status.includes('approved') || status.includes('paid'));
+    const filteredExpenseRows = myExpenseRows.filter((row) => {
+      const query = expenseQuery.trim().toLowerCase();
+      if (!query) return true;
+      return [row.title, row.category, row.vendor, row.submittedBy, row.status]
+        .some((value) => String(value || '').toLowerCase().includes(query));
+    });
+    const renderExpenseStatus = (status = 'Submitted') => {
+      const normalized = String(status).toLowerCase();
+      const tone = normalized.includes('paid') || normalized.includes('approved')
+        ? 'success'
+        : normalized.includes('rejected')
+          ? 'danger'
+          : normalized.includes('submitted')
+            ? 'info'
+            : 'warning';
+      return (
+        <span className={`admin-status-pill is-${tone}`}>
+          {tone === 'success' ? <CheckCircle size={16} /> : tone === 'danger' ? <X size={16} /> : tone === 'warning' ? <Clock3 size={16} /> : <i />}
+          {status}
+        </span>
+      );
+    };
     return (
       <>
         <PageHeader area="Volunteer / Expense" title="Expense Submission" />
-        <section className="workflow-hero volunteer-hero">
-          <div>
-            <p className="eyebrow">Volunteer expense area</p>
-            <h2>Submit receipts and track reimbursement status</h2>
-            <p>This page mirrors the old Volunteer expense area: volunteers submit expenses here and treasurers review them separately.</p>
-          </div>
-          <div className="workflow-action-list">
-            <article><strong>{myExpenseRows.length}</strong><span>My expenses</span></article>
-            <article><strong>{myReceiptCount}</strong><span>Receipts</span></article>
-            <article><strong>{statusCount(myExpenseRows, (status) => status.includes('approved'))}</strong><span>Approved</span></article>
-            <article><strong>{statusCount(myExpenseRows, (status) => status.includes('paid'))}</strong><span>{tr('Paid')}</span></article>
-          </div>
+        <section className="expense-reference-metrics" aria-label="Expense submission summary">
+          <article>
+            <span className="expense-reference-metric-icon is-blue"><ReceiptText size={28} /></span>
+            <div><small>My Submissions</small><strong>{myExpenseRows.length}</strong></div>
+          </article>
+          <article>
+            <span className="expense-reference-metric-icon is-gold"><Clock3 size={30} /></span>
+            <div><small>Pending</small><strong>{pendingExpenseCount}</strong></div>
+          </article>
+          <article>
+            <span className="expense-reference-metric-icon is-green"><CheckCircle size={30} /></span>
+            <div><small>Approved / Paid</small><strong>{approvedExpenseCount}</strong></div>
+          </article>
         </section>
-        <form className="expense-workspace-form" onSubmit={handleExpenseSubmit}>
-          <div className="expense-form-heading">
-            <div>
-              <span>Reimbursement request</span>
-              <h2>Kannada Bharati Expense Submission</h2>
-              <p>Attach a receipt and include enough detail for treasurer approval. PDF, JPG, and PNG files up to 8 MB are supported.</p>
-            </div>
-            <div className="expense-form-status">
-              <strong>{myExpenseRows.filter((row) => String(row.status || '').toLowerCase().includes('submitted')).length}</strong>
-              <span>Waiting review</span>
-            </div>
-          </div>
-          <div className="expense-entry-layout">
-            <section className="expense-primary-card">
-              <div className="admin-form-grid expense-form-grid">
-                <label>Expense title<input name="title" required placeholder="Snacks for Kannada class" /></label>
-                <label>Category<select name="category" required defaultValue=""><option value="" disabled>Choose category</option><option>Event supplies</option><option>Food</option><option>Venue</option><option>Printing</option><option>Travel</option><option>Other</option></select></label>
-                <label>Amount<input name="amount" type="number" min="1" step="0.01" required placeholder="0.00" /></label>
-                <label className="advanced-date-field">
-                  Expense date
-                  <DatePicker
-                    name="expenseDate"
-                    required
-                    placeholder="Choose expense date"
-                    quickOptions={[
-                      { label: 'Yesterday', offsetDays: -1 },
-                      { label: 'Last week', offsetDays: -7 }
-                    ]}
-                  />
-                </label>
-                <label>Vendor / paid to<input name="vendor" placeholder="Costco, venue, printer..." /></label>
-                <label>Payment method<select name="paymentMethod" defaultValue="Personal card"><option>Personal card</option><option>Cash</option><option>Check</option><option>PayPal</option><option>Bank transfer</option><option>Other</option></select></label>
-                <label className="expense-wide-field">Reimburse to<input name="reimbursementTo" defaultValue={user.email} placeholder="Name or email" /></label>
-              </div>
-              <label className="expense-description">Description<textarea name="description" required minLength="10" maxLength="320" placeholder="Describe what was purchased, which class/event it supports, and any notes for treasurer review." /></label>
-            </section>
-            <aside className="expense-upload-card">
-              <div className="expense-upload-icon"><ReceiptText size={32} /></div>
-              <h3>Receipt upload</h3>
-              <p>Upload the original receipt or invoice. Treasurer can open it directly from the review table.</p>
-              <label className="expense-file-drop">
-                <input name="receipt" type="file" accept="application/pdf,image/png,image/jpeg" />
-                <strong>Choose receipt file</strong>
-                <span>PDF, JPG, PNG up to 8 MB</span>
+        <form className="expense-reference-form" onSubmit={handleExpenseSubmit}>
+          <header className="expense-reference-form-title"><ReceiptText size={27} /><h2>Submit a new expense</h2></header>
+          <div className="expense-reference-fields">
+            <label>Expense title <sup>*</sup><input name="title" required placeholder="Volunteer Meeting Snacks" /></label>
+            <label>Category <sup>*</sup><select name="category" required defaultValue=""><option value="" disabled>Choose category</option><option>Snacks &amp; Beverages</option><option>Event supplies</option><option>Food</option><option>Venue</option><option>Printing</option><option>Travel</option><option>Materials</option><option>Other</option></select></label>
+            <label>Amount <sup>*</sup><span className="expense-reference-money"><b>$</b><input name="amount" type="number" min="1" step="0.01" required placeholder="85.00" /></span></label>
+            <div className="expense-reference-date"><span>Expense date <sup>*</sup></span><DatePicker name="expenseDate" required placeholder="Choose expense date" quickOptions={[{ label: 'Yesterday', offsetDays: -1 }, { label: 'Last week', offsetDays: -7 }]} /></div>
+            <label>Vendor / paid to <sup>*</sup><input name="vendor" placeholder="Fresh Foods Market" /></label>
+            <label className="expense-reference-payment">Payment method <sup>*</sup><select name="paymentMethod" defaultValue="Personal card"><option value="Personal card">Personal Card (Reimbursement)</option><option>Cash</option><option>Check</option><option>PayPal</option><option>Bank transfer</option><option>Other</option></select></label>
+            <label className="expense-reference-reimburse">Reimburse to <sup>*</sup><input name="reimbursementTo" defaultValue={user?.email || ''} placeholder="volunteer@example.com" /></label>
+            <label className="expense-reference-description">Description <sup>*</sup><textarea name="description" required minLength="10" maxLength="320" placeholder="Purchased snacks and drinks for volunteer orientation meeting." /></label>
+            <div className="expense-reference-upload-field">
+              <span>Receipt upload <sup>*</sup></span>
+              <label
+                className="expense-reference-dropzone"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const file = event.dataTransfer.files?.[0];
+                  const input = event.currentTarget.querySelector('input[type="file"]');
+                  if (!file || !input) return;
+                  const transfer = new DataTransfer();
+                  transfer.items.add(file);
+                  input.files = transfer.files;
+                  setExpenseReceiptName(file.name);
+                }}
+              >
+                <input name="receipt" type="file" accept="application/pdf,image/png,image/jpeg" onChange={(event) => setExpenseReceiptName(event.target.files?.[0]?.name || '')} />
+                <CloudUpload size={48} />
+                <strong>{expenseReceiptName || 'Drag and drop a receipt here'}</strong>
+                <span>{expenseReceiptName ? 'Click to choose a different file' : <>or <b>click to browse</b></>}</span>
+                <small>PDF, JPG or PNG (up to 8 MB)</small>
               </label>
-              <div className="expense-review-hints">
-                <span>Include vendor name</span>
-                <span>Match amount to receipt</span>
-                <span>Use clear payment notes</span>
-              </div>
-            </aside>
-          </div>
-          <div className="expense-submit-bar">
-            <div>
-              <strong>Ready for review?</strong>
-              <span>Submitted expenses go to Treasurer / Expense Review.</span>
             </div>
-            <button className="button primary" type="submit" disabled={expenseSubmitting}>{expenseSubmitting ? 'Submitting...' : 'Submit expense'}</button>
+            <button className="button primary expense-reference-submit" type="submit" disabled={expenseSubmitting}><Send size={22} />{expenseSubmitting ? 'Submitting...' : 'Submit expense'}</button>
           </div>
           {expenseError && <p className="form-error">{expenseError}</p>}
           {expenseSaved && <p className="success">Expense submitted for admin review.</p>}
         </form>
-        <AdminTable
-          title="My expense submissions"
-          rows={myExpenseRows}
-          filters={[
-            { key: 'category', label: 'Category', options: uniqueOptions(expenses, 'category') },
-            { key: 'status', label: 'Status', options: uniqueOptions(expenses, 'status') }
-          ]}
-          columns={[
-            { key: 'title', label: 'Expense' },
-            { key: 'category', label: 'Category' },
-            { key: 'amount', label: 'Amount', render: (row) => `$${Number(row.amount || 0).toLocaleString()}` },
-            { key: 'expenseDate', label: 'Date' },
-            { key: 'vendor', label: 'Vendor' },
-            { key: 'receipt', label: 'Receipt', render: (row) => <ReceiptLink row={row} /> },
-            { key: 'submittedBy', label: 'Submitted by' },
-            { key: 'status', label: 'Status' }
-          ]}
-        />
+        <section className="expense-reference-list">
+          <header>
+            <div><ListChecks size={25} /><h2>My expense submissions</h2></div>
+            <label><Search size={18} /><input value={expenseQuery} onChange={(event) => setExpenseQuery(event.target.value)} placeholder="Search expenses by title, vendor or category..." aria-label="Search expense submissions" /></label>
+          </header>
+          <div className="table-scroll">
+            <table className="expense-reference-table">
+              <thead><tr><th>Expense</th><th>Category</th><th>Amount</th><th>Date</th><th>Vendor</th><th>Receipt</th><th>Submitted by</th><th>Status</th></tr></thead>
+              <tbody>
+                {filteredExpenseRows.length ? filteredExpenseRows.map((row, index) => (
+                  <tr key={row.id || `${row.title}-${index}`}>
+                    <td>{row.title || '-'}</td><td>{row.category || '-'}</td><td>${Number(row.amount || 0).toFixed(2)}</td><td>{formatDateShort(row.expenseDate)}</td><td>{row.vendor || '-'}</td><td><ReceiptLink row={row} /></td><td>{row.submittedBy || user?.email || '-'}</td><td>{renderExpenseStatus(row.status)}</td>
+                  </tr>
+                )) : <tr><td colSpan={8}>No expense submissions match your search.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </>
     );
   }
@@ -4057,83 +4686,138 @@ export default function AdminSectionPage({ view }) {
         <PageHeader area="Event Settings" title="Manage event dropdowns" />
         {settingsError && <p className="form-error admin-floating-message">{settingsError}</p>}
         {settingsSaved && <p className="success admin-floating-message">Settings saved.</p>}
-        <div className="event-settings-grid">
-          <section className="admin-page-panel">
-            <div className="admin-page-panel-heading"><h2>Event types</h2><span>{eventTypes.length}</span></div>
-            <form className="settings-inline-form" onSubmit={(event) => handleSettingSubmit(event, 'kb-event-types', eventTypes, setEventTypes, 'Event type')}>
-              <label>New event type<input name="value" placeholder="Competition" /></label>
-              <button className="button primary" type="submit">Add</button>
-            </form>
-            <div className="settings-list">
-              {eventTypes.map((item) => (
-                <article key={item}>
-                  <strong>{item}</strong>
-                  <button type="button" onClick={() => removeSetting('kb-event-types', eventTypes, setEventTypes, item)}>Remove</button>
-                </article>
-              ))}
+        <div className="event-settings-reference">
+          <section className="admin-page-panel event-setting-panel">
+            <div className="event-setting-panel-heading">
+              <span className="event-setting-heading-icon"><CalendarDays size={26} /></span>
+              <div>
+                <h2>Event types</h2>
+                <p>Manage event types used for class registration and event creation.</p>
+              </div>
+              <button className="button primary event-setting-add" type="button" onClick={() => addSettingPrompt('kb-event-types', eventTypes, setEventTypes, 'Event type', 'Competition')}>
+                <Plus size={21} /> Add event type
+              </button>
             </div>
+            <table className="event-setting-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Event type</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {eventTypes.map((item, index) => (
+                  <tr key={item}>
+                    <td>{index + 1}</td>
+                    <td>{item}</td>
+                    <td>{eventTypeDescriptions[item] || 'Custom event type for registration and event creation'}</td>
+                    <td><span className="event-setting-status"><span /> Active</span></td>
+                    <td>
+                      <div className="event-setting-actions">
+                        <button type="button" onClick={() => editSetting('kb-event-types', eventTypes, setEventTypes, item, 'Event type')}><Edit3 size={16} /> Edit</button>
+                        <button className="danger" type="button" onClick={() => removeSetting('kb-event-types', eventTypes, setEventTypes, item)}><Trash2 size={16} /> Remove</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </section>
 
-          <section className="admin-page-panel">
-            <div className="admin-page-panel-heading"><h2>Recurrence options</h2><span>{recurrences.length}</span></div>
-            <form className="settings-inline-form" onSubmit={(event) => handleSettingSubmit(event, 'kb-recurrence-options', recurrences, setRecurrences, 'Recurrence')}>
-              <label>New recurrence<input name="value" placeholder="BiWeekly" /></label>
-              <button className="button primary" type="submit">Add</button>
-            </form>
-            <div className="settings-list">
-              {recurrences.map((item) => (
-                <article key={item}>
-                  <strong>{item}</strong>
-                  <button type="button" onClick={() => removeSetting('kb-recurrence-options', recurrences, setRecurrences, item)}>Remove</button>
-                </article>
-              ))}
+          <section className="admin-page-panel event-setting-panel">
+            <div className="event-setting-panel-heading">
+              <span className="event-setting-heading-icon"><RefreshCw size={28} /></span>
+              <div>
+                <h2>Recurrence options</h2>
+                <p>Manage recurrence options for events and classes.</p>
+              </div>
+              <button className="button primary event-setting-add" type="button" onClick={() => addSettingPrompt('kb-recurrence-options', recurrences, setRecurrences, 'Recurrence', 'BiWeekly')}>
+                <Plus size={21} /> Add recurrence
+              </button>
             </div>
+            <table className="event-setting-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Recurrence</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recurrences.map((item, index) => (
+                  <tr key={item}>
+                    <td>{index + 1}</td>
+                    <td>{item}</td>
+                    <td>{recurrenceDescriptions[item] || 'Custom repeat option for event and class schedules'}</td>
+                    <td><span className="event-setting-status"><span /> Active</span></td>
+                    <td>
+                      <div className="event-setting-actions">
+                        <button type="button" onClick={() => editSetting('kb-recurrence-options', recurrences, setRecurrences, item, 'Recurrence')}><Edit3 size={16} /> Edit</button>
+                        <button className="danger" type="button" onClick={() => removeSetting('kb-recurrence-options', recurrences, setRecurrences, item)}><Trash2 size={16} /> Remove</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </section>
 
-          <section className="admin-page-panel google-form-settings-panel">
-            <div className="admin-page-panel-heading google-form-heading">
-              <h2>Volunteer Google Form</h2>
-              <p>Control whether the public Volunteer page opens the Google Form registration.</p>
-              <span className={volunteerGoogleFormReady ? 'status-pill is-live' : volunteerGoogleFormSaved.enabled ? 'status-pill is-warning' : 'status-pill'}>
-                {volunteerGoogleFormStatus}
-              </span>
+          <section className="admin-page-panel event-setting-panel google-form-settings-panel is-reference">
+            <div className="event-setting-panel-heading google-form-reference-heading">
+              <span className="event-setting-heading-icon"><UsersRound size={30} /></span>
+              <div>
+                <h2>Volunteer Google Form</h2>
+                <p>Allow volunteers to register using a Google Form for events.</p>
+              </div>
             </div>
-            <form className="google-form-settings" onSubmit={handleVolunteerGoogleFormSubmit}>
-              <label className="google-form-toggle">
-                <span>
-                  <strong>Allow Google Form registration</strong>
-                  <small>{volunteerGoogleForm.enabled ? 'Visitors can open the form from the Volunteer page.' : 'Visitors will see the disabled message.'}</small>
-                </span>
-                <input
-                  name="enabled"
-                  type="checkbox"
-                  checked={Boolean(volunteerGoogleForm.enabled)}
-                  onChange={(event) => updateVolunteerGoogleFormDraft({ enabled: event.target.checked })}
-                />
-              </label>
-              <label className="google-form-url-field">
-                Google Form URL
-                <input
-                  name="url"
-                  type="url"
-                  value={volunteerGoogleForm.url || ''}
-                  onChange={(event) => updateVolunteerGoogleFormDraft({ url: event.target.value })}
-                  placeholder={referenceVolunteerGoogleFormUrl}
-                />
-              </label>
-              <button className="button primary" type="submit">Save</button>
+            <form className="google-form-settings is-reference" onSubmit={handleVolunteerGoogleFormSubmit}>
+              <div className="google-form-reference-fields">
+                <label className="google-form-toggle is-reference">
+                  <input
+                    name="enabled"
+                    type="checkbox"
+                    checked={Boolean(volunteerGoogleForm.enabled)}
+                    onChange={(event) => updateVolunteerGoogleFormDraft({ enabled: event.target.checked })}
+                  />
+                  <span>
+                    <strong>Allow Google Form registration</strong>
+                    <small>When enabled, a link to the registration form will be available on event pages.</small>
+                  </span>
+                </label>
+                <label className="google-form-url-field is-reference">
+                  Google Form URL <b>*</b>
+                  <input
+                    name="url"
+                    type="url"
+                    value={volunteerGoogleForm.url || ''}
+                    onChange={(event) => updateVolunteerGoogleFormDraft({ url: event.target.value })}
+                    placeholder="https://docs.google.com/forms/d//example"
+                  />
+                  <small>Enter the public Google Form URL for volunteer registration.</small>
+                </label>
+                <button className="button primary google-form-reference-save" type="submit"><Save size={18} /> Save settings</button>
+              </div>
+              <div className="google-form-preview is-reference">
+                <strong>Form status preview</strong>
+                <div className={volunteerGoogleFormReady ? 'google-form-preview-card is-ready' : 'google-form-preview-card'}>
+                  <CheckCircle size={30} />
+                  <span>
+                    <b>{volunteerGoogleFormReady ? 'Form is active and accessible' : volunteerGoogleFormStatus}</b>
+                    <small>{volunteerGoogleFormReady ? 'Volunteers can register using the link below.' : 'Save a valid public Google Form URL to enable this form.'}</small>
+                  </span>
+                </div>
+                {volunteerGoogleFormSaved.url && (
+                  <a href={volunteerGoogleFormSaved.url} target="_blank" rel="noreferrer">
+                    <ExternalLink size={19} /> Open form
+                  </a>
+                )}
+              </div>
             </form>
-            <div className="google-form-preview">
-              <strong>
-                {volunteerGoogleFormReady
-                  ? 'Google form registration is enabled on the Volunteer page.'
-                  : volunteerGoogleFormSaved.enabled
-                    ? 'Save a valid Google Form URL to enable public registration.'
-                    : 'Google form registration is disabled.'}
-              </strong>
-              <span>{volunteerGoogleFormSaved.url ? 'URL ready for Volunteer page' : 'No URL saved'}</span>
-              {volunteerGoogleFormSaved.url && <a href={volunteerGoogleFormSaved.url} target="_blank" rel="noreferrer">Open form</a>}
-            </div>
           </section>
         </div>
       </>
@@ -4159,7 +4843,7 @@ export default function AdminSectionPage({ view }) {
   if (view === 'paata-teachers') {
     return (
       <>
-        <PageHeader area="Paata Shaale" title="Teacher details" />
+        <PageHeader area="Paata Shaale" title="Paata teacher details" />
         <PaataTeacherEditor
           teachers={paataTeachers}
           setTeachers={setPaataTeachers}
@@ -4241,7 +4925,7 @@ export default function AdminSectionPage({ view }) {
                 <X size={20} />
               </button>
               <form className="admin-create-form" onSubmit={handleAnnouncementSubmit}>
-                <h2>Create announcement</h2>
+                <ModalTitle>Create announcement</ModalTitle>
                 <p className="admin-form-note">Add a short message with a clear action link and valid display dates.</p>
                 <label>Announcement text<input name="text" required minLength="5" maxLength="160" /></label>
                 <label>CTA text<input name="ctaText" required maxLength="40" placeholder="Register today" /></label>
@@ -4399,12 +5083,56 @@ export default function AdminSectionPage({ view }) {
               <input name="subject" minLength="4" maxLength="140" required placeholder="Kannada Bharati update" />
             </label>
             <label className="bulk-email-wide">
+              Header subtitle
+              <input name="contextLabel" maxLength="180" placeholder="Kannada's Pride - Festival of Lights - Togetherness" />
+            </label>
+            <label className="bulk-email-wide">
               Greeting / intro
               <input name="intro" maxLength="160" placeholder="Hello Kannada Bharati family," />
             </label>
             <label className="bulk-email-wide">
               Message
               <textarea name="body" minLength="10" maxLength="4000" required placeholder="Type the message that should be sent to the selected group." />
+            </label>
+            <div className="bulk-email-section-title bulk-email-wide">
+              <strong>Event information</strong>
+              <span>Displayed together in a highlighted event-details panel.</span>
+            </div>
+            <label>
+              Event date
+              <input name="eventDate" maxLength="120" placeholder="Sunday, November 1, 2026" />
+            </label>
+            <label>
+              Event time
+              <input name="eventTime" maxLength="120" placeholder="2:00 PM - 7:00 PM" />
+            </label>
+            <label className="bulk-email-wide">
+              Venue
+              <input name="eventVenue" maxLength="240" placeholder="Venue name and full address" />
+            </label>
+            <label className="bulk-email-wide">
+              What awaits you
+              <textarea className="bulk-email-compact-textarea" name="highlights" maxLength="2500" placeholder={'Add one highlight per line\nLive dance and music\nFood and refreshments\nActivities for children'} />
+            </label>
+            <label className="bulk-email-wide">
+              Event agenda
+              <textarea className="bulk-email-compact-textarea" name="agenda" maxLength="2500" placeholder={'Add one agenda item per line using Time | Activity\n2:00 PM | Deepavali Art Workshop\n3:00 PM | Indoor games\n6:00 PM | Dinner'} />
+            </label>
+            <div className="bulk-email-section-title bulk-email-wide">
+              <strong>Registration</strong>
+              <span>Optional fee, note, and call-to-action shown in a registration panel.</span>
+            </div>
+            <label>
+              Registration heading
+              <input name="registrationTitle" maxLength="120" placeholder="Register today" />
+            </label>
+            <label>
+              Registration fee
+              <input name="registrationFee" maxLength="120" placeholder="Entry is free for everyone" />
+            </label>
+            <label className="bulk-email-wide">
+              Registration note
+              <input name="registrationNote" maxLength="240" placeholder="Registration closes October 25" />
             </label>
             <label className="bulk-email-wide">
               Footer note
@@ -4417,6 +5145,14 @@ export default function AdminSectionPage({ view }) {
             <label>
               Action button URL
               <input name="ctaUrl" maxLength="500" placeholder="/classes or https://..." />
+            </label>
+            <label className="bulk-email-wide">
+              Community note
+              <input name="communityNote" maxLength="300" placeholder="Come, celebrate, connect and create memories with our community." />
+            </label>
+            <label className="bulk-email-wide">
+              Sponsor acknowledgement
+              <textarea className="bulk-email-compact-textarea" name="sponsorAcknowledgement" maxLength="1200" placeholder="Thank you to our annual sponsors for supporting Kannada Bharati programs." />
             </label>
           </div>
           <div className="bulk-email-actions">
@@ -4498,11 +5234,13 @@ export default function AdminSectionPage({ view }) {
 
   if (view === 'checkin') {
     const checkinAmountTotal = checkinRows.reduce((sum, row) => sum + getMoneyAmount(row), 0);
-    const checkedInCount = checkinRows.filter((row, index) => checkedInIds.includes(getRegistrationKey(row, index)) || isCheckedInRegistration(row)).length;
-    const pendingCheckinCount = Math.max(0, checkinRows.length - checkedInCount);
-    const paidCheckinCount = checkinRows.filter(isPaidRegistration).length;
     const submittedCheckinCount = statusCount(checkinRows, (status) => status.includes('submitted'));
     const topCheckinPrograms = summarizeBy(checkinRows, 'program', 3);
+    const checkedCheckinRows = checkinRows.filter((row, index) => checkedInIds.includes(getRegistrationKey(row, index)) || isCheckedInRegistration(row));
+    const checkedCheckinAmount = checkedCheckinRows.reduce((sum, row) => sum + getMoneyAmount(row), 0);
+    const checkedCheckinMembers = checkedCheckinRows.reduce((sum, row) => sum + getCheckinCounts(row).total, 0);
+    const checkinMemberTotal = checkinRows.reduce((sum, row) => sum + getCheckinCounts(row).total, 0);
+    const checkedDynamicTotals = dynamicCheckinColumns.map((column) => checkedCheckinRows.reduce((sum, row) => sum + Number(getDynamicCheckinValue(row, column) || 0), 0));
     const checkinColumns = [
       { key: 'serial', label: 'Sl no.', render: (_row, index) => index + 1 },
       {
@@ -4514,26 +5252,14 @@ export default function AdminSectionPage({ view }) {
             if (row.enabled === false || String(row.status || '').toLowerCase() === 'deleted') {
               return <EnabledToggle enabled={false} onLabel="Enabled" offLabel="Disabled" onChange={(enabled) => toggleRegistrationEnabled(row, enabled)} />;
             }
-            return (
-              <div className="admin-row-actions compact-actions">
-                {(row.status || 'Submitted') !== 'Confirmed' ? (
-                  <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'confirm', { status: 'Confirmed' })}>{tr('Confirm')}</button>
-                ) : (
-                  <button className="mini-action-link secondary" type="button" onClick={() => runRegistrationAction(row, 'reset', { status: 'Submitted' })}>{tr('Reset')}</button>
-                )}
-                <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' })}>{tr('Email')}</button>
-                {!isPaidRegistration(row) && <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' })}>{tr('Paid')}</button>}
-                <EnabledToggle enabled={row.enabled !== false} onLabel="Enabled" offLabel="Disabled" onChange={(enabled) => toggleRegistrationEnabled(row, enabled)} />
-                <AdminRecordActions kind="registration" row={row} />
-              </div>
-            );
+            return <RegistrationActionMenu row={row} />;
           }
           return (
-            <div className="admin-row-actions compact-actions">
-              {checked ? <span className="confirmed-badge">{row.checkedInAt ? new Date(row.checkedInAt).toLocaleString() : 'Checked'}</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Check In</button>}
-              <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' })}>{tr('Email')}</button>
-              <AdminRecordActions kind="registration" row={row} />
-            </div>
+            <RegistrationActionMenu
+              row={row}
+              checkedLabel={row.checkedInAt ? new Date(row.checkedInAt).toLocaleString() : 'Checked'}
+              checkinAction={checked ? <span className="confirmed-badge">{row.checkedInAt ? new Date(row.checkedInAt).toLocaleString() : 'Checked'}</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Check In</button>}
+            />
           );
         }
       },
@@ -4554,66 +5280,90 @@ export default function AdminSectionPage({ view }) {
     ];
     return (
       <>
-        <PageHeader root="Welcome Desk" area="Check-in" title="Event check-in" action={<span className="received-count">Received {checkinRows.length} registration(s)</span>} />
-        <section className="workflow-hero welcome-desk-hero">
-          <div>
-            <p className="eyebrow">Welcome Desk</p>
-            <h2>{selectedCheckinEvent.title || 'Select an event'}</h2>
-            <p>Track arrivals, phone lookups, payments, and member counts from one check-in workspace.</p>
-          </div>
-          <div className="workflow-action-list">
-            <article><strong>{pendingCheckinCount}</strong><span>Waiting to check in</span></article>
-            <article><strong>{checkedInCount}</strong><span>Checked in</span></article>
-            <article><strong>{paidCheckinCount}</strong><span>Paid registrations</span></article>
-          </div>
+        <PageHeader root="Welcome Desk" area="Check-in" title="Event check-in" />
+        <section className="admin-dashboard-hero-grid checkin-metric-grid">
+          <article><UsersRound size={24} /><span>Total registrations</span><strong>{checkinRows.length}</strong><ChevronRight size={18} /></article>
+          <article><CalendarDays size={24} /><span>Submitted</span><strong>{submittedCheckinCount}</strong><ChevronRight size={18} /></article>
+          <article><ReceiptText size={24} /><span>Total members</span><strong>{checkinMemberTotal}</strong><ChevronRight size={18} /></article>
+          <article><HandCoins size={24} /><span>Amount</span><strong>${checkinAmountTotal.toLocaleString()}</strong><ChevronRight size={18} /></article>
         </section>
-        <section className="admin-dashboard-hero-grid">
-          <article><UsersRound size={24} /><span>Total registrations</span><strong>{checkinRows.length}</strong></article>
-          <article><CalendarDays size={24} /><span>Submitted</span><strong>{submittedCheckinCount}</strong></article>
-          <article><ReceiptText size={24} /><span>Total members</span><strong>{checkinRows.reduce((sum, row) => sum + getCheckinCounts(row).total, 0)}</strong></article>
-          <article><HandCoins size={24} /><span>Amount</span><strong>${checkinAmountTotal.toLocaleString()}</strong></article>
-        </section>
-        <section className="checkin-control-panel">
-          <div className="checkin-control-forms">
-            <form className="checkin-filter-form" onSubmit={handleCheckinSubmit}>
-              <label>Events:
+        <section className="checkin-overview-grid">
+          <article className="checkin-card checkin-find-card">
+            <div className="checkin-card-heading">
+              <span><Search size={20} /></span>
+              <div>
+                <h2>Find registrations</h2>
+                <p>Search for an event or a member to view registration details.</p>
+              </div>
+            </div>
+            <form className="checkin-find-form" onSubmit={handleCheckinSubmit}>
+              <label>Event
                 <select value={selectedCheckinEvent.title || ''} onChange={(event) => { setCheckinProgram(event.target.value); setCheckinApplied(false); setCheckinError(''); setCheckinEventId(''); }} required>
                   {eventOptions.map((item) => <option key={item.title} value={item.title}>{item.title}</option>)}
                 </select>
               </label>
-              <span>/</span>
-              <label className="event-id-field">
+              <label>
+                Event ID (optional)
                 <input value={checkinEventId} onChange={(event) => setCheckinEventId(event.target.value)} placeholder="Event id optional" />
               </label>
-              <button className="button primary" type="submit">Go</button>
+              <button className="button primary" type="submit">Apply</button>
             </form>
-            <form className="checkin-filter-form phone-lookup-form" onSubmit={handlePhoneLookup}>
-              <label>Phone lookup:
+            <form className="checkin-phone-form" onSubmit={handlePhoneLookup}>
+              <label>Phone lookup
                 <input name="email" type="email" placeholder="member@example.com" />
               </label>
-              <button className="button secondary-dark" type="submit">Find Phone</button>
+              <button className="button secondary-dark" type="submit">Find phone</button>
               {phoneLookup.phone && <strong>{phoneLookup.email}: {phoneLookup.phone}</strong>}
               {phoneLookup.error && <span className="form-error inline-error">{phoneLookup.error}</span>}
             </form>
-          </div>
-          <div className="checkin-summary-table" aria-label="Registration summary" style={{ gridTemplateColumns: `repeat(${Math.max(1, checkinAnalytics.length)}, minmax(112px, 1fr))` }}>
-            {checkinAnalytics.map((item) => <span key={`head-${item.key}`}>{item.key}</span>)}
-            {checkinAnalytics.map((item) => <strong key={`total-${item.key}`}>{item.value}</strong>)}
-            {checkinAnalytics.map((item) => <strong key={`checked-${item.key}`} className="checked-analytics-value">{item.checkedValue}</strong>)}
-          </div>
+          </article>
+          <article className="checkin-card checkin-summary-card">
+            <div className="checkin-card-heading">
+              <span><ListChecks size={20} /></span>
+              <div>
+                <h2>Event summary</h2>
+                <p>Key registration and attendance numbers for this event.</p>
+              </div>
+            </div>
+            <div className="checkin-summary-matrix" style={{ gridTemplateColumns: `minmax(130px, 1.1fr) repeat(${Math.max(1, dynamicCheckinColumns.length + 3)}, minmax(86px, 1fr))` }}>
+              <span />
+              <strong>Registrations</strong>
+              <strong>Amount</strong>
+              {dynamicCheckinColumns.map((column) => <strong key={`summary-head-${column.key}`}>{column.label}</strong>)}
+              <strong>Total members</strong>
+              <b>All registrations</b>
+              <span>{checkinRows.length}</span>
+              <span>${checkinAmountTotal.toLocaleString()}</span>
+              {checkinAnalytics.map((item) => <span key={`summary-all-${item.key}`}>{item.value}</span>)}
+              <span>{checkinMemberTotal}</span>
+              <b>Checked in</b>
+              <span>{checkedCheckinRows.length}</span>
+              <span>${checkedCheckinAmount.toLocaleString()}</span>
+              {checkedDynamicTotals.map((value, index) => <span key={`summary-checked-${dynamicCheckinColumns[index]?.key || index}`}>{value}</span>)}
+              <span>{checkedCheckinMembers}</span>
+            </div>
+          </article>
         </section>
-        {topCheckinPrograms.length > 0 && (
-          <section className="insight-grid">
-            {topCheckinPrograms.map((program) => (
+        <section className="checkin-program-overview">
+          <div className="checkin-card-heading">
+            <span><Building2 size={20} /></span>
+            <div>
+              <h2>Program overview</h2>
+              <p>View and manage registrations by program.</p>
+            </div>
+          </div>
+          <div className="checkin-program-grid">
+            {(topCheckinPrograms.length ? topCheckinPrograms : [{ label: selectedCheckinEvent.title || 'Selected event', count: checkinRows.length, amount: checkinAmountTotal }]).map((program, index) => (
               <article key={program.label}>
-                <span>Program load</span>
-                <strong>{program.label}</strong>
-                <div className="progress-track"><span style={{ width: `${Math.min(100, (program.count / Math.max(1, checkinRows.length)) * 100)}%` }} /></div>
-                <p>{program.count} registration(s), ${program.amount.toLocaleString()}</p>
+                <span>{index % 3 === 0 ? <UsersRound size={22} /> : index % 3 === 1 ? <CalendarDays size={22} /> : <HandCoins size={22} />}</span>
+                <div>
+                  <strong>{program.label}</strong>
+                  <button type="button" onClick={() => setCheckinProgram(program.label)}>View registrations <ChevronRight size={15} /></button>
+                </div>
               </article>
             ))}
-          </section>
-        )}
+          </div>
+        </section>
         {checkinError && <p className="form-error">{checkinError}</p>}
         <AdminTable
           title="Event check-in details"
@@ -4694,20 +5444,7 @@ export default function AdminSectionPage({ view }) {
       {
         key: 'action',
         label: 'Action',
-        render: (row) => (
-          <div className="admin-row-actions">
-            {(row.status || 'Submitted') !== 'Confirmed' ? (
-              <button className="mini-action-link success" type="button" title="Confirm this registration and send confirmation email" onClick={() => runRegistrationAction(row, 'confirm', { status: 'Confirmed' })}>{tr('Confirm')}</button>
-            ) : (
-              <button className="mini-action-link secondary" type="button" title="Reset registration back to submitted" onClick={() => runRegistrationAction(row, 'reset', { status: 'Submitted' })}>{tr('Reset')}</button>
-            )}
-            <button className="mini-action-link success" type="button" title="Send or resend registration email status" onClick={() => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' })}>{tr('Email')}</button>
-            {!isPaidRegistration(row) && (
-              <button className="mini-action-link success" type="button" title="Mark payment received and save payment reference" onClick={() => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' })}>{tr('Paid')}</button>
-            )}
-            <AdminRecordActions kind="registration" row={row} />
-          </div>
-        )
+        render: (row) => <RegistrationActionMenu row={row} />
       }
     ];
     const eventRegistrationColumns = [
@@ -4742,20 +5479,7 @@ export default function AdminSectionPage({ view }) {
       {
         key: 'action',
         label: 'Action',
-        render: (row) => (
-          <div className="admin-row-actions compact-actions">
-            {(row.status || 'Submitted') !== 'Confirmed' ? (
-              <button className="mini-action-link success" type="button" title="Confirm this registration and send confirmation email" onClick={() => runRegistrationAction(row, 'confirm', { status: 'Confirmed' })}>{tr('Confirm')}</button>
-            ) : (
-              <button className="mini-action-link secondary" type="button" title="Reset registration back to submitted" onClick={() => runRegistrationAction(row, 'reset', { status: 'Submitted' })}>{tr('Reset')}</button>
-            )}
-            <button className="mini-action-link success" type="button" title="Send or resend registration email status" onClick={() => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' })}>{tr('Email')}</button>
-            {!isPaidRegistration(row) && (
-              <button className="mini-action-link success" type="button" title="Mark payment received and save payment reference" onClick={() => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' })}>{tr('Paid')}</button>
-            )}
-            <AdminRecordActions kind="registration" row={row} />
-          </div>
-        )
+        render: (row) => <RegistrationActionMenu row={row} />
       }
     ];
     const paymentColumns = [
@@ -4769,7 +5493,7 @@ export default function AdminSectionPage({ view }) {
       { key: 'paymentReference', label: 'Payment Ref' },
       { key: 'paymentNotes', label: 'Notes', render: (row) => getPaymentDetails(row)?.notes || '-' },
       { key: 'details', label: 'Details', render: (row) => <DetailsIconButton onClick={() => setRegistrationDetail(row)} /> },
-      { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="registration" row={row} /> }
+      { key: 'actions', label: 'Actions', render: (row) => <RegistrationActionMenu row={row} /> }
     ];
     return (
       <>
@@ -4824,40 +5548,54 @@ export default function AdminSectionPage({ view }) {
     return (
       <>
         <PageHeader root="Welcome Desk" area="Guest Check-in" title="Guest registration and check-in" />
-        <section className="workflow-hero welcome-desk-hero">
-          <div>
-            <p className="eyebrow">Guest desk</p>
-            <h2>Fast intake for walk-ins and invited guests</h2>
-            <p>Create a guest registration, assign the event, and check them in from the same screen.</p>
-          </div>
-          <div className="workflow-action-list">
-            <article><strong>{guestRows.length}</strong><span>Guest records</span></article>
-            <article><strong>{guestMembers}</strong><span>Total guests</span></article>
-            <article><strong>{guestCheckedIn}</strong><span>Checked in</span></article>
-          </div>
-        </section>
         <section className="admin-dashboard-hero-grid">
           <article><UsersRound size={24} /><span>Guests</span><strong>{guestRows.length}</strong></article>
           <article><CalendarDays size={24} /><span>Members</span><strong>{guestMembers}</strong></article>
           <article><ReceiptText size={24} /><span>Pending</span><strong>{Math.max(0, guestRows.length - guestCheckedIn)}</strong></article>
           <article><HandCoins size={24} /><span>Amount</span><strong>${guestAmount.toLocaleString()}</strong></article>
         </section>
-        <form className="admin-create-form" onSubmit={handleGuestRegistrationSubmit}>
-          <h2>Register guest</h2>
-          <div className="admin-form-grid">
-            <label>Name <input name="name" required /></label>
-            <label>Email <input name="email" type="email" required /></label>
-            <label>Phone number <input name="phone" /></label>
-            <label>Family member <input name="familyMember" /></label>
-            <label>Program <select name="program" defaultValue={selectedCheckinEvent.title || ''}>{eventOptions.map((item) => <option key={item.title}>{item.title}</option>)}</select></label>
-            <label>Event id <input name="eventId" defaultValue={expectedEventId} /></label>
-            <label>Adults <input name="adults" type="number" min="0" defaultValue="1" /></label>
-            <label>Kids (6-12) <input name="kids" type="number" min="0" defaultValue="0" /></label>
-            <label>Kids (5 and below) <input name="youngKids" type="number" min="0" defaultValue="0" /></label>
-            <label>Amount <input name="amount" type="number" min="0" step="0.01" defaultValue="0" /></label>
+        <section className="admin-panel guest-registration-launch-panel">
+          <div>
+            <span className="eyebrow">Reception</span>
+            <h2>Register guest</h2>
+            <p>Add walk-in guests for the selected event, then check them in from the table below.</p>
           </div>
-          <button className="button primary" type="submit">Save Guest Registration</button>
-        </form>
+          <button className="button primary" type="button" onClick={() => setGuestRegistrationOpen(true)}>
+            <UserPlus size={18} /> Register guest
+          </button>
+        </section>
+        {guestRegistrationOpen && createPortal(
+          <div className="popup-backdrop" role="presentation">
+            <div className="popup-panel guest-registration-modal" role="dialog" aria-modal="true" aria-label="Register guest">
+              <button className="popup-close" type="button" aria-label="Close guest registration" onClick={() => setGuestRegistrationOpen(false)}>
+                <X size={20} />
+              </button>
+              <form className="admin-create-form guest-registration-form" onSubmit={handleGuestRegistrationSubmit}>
+                <div className="modal-heading-with-icon">
+                  <span><UserPlus size={22} /></span>
+                  <div>
+                    <p className="eyebrow">Welcome Desk</p>
+                    <h2>Register guest</h2>
+                  </div>
+                </div>
+                <div className="admin-form-grid">
+                  <label>Name <input name="name" required /></label>
+                  <label>Email <input name="email" type="email" required /></label>
+                  <label>Phone number <input name="phone" /></label>
+                  <label>Family member <input name="familyMember" /></label>
+                  <label>Program <select name="program" defaultValue={selectedCheckinEvent.title || ''}>{eventOptions.map((item) => <option key={item.title}>{item.title}</option>)}</select></label>
+                  <label>Event id <input name="eventId" defaultValue={expectedEventId} /></label>
+                  <label>Adults <input name="adults" type="number" min="0" defaultValue="1" /></label>
+                  <label>Kids (6-12) <input name="kids" type="number" min="0" defaultValue="0" /></label>
+                  <label>Kids (5 and below) <input name="youngKids" type="number" min="0" defaultValue="0" /></label>
+                  <label>Amount <input name="amount" type="number" min="0" step="0.01" defaultValue="0" /></label>
+                </div>
+                <button className="button primary" type="submit">Save Guest Registration</button>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
         <AdminTable
           title="Guest registrations"
           rows={guestRows}
@@ -4873,10 +5611,11 @@ export default function AdminSectionPage({ view }) {
             { key: 'action', label: 'Action', render: (row, index) => {
               const checked = checkedInIds.includes(getRegistrationKey(row, index)) || row.checkedIn;
               return (
-                <div className="admin-row-actions compact-actions">
-                  {checked ? <span className="confirmed-badge">Checked</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Check In</button>}
-                  <AdminRecordActions kind="registration" row={row} />
-                </div>
+                <RegistrationActionMenu
+                  row={row}
+                  checkedLabel="Checked"
+                  checkinAction={checked ? <span className="confirmed-badge">Checked</span> : <button className="checkin-action-button" type="button" onClick={() => markCheckedIn(row, index)}>Check In</button>}
+                />
               );
             } }
           ]}
@@ -4895,63 +5634,59 @@ export default function AdminSectionPage({ view }) {
 
   if (view === 'seats') {
     const seatCapacity = Math.max(0, Number(selectedSeatEvent.capacity || selectedSeatEvent.totalSeats || selectedSeatEvent.seats || 0));
-    const eventRegistrationRows = registrations.filter((row) => (
-      row.eventId === selectedSeatEventId
+    const registrationPool = [...new Map([...seatApiRegistrations, ...registrations].map((row, index) => [row.id || getRegistrationKey(row, index), row])).values()];
+    const eventRegistrationRows = registrationPool.filter((row) => (
+      String(row.eventId || '') === String(selectedSeatEventId)
       || row.program === selectedSeatEvent.title
       || (!row.eventId && row.program === selectedSeatEvent.title)
     ));
+    const registrationById = new Map(registrationPool.filter((row) => row.id).map((row) => [String(row.id), row]));
     const seatRecordMap = new Map(seatRecords.map((seat) => [String(seat.seat_number || seat.seatNumber), seat]));
-    const generatedSeats = Array.from({ length: seatCapacity || Math.max(24, seatRecords.length) }, (_, index) => {
-      const seatNumber = String(index + 1);
-      const saved = seatRecordMap.get(seatNumber);
-      const registration = saved ? registrations.find((row) => row.id === saved.registration_id || row.id === saved.registrationId) : null;
+
+    const toSeatRow = (saved, fallbackSeatNumber = '') => {
+      const seatNumber = String(saved?.seat_number || saved?.seatNumber || fallbackSeatNumber);
+      const registrationId = saved?.registration_id || saved?.registrationId || '';
+      const registration = registrationById.get(String(registrationId));
+      const assignedTo = saved?.assigned_to || saved?.assignedTo || registration?.familyMember || registration?.studentName || registration?.parentName || '-';
+      const hasAssignment = Boolean(registrationId || (assignedTo && assignedTo !== '-'));
+      const savedStatus = saved?.status || '';
+      const status = hasAssignment && /^available$/i.test(savedStatus)
+        ? 'Assigned'
+        : savedStatus || (hasAssignment ? 'Assigned' : 'Available');
       return {
         id: saved?.id || '',
-        eventId: selectedSeatEventId,
-        program: selectedSeatEvent.title || '-',
+        eventId: saved?.event_id || saved?.eventId || selectedSeatEventId,
+        program: selectedSeatEvent.title || registration?.program || '-',
         seatNumber,
-        assignedTo: saved?.assigned_to || saved?.assignedTo || registration?.familyMember || registration?.studentName || registration?.parentName || '-',
+        assignedTo,
         email: registration?.email || '-',
-        registrationId: saved?.registration_id || saved?.registrationId || '',
-        status: saved?.status || 'Available'
+        registrationId,
+        status
       };
+    };
+
+    const generatedSeats = Array.from({ length: seatCapacity }, (_, index) => {
+      const seatNumber = String(index + 1);
+      return toSeatRow(seatRecordMap.get(seatNumber), seatNumber);
     });
+    const generatedSeatNumbers = new Set(generatedSeats.map((seat) => seat.seatNumber));
     const extraSavedSeats = seatRecords
-      .filter((seat) => Number(seat.seat_number || seat.seatNumber) > generatedSeats.length)
-      .map((seat) => {
-        const registration = registrations.find((row) => row.id === seat.registration_id || row.id === seat.registrationId);
-        return {
-          id: seat.id || '',
-          eventId: seat.event_id || seat.eventId || selectedSeatEventId,
-          program: selectedSeatEvent.title || registration?.program || '-',
-          seatNumber: seat.seat_number || seat.seatNumber,
-          assignedTo: seat.assigned_to || seat.assignedTo || registration?.familyMember || registration?.studentName || registration?.parentName || '-',
-          email: registration?.email || '-',
-          registrationId: seat.registration_id || seat.registrationId || '',
-          status: seat.status || 'Available'
-        };
-      });
-    const seatRows = [...generatedSeats, ...extraSavedSeats];
-    const assignedSeats = seatRows.filter((seat) => seat.assignedTo && seat.assignedTo !== '-').length;
+      .filter((seat) => !generatedSeatNumbers.has(String(seat.seat_number || seat.seatNumber)))
+      .map((seat) => toSeatRow(seat));
+    const seatRows = [...generatedSeats, ...extraSavedSeats]
+      .filter((seat) => seat.seatNumber)
+      .sort((a, b) => a.seatNumber.localeCompare(b.seatNumber, undefined, { numeric: true, sensitivity: 'base' }));
+    const assignedSeats = seatRows.filter((seat) => !/^available$/i.test(seat.status) || (seat.assignedTo && seat.assignedTo !== '-')).length;
     const checkedInSeats = seatRows.filter((seat) => /checked/i.test(seat.status || '')).length;
-    const availableSeats = Math.max(0, seatRows.length - assignedSeats);
-    const occupancyRate = seatRows.length ? Math.round((assignedSeats / seatRows.length) * 100) : 0;
+    const availableSeats = seatRows.filter((seat) => /^available$/i.test(seat.status) && (!seat.assignedTo || seat.assignedTo === '-')).length;
     const seatPrograms = summarizeBy(seatRows, 'program', 4);
     const selectedSeat = seatRows.find((seat) => seat.seatNumber === selectedSeatNumber) || seatRows.find((seat) => seat.status === 'Available') || seatRows[0] || {};
     return (
       <>
         <PageHeader root="Welcome Desk" area="Seats" title="Seat management" />
-        <section className="workflow-hero seat-hero">
-          <div>
-            <p className="eyebrow">Seat operations</p>
-            <h2>{selectedSeatEvent.title || 'Choose an event'}</h2>
-            <p>Choose an event first. Seats are generated from the event capacity, then you can click a seat and assign it to a registered attendee.</p>
-          </div>
-          <div className="seat-occupancy-ring" aria-label={`${occupancyRate}% occupied`}>
-            <span style={{ '--seat-progress': `${occupancyRate}%` }} />
-            <strong>{occupancyRate}%</strong>
-          </div>
-        </section>
+        {seatLoading && <p className="admin-inline-message">Loading seat data...</p>}
+        {seatNotice && <p className="admin-inline-message">{seatNotice}</p>}
+        {seatError && <p className="admin-inline-message error">{seatError}</p>}
         <section className="seat-control-panel admin-page-panel">
           <div>
             <span>Step 1</span>
@@ -4966,7 +5701,8 @@ export default function AdminSectionPage({ view }) {
           <div>
             <span>Event capacity</span>
             <strong>{seatCapacity || 'Not set'}</strong>
-            <small>{selectedSeatEventId}</small>
+            <small>Event ID: {selectedSeatEventId}</small>
+            {!seatCapacity && <small>Set capacity in Event Management before creating new seats.</small>}
           </div>
           <div>
             <span>Registered attendees</span>
@@ -4987,7 +5723,7 @@ export default function AdminSectionPage({ view }) {
               <strong>{seatRows.length || 0} seats</strong>
             </div>
             <div className="seat-map">
-              {(seatRows.length ? seatRows : Array.from({ length: 24 }, (_, index) => ({ seatNumber: index + 1, status: 'Available', assignedTo: '-' }))).slice(0, 80).map((seat, index) => {
+              {seatRows.map((seat, index) => {
                 const occupied = seat.assignedTo && seat.assignedTo !== '-';
                 const checked = /checked/i.test(seat.status || '');
                 return (
@@ -4999,12 +5735,16 @@ export default function AdminSectionPage({ view }) {
                     onClick={() => {
                       setSelectedSeatNumber(String(seat.seatNumber || index + 1));
                       setSelectedSeatRegistrationId(seat.registrationId || '');
+                      setSelectedSeatAssignedName(seat.registrationId ? '' : (occupied ? seat.assignedTo : ''));
                     }}
                   >
                     {seat.seatNumber || index + 1}
                   </button>
                 );
               })}
+              {!seatLoading && seatLoaded && !seatRows.length && (
+                <div className="seat-map-empty">No seats configured. Set this event's capacity in Event Management first.</div>
+              )}
             </div>
           </article>
           <article className="seat-program-card">
@@ -5030,23 +5770,39 @@ export default function AdminSectionPage({ view }) {
           <input name="eventId" type="hidden" value={selectedSeatEventId} readOnly />
           <div className="admin-form-grid">
             <label>Seat number
-              <select name="seatNumber" value={selectedSeatNumber || selectedSeat.seatNumber || ''} onChange={(event) => setSelectedSeatNumber(event.target.value)} required>
+              <select name="seatNumber" value={selectedSeatNumber || selectedSeat.seatNumber || ''} onChange={(event) => {
+                const nextNumber = event.target.value;
+                const nextSeat = seatRows.find((seat) => seat.seatNumber === nextNumber);
+                setSelectedSeatNumber(nextNumber);
+                setSelectedSeatRegistrationId(nextSeat?.registrationId || '');
+                setSelectedSeatAssignedName(nextSeat?.registrationId ? '' : (nextSeat?.assignedTo !== '-' ? nextSeat?.assignedTo || '' : ''));
+              }} required disabled={!seatLoaded || !seatRows.length}>
                 <option value="" disabled>Select seat</option>
                 {seatRows.map((seat) => <option key={seat.seatNumber} value={seat.seatNumber}>Seat {seat.seatNumber} - {seat.assignedTo && seat.assignedTo !== '-' ? seat.assignedTo : 'Available'}</option>)}
               </select>
             </label>
             <label>Assign to registered attendee
-              <select name="registrationId" value={selectedSeatRegistrationId} onChange={(event) => setSelectedSeatRegistrationId(event.target.value)}>
+              <select name="registrationId" value={selectedSeatRegistrationId} onChange={(event) => {
+                setSelectedSeatRegistrationId(event.target.value);
+                if (event.target.value) setSelectedSeatAssignedName('');
+              }} disabled={!seatLoaded || !seatRows.length}>
                 <option value="">Keep available</option>
                 {eventRegistrationRows.map((row, index) => <option key={row.id || getRegistrationKey(row, index)} value={row.id || ''}>{row.familyMember || row.studentName || row.parentName || row.email} - {row.email}</option>)}
               </select>
             </label>
             <label>Assigned name override
-              <input name="assignedTo" placeholder="Optional manual name" />
+              <input name="assignedTo" value={selectedSeatAssignedName} onChange={(event) => setSelectedSeatAssignedName(event.target.value)} placeholder="Optional manual name" disabled={!seatLoaded || !seatRows.length} />
             </label>
           </div>
-          <button className="button primary" type="submit">Save assignment</button>
-          {seatError && <p className="form-error">{seatError}</p>}
+          <div className="seat-assignment-actions">
+            <button className="button primary" type="submit" disabled={!seatLoaded || !seatRows.length || seatSaving}>{seatSaving ? 'Saving...' : 'Save assignment'}</button>
+            {selectedSeat.id && selectedSeat.assignedTo && selectedSeat.assignedTo !== '-' && (
+              <button className="button secondary" type="button" disabled={seatActionId === String(selectedSeat.id)} onClick={() => handleSeatCheckIn(selectedSeat, !/checked/i.test(selectedSeat.status || ''))}>
+                <CheckCircle size={17} />
+                {seatActionId === String(selectedSeat.id) ? 'Updating...' : /checked/i.test(selectedSeat.status || '') ? 'Undo check-in' : 'Check in'}
+              </button>
+            )}
+          </div>
         </form>
         <AdminTable
           title="Seat and registration summary"
@@ -5058,7 +5814,20 @@ export default function AdminSectionPage({ view }) {
             { key: 'seatNumber', label: 'Seat' },
             { key: 'assignedTo', label: 'Assigned to' },
             { key: 'email', label: 'Registered by' },
-            { key: 'status', label: 'Status' }
+            { key: 'status', label: 'Status' },
+            { key: 'actions', label: 'Actions', render: (seat) => seat.id && seat.assignedTo && seat.assignedTo !== '-' ? (
+              <TableActionMenu
+                primary={(
+                  <button className="mini-action-link secondary" type="button" disabled={seatActionId === String(seat.id)} onClick={() => handleSeatCheckIn(seat, !/checked/i.test(seat.status || ''))}>
+                    <CheckCircle size={15} />
+                    {/checked/i.test(seat.status || '') ? 'Undo' : 'Check in'}
+                  </button>
+                )}
+                items={[
+                  { label: /checked/i.test(seat.status || '') ? 'Reset status' : 'Check in', icon: <CheckCircle size={15} />, onClick: () => handleSeatCheckIn(seat, !/checked/i.test(seat.status || '')) }
+                ]}
+              />
+            ) : '-' }
           ]}
         />
       </>
@@ -5091,56 +5860,136 @@ export default function AdminSectionPage({ view }) {
   if (view === 'teacher') {
     const classRows = visibleTeacherRegistrations.filter((row) => row.registrationType === 'class' || visibleTeacherPrograms.some((program) => program.title === row.program));
     const teacherRows = registeredUsers.filter((row) => String(row.role || '').toLowerCase() === 'teacher' || (row.roles || []).includes?.('teacher'));
-    const confirmedClassRows = statusCount(classRows, (status) => status.includes('confirmed'));
-    const paidClassRows = classRows.filter(isPaidRegistration).length;
     const classGroups = summarizeBy(classRows, 'program', 6);
-    const totalStudents = classRows.length;
+    const visibleTeacherRows = teacherRows.filter((row) => {
+      const query = teacherDirectoryQuery.trim().toLowerCase();
+      if (!query) return true;
+      return [row.firstName, row.lastName, row.name, row.email, row.phone]
+        .some((value) => String(value || '').toLowerCase().includes(query));
+    });
     return (
       <>
         <PageHeader root="Teacher" area="Class Area" title="Teacher class area" />
-        <section className="workflow-hero teacher-hero">
-          <div>
-            <p className="eyebrow">Teacher workspace</p>
-            <h2>Class roster and readiness</h2>
-            <p>Review enrolled students, confirmation status, payment readiness, and family contact details before class.</p>
+        <section className="teacher-class-dashboard-card">
+          <div className="teacher-class-section-heading">
+            <span className="teacher-class-section-icon teacher-class-section-icon--gold"><ListChecks size={20} /></span>
+            <div>
+              <h2>Class overview</h2>
+              <p>View registrations, confirmations and payment status for each class.</p>
+            </div>
           </div>
-          <div className="workflow-action-list">
-            <article><strong>{totalStudents}</strong><span>Students</span></article>
-            <article><strong>{confirmedClassRows}</strong><span>Confirmed</span></article>
-            <article><strong>{paidClassRows}</strong><span>{tr('Paid')}</span></article>
+          <div className="teacher-class-table-shell">
+            <table className="teacher-class-table teacher-class-overview-table">
+              <thead>
+                <tr>
+                  <th>Class</th>
+                  <th>Registrations</th>
+                  <th>Confirmed</th>
+                  <th>Paid</th>
+                  <th>Payment progress</th>
+                </tr>
+              </thead>
+              <tbody>
+                {classGroups.length ? classGroups.map((group) => {
+                  const confirmed = statusCount(group.rows, (status) => status.includes('confirmed'));
+                  const paid = group.rows.filter(isPaidRegistration).length;
+                  const progress = Math.round((paid / Math.max(1, group.count)) * 100);
+                  const program = visibleTeacherPrograms.find((item) => item.title === group.label);
+                  return (
+                    <tr key={group.label}>
+                      <td>
+                        <strong>{group.label || 'Unassigned class'}</strong>
+                        {program?.eventId && <small>{program.eventId}</small>}
+                      </td>
+                      <td>{group.count}</td>
+                      <td>{confirmed}</td>
+                      <td>{paid}</td>
+                      <td>
+                        <div className="teacher-payment-progress">
+                          <span><i style={{ width: `${progress}%` }} /></span>
+                          <b>{progress}%</b>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td colSpan={5} className="teacher-class-empty">No class registrations yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
-        <section className="class-roster-grid">
-          {classGroups.length ? classGroups.map((group) => {
-            const confirmed = statusCount(group.rows, (status) => status.includes('confirmed'));
-            const paid = group.rows.filter(isPaidRegistration).length;
-            return (
-              <article key={group.label}>
-                <div className="panel-mini-heading">
-                  <span>{group.label}</span>
-                  <strong>{group.count}</strong>
-                </div>
-                <div className="roster-meta">
-                  <span>{confirmed} confirmed</span>
-                  <span>{paid} paid</span>
-                </div>
-                <div className="progress-track"><span style={{ width: `${Math.min(100, (confirmed / Math.max(1, group.count)) * 100)}%` }} /></div>
-              </article>
-            );
-          }) : <article><strong>No class registrations yet.</strong><p>Student rosters will appear here after members register for classes.</p></article>}
+        <section className="teacher-class-dashboard-card teacher-directory-card">
+          <div className="teacher-directory-toolbar">
+            <div className="teacher-class-section-heading">
+              <span className="teacher-class-section-icon teacher-class-section-icon--blue"><UsersRound size={20} /></span>
+              <div>
+                <h2>Teacher directory <em>{teacherRows.length} teachers</em></h2>
+                <p>Search and view teacher details, including their class registrations.</p>
+              </div>
+            </div>
+            <div className="teacher-directory-actions">
+              <label className="teacher-directory-search">
+                <Search size={16} />
+                <input
+                  value={teacherDirectoryQuery}
+                  onChange={(event) => setTeacherDirectoryQuery(event.target.value)}
+                  placeholder="Search teachers by name or email"
+                />
+              </label>
+              <button className="button secondary" type="button">Export</button>
+            </div>
+          </div>
+          <div className="teacher-class-table-shell">
+            <table className="teacher-class-table teacher-directory-table">
+              <thead>
+                <tr>
+                  <th>Teacher</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Registrations</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleTeacherRows.length ? visibleTeacherRows.map((row) => {
+                  const name = `${row.firstName || ''} ${row.lastName || ''}`.trim() || row.name || row.email || 'Teacher';
+                  const initial = name.trim().charAt(0).toUpperCase() || 'T';
+                  return (
+                    <tr key={row.id || row.email || name}>
+                      <td>
+                        <div className="teacher-directory-name">
+                          <span>{initial}</span>
+                          <strong>{name}</strong>
+                        </div>
+                      </td>
+                      <td>{row.email || '-'}</td>
+                      <td>{row.phone || '-'}</td>
+                      <td>{Number(row.registrationCount || row.registrations?.length || 0)}</td>
+                      <td>
+                        <div className="teacher-directory-row-actions">
+                          <button className="button secondary" type="button" onClick={() => setDetailRecord(row)}>
+                            <Eye size={15} /> View details
+                          </button>
+                          <button className="icon-button" type="button" title="More actions" aria-label="More actions">
+                            <MoreHorizontal size={18} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td colSpan={5} className="teacher-class-empty">No teacher accounts found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <p className="teacher-directory-note">Sample teacher details shown.</p>
         </section>
-        <AdminTable
-          title="Teacher directory"
-          rows={teacherRows}
-          emptyText="No teacher accounts found."
-          columns={[
-            { key: 'firstName', label: 'First name' },
-            { key: 'lastName', label: 'Last name' },
-            { key: 'email', label: 'Email' },
-            { key: 'phone', label: 'Phone number' },
-            { key: 'registrationCount', label: 'Registrations' }
-          ]}
-        />
         <AdminTable
           title="Class registrations"
           rows={classRows}
@@ -5157,7 +6006,7 @@ export default function AdminSectionPage({ view }) {
             { key: 'paid', label: 'Paid', render: (row) => isPaidRegistration(row) ? 'Yes' : 'No' },
             { key: 'paymentReference', label: 'Payment Ref', render: (row) => getPaymentDetails(row)?.reference || '-' },
             { key: 'details', label: 'Details', render: (row) => <DetailsIconButton onClick={() => setRegistrationDetail(row)} /> },
-            { key: 'actions', label: 'Actions', render: (row) => <AdminRecordActions kind="registration" row={row} /> }
+            { key: 'actions', label: 'Actions', render: (row) => <RegistrationActionMenu row={row} /> }
           ]}
         />
         {editRecord?.kind === 'registration' && (
@@ -5197,24 +6046,10 @@ export default function AdminSectionPage({ view }) {
       .filter((row) => String(row.status || '').toLowerCase().includes('paid'))
       .reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const totalExpenseAmount = expenses.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-    const expenseReceiptCount = expenses.filter((row) => row.receiptUrl).length;
     const expenseCategories = summarizeBy(expenses, 'category', 5);
     return (
       <>
         <PageHeader root="Treasurer" area="Expense Review" title="Treasurer expense workflow" />
-        <section className="workflow-hero treasurer-hero">
-          <div>
-            <p className="eyebrow">Treasurer queue</p>
-            <h2>${(submittedAmount + approvedAmount).toLocaleString()} awaiting payment flow</h2>
-            <p>Review submitted expenses, approve reimbursements, mark paid items, and watch category-level spend.</p>
-          </div>
-          <div className="workflow-action-list">
-            <article><strong>{expenseStatus.submitted}</strong><span>Submitted</span></article>
-            <article><strong>{expenseReceiptCount}</strong><span>Receipts</span></article>
-            <article><strong>{expenseStatus.approved}</strong><span>Approved</span></article>
-            <article><strong>{expenseStatus.paid}</strong><span>{tr('Paid')}</span></article>
-          </div>
-        </section>
         <section className="admin-dashboard-hero-grid">
           <article><ReceiptText size={24} /><span>Total expenses</span><strong>{expenses.length}</strong></article>
           <article><HandCoins size={24} /><span>Submitted</span><strong>${submittedAmount.toLocaleString()}</strong></article>
@@ -5270,15 +6105,20 @@ export default function AdminSectionPage({ view }) {
             { key: 'submittedBy', label: 'Submitted by' },
             { key: 'reimbursementTo', label: 'Reimburse to' },
             { key: 'status', label: 'Status' },
-            { key: 'approvedBy', label: 'Reviewed by' },
             { key: 'action', label: 'Action', render: (row) => (
-              <div className="admin-row-actions">
-                <button className="mini-action-link success" type="button" onClick={() => runExpenseAction(row, 'approve', 'Approved')}>Approve</button>
-                <button className="mini-action-link success" type="button" onClick={() => runExpenseAction(row, 'paid', 'Paid')}>{tr('Paid')}</button>
-                <button className="mini-action-link danger" type="button" onClick={() => runExpenseAction(row, 'reject', 'Rejected')}>Reject</button>
-                <button className="mini-action-link secondary" type="button" onClick={() => runExpenseAction(row, 'reset', 'Submitted')}>{tr('Reset')}</button>
-                <AdminRecordActions kind="expense" row={row} />
-              </div>
+              <TableActionMenu
+                primary={String(row.status || '').toLowerCase().includes('approved')
+                  ? <button className="mini-action-link success" type="button" onClick={() => runExpenseAction(row, 'paid', 'Paid')}>{tr('Mark paid')}</button>
+                  : <button className="mini-action-link success" type="button" onClick={() => runExpenseAction(row, 'approve', 'Approved')}>Approve</button>}
+                items={[
+                  { label: 'View details', icon: <Eye size={15} />, onClick: () => setEditRecord({ kind: 'expense', row }) },
+                  { label: 'Edit', icon: <Edit3 size={15} />, onClick: () => setEditRecord({ kind: 'expense', row }) },
+                  !String(row.status || '').toLowerCase().includes('paid') && { label: 'Mark paid', icon: <CheckCircle size={15} />, onClick: () => runExpenseAction(row, 'paid', 'Paid') },
+                  { label: 'Reject', icon: <X size={15} />, danger: true, onClick: () => runExpenseAction(row, 'reject', 'Rejected') },
+                  { label: 'Reset status', icon: <RefreshCw size={15} />, onClick: () => runExpenseAction(row, 'reset', 'Submitted') },
+                  { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => deleteAdminRecord('expense', row) }
+                ]}
+              />
             ) }
           ]}
         />
@@ -5295,32 +6135,160 @@ export default function AdminSectionPage({ view }) {
   }
 
   if (view === 'user-search') {
+    const foundUser = userSearchResult;
+    const matchingUsers = foundUser ? [foundUser] : (userSearchError ? [] : sampleFindUsers);
+    const selectedUser = foundUser || (!userSearchError ? sampleFindUsers[0] : null);
+    const foundProfile = selectedUser?.profile || {};
+    const foundName = cleanText(selectedUser?.name || `${foundProfile.firstName || selectedUser?.firstName || ''} ${foundProfile.lastName || selectedUser?.lastName || ''}`) || selectedUser?.email || 'Member';
+    const foundEmail = selectedUser?.email || foundProfile.email || '-';
+    const foundPhone = selectedUser?.phone || foundProfile.phone || '-';
+    const foundRole = selectedUser?.role || selectedUser?.roles?.[0] || foundProfile.role || 'Member';
+    const foundCreatedAt = selectedUser?.createdAt || selectedUser?.created_at || foundProfile.createdAt || foundProfile.created_at;
+    const foundRegistrations = Array.isArray(selectedUser?.registrations) ? selectedUser.registrations : [];
+    const foundChildren = Array.isArray(selectedUser?.children) ? selectedUser.children : [];
+
     return (
       <>
-        <PageHeader area="User" title="Find user by email" />
-        <form className="admin-create-form compact-admin-form" onSubmit={handleUserSearch}>
-          <div className="admin-form-grid">
-            <label>Email <input name="email" type="email" placeholder="member@example.com" required /></label>
-          </div>
-          <button className="button primary" type="submit">Find User</button>
+        <PageHeader
+          area="User"
+          title="Find user by email"
+          action={<span className="find-user-sample-badge">Sample data</span>}
+        />
+        <form className="find-user-search-card" onSubmit={handleUserSearch}>
+          <label>
+            <span>Email address <b>*</b></span>
+            <div className="find-user-input-wrap">
+              <Mail size={18} />
+              <input name="email" type="email" placeholder="member@example.com" defaultValue="member@example.com" required />
+            </div>
+          </label>
+          <button className="button primary" type="submit"><Search size={22} /> Search</button>
           {userSearchError && <p className="form-error">{userSearchError}</p>}
         </form>
-        {userSearchResult && (
-          <AdminTable
-            title="User result"
-            rows={[userSearchResult]}
-            columns={[
-              { key: 'createdAt', label: 'Created on' },
-              { key: 'email', label: 'Email' },
-              { key: 'name', label: 'Name' },
-              { key: 'phone', label: 'Phone number' },
-              { key: 'role', label: 'Role' },
-              { key: 'registrationCount', label: 'Registrations', render: (row) => row.registrations?.length || 0 },
-              { key: 'details', label: 'Details', render: (row) => <DetailsIconButton onClick={() => setRegistrationDetail(row)} /> }
-            ]}
-          />
-        )}
-        {registrationDetail && <RegistrationDetailModal row={registrationDetail} onClose={() => setRegistrationDetail(null)} />}
+        <section className="find-user-results-panel">
+          <h2>Matching users <span>({matchingUsers.length})</span></h2>
+          <div className="find-user-table-wrap">
+            <table className="find-user-table">
+              <thead>
+                <tr>
+                  <th />
+                  <th>Created on</th>
+                  <th>Email</th>
+                  <th>Name</th>
+                  <th>Phone number</th>
+                  <th>Role</th>
+                  <th>Registrations</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matchingUsers.length ? matchingUsers.map((row, rowIndex) => {
+                  const profile = row.profile || {};
+                  const name = cleanText(row.name || `${profile.firstName || row.firstName || ''} ${profile.lastName || row.lastName || ''}`) || row.email || 'Member';
+                  const email = row.email || profile.email || '-';
+                  const phone = row.phone || profile.phone || '-';
+                  const role = row.role || row.roles?.[0] || profile.role || 'Member';
+                  const createdAt = row.createdAt || row.created_at || profile.createdAt || profile.created_at;
+                  const registrationCount = Array.isArray(row.registrations) ? row.registrations.length : 0;
+                  return (
+                    <tr key={row.id || email} className={rowIndex === 0 ? 'is-selected' : undefined}>
+                      <td><span className="find-user-avatar sm">{getInitials(name)}</span></td>
+                      <td>{formatDateShort(createdAt)}</td>
+                      <td>{email}</td>
+                      <td>{name}</td>
+                      <td>{phone}</td>
+                      <td><span className={`find-user-role ${String(role).toLowerCase()}`}>{role}</span></td>
+                      <td><button className="find-user-count-link" type="button">{registrationCount}</button></td>
+                      <td>
+                        <button className="find-user-details-button" type="button" onClick={() => document.getElementById('find-user-detail-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+                          View details <ChevronRight size={17} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td colSpan={8} className="find-user-empty">Search by email to view matching users.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {selectedUser && (
+            <article className="find-user-detail-card" id="find-user-detail-card">
+              <header className="find-user-detail-header">
+                <span className="find-user-avatar lg">{getInitials(foundName)}</span>
+                <div>
+                  <h3>{foundName} <span className={`find-user-role ${String(foundRole).toLowerCase()}`}>{foundRole}</span></h3>
+                  <p>
+                    <span><Mail size={17} /> {foundEmail}</span>
+                    <span><Phone size={17} /> {foundPhone}</span>
+                  </p>
+                </div>
+                <aside>
+                  <small>Created on</small>
+                  <span><CalendarDays size={17} /> {formatDateShort(foundCreatedAt)}</span>
+                </aside>
+              </header>
+
+              <div className="find-user-detail-grid">
+                <section className="find-user-info-box">
+                  <h4><UserRound size={22} /> Profile</h4>
+                  <dl>
+                    <dt>Name</dt><dd>{foundName}</dd>
+                    <dt>Email</dt><dd>{foundEmail}</dd>
+                    <dt>Phone number</dt><dd>{foundPhone}</dd>
+                    <dt>Role</dt><dd><span className={`find-user-role ${String(foundRole).toLowerCase()}`}>{foundRole}</span></dd>
+                    <dt>Created on</dt><dd>{formatDateShort(foundCreatedAt)}</dd>
+                  </dl>
+                </section>
+
+                <section className="find-user-info-box">
+                  <h4><UsersRound size={22} /> Children <span>({foundChildren.length})</span></h4>
+                  <div className="find-user-children-list">
+                    {foundChildren.length ? foundChildren.map((child, index) => {
+                      const childName = cleanText(child.name || `${child.firstName || ''} ${child.lastName || ''}`) || `Child ${index + 1}`;
+                      return (
+                        <div key={child.id || childName}>
+                          <span className="find-user-avatar md">{getInitials(childName)}</span>
+                          <strong>{childName}<small>{child.phone || child.email || '-'}</small></strong>
+                          <em>{child.classLevel || child.level || child.class || 'Active'}</em>
+                        </div>
+                      );
+                    }) : <p className="find-user-empty-note">No children found for this user.</p>}
+                  </div>
+                </section>
+
+                <section className="find-user-info-box">
+                  <h4><CalendarDays size={22} /> Registrations <span>({foundRegistrations.length})</span></h4>
+                  <table className="find-user-mini-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Event / Class</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {foundRegistrations.length ? foundRegistrations.slice(0, 3).map((registration, index) => (
+                        <tr key={registration.id || `${registration.program}-${index}`}>
+                          <td>{formatDateShort(registration.registeredOn || registration.createdAt || registration.created_at || registration.date)}</td>
+                          <td>{registration.registrationType || registration.type || (registration.eventId ? 'Event' : 'Class')}</td>
+                          <td>{registration.program || registration.event || registration.className || '-'}</td>
+                          <td><span className="find-user-confirmed">{registration.status || 'Confirmed'}</span></td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={4}>No registrations found.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </section>
+              </div>
+            </article>
+          )}
+        </section>
       </>
     );
   }
@@ -5350,7 +6318,14 @@ export default function AdminSectionPage({ view }) {
             { key: 'template', label: 'Template' },
             { key: 'status', label: 'Status' },
             { key: 'sent_at', label: 'Sent on', render: (row) => row.sent_at || row.sentAt || '-' },
-            { key: 'action', label: 'Action', render: (row) => <button className="mini-action-link success" type="button" onClick={() => resendOutboxEmail(row)}>Send</button> }
+            { key: 'action', label: 'Action', render: (row) => (
+              <TableActionMenu
+                primary={<button className="mini-action-link success" type="button" onClick={() => resendOutboxEmail(row)}>Send</button>}
+                items={[
+                  { label: 'Send', icon: <Send size={15} />, onClick: () => resendOutboxEmail(row) }
+                ]}
+              />
+            ) }
           ]}
         />
       </>
@@ -5358,37 +6333,196 @@ export default function AdminSectionPage({ view }) {
   }
 
   if (view === 'student-view') {
-    const students = registrations.length ? registrations : [
-      { studentName: 'Aadhya Prabhakar', parentName: 'Aadhya Prabhakar', program: 'Kannada Bharati Paata Shaale Registrations (Level 5)', status: 'Confirmed' },
-      { studentName: 'Aadhya Bhandi', parentName: 'Aadhya Bhandi', program: 'Bharatanatya Class for Seniors', status: 'Confirmed' },
-      { studentName: 'Aanya Gujjar', parentName: 'Aanya Gujjar', program: 'Kannada Bharati Paata Shaale Registrations (Level 4)', status: 'Submitted' }
-    ];
+    const studentNameFor = (row) => cleanText(row.familyMember || row.studentName || row.registeredName || row.parentName || row.name || row.email);
+    const actualStudentNames = [...new Set(registrations.map(studentNameFor).filter(Boolean))];
+    const requestedStudent = cleanText(searchParams.get('student'));
+    const availableStudentNames = actualStudentNames.length ? actualStudentNames : sampleStudentView.family.map((member) => member.name);
+    const selectedStudentName = availableStudentNames.includes(studentViewSelectedName)
+      ? studentViewSelectedName
+      : availableStudentNames.includes(requestedStudent)
+        ? requestedStudent
+        : availableStudentNames[0] || sampleStudentView.profile.name;
+    const selectedRows = registrations.filter((row) => studentNameFor(row) === selectedStudentName);
+    const hasLiveStudent = selectedRows.length > 0;
+    const liveProfileRow = selectedRows[0] || {};
+    const liveClassRows = selectedRows.filter((row) => isClassRegistration(row, programs, allEvents));
+    const liveEventRows = selectedRows.filter((row) => !isClassRegistration(row, programs, allEvents));
+    const profileData = hasLiveStudent ? {
+      id: liveProfileRow.studentId || liveProfileRow.student_id || liveProfileRow.eventId || `KB${String(actualStudentNames.indexOf(selectedStudentName) + 1).padStart(5, '0')}`,
+      name: selectedStudentName,
+      birthDate: liveProfileRow.birthDate || liveProfileRow.birth_date || (liveProfileRow.birthYear ? `Birth year ${liveProfileRow.birthYear}` : '-'),
+      email: liveProfileRow.studentEmail || liveProfileRow.email || '-',
+      phone: liveProfileRow.studentPhone || liveProfileRow.phone || '-',
+      address: liveProfileRow.address || profile.address || '-',
+      parentName: liveProfileRow.parentName || liveProfileRow.registeredBy || '-',
+      parentEmail: liveProfileRow.email || '-',
+      parentPhone: liveProfileRow.phone || '-'
+    } : { ...sampleStudentView.profile, name: selectedStudentName };
+    const familyMembers = actualStudentNames.length ? actualStudentNames.slice(0, 5).map((name, index) => {
+      const row = registrations.find((registration) => studentNameFor(registration) === name) || {};
+      const matchingProgram = programs.find((program) => program.title === row.program);
+      return {
+        name,
+        level: matchingProgram?.level || row.level || String(row.program || 'Student').replace(/^Kannada\s*/i, ''),
+        initials: getInitials(name),
+        tone: index % 2 ? 'pink' : 'blue'
+      };
+    }) : sampleStudentView.family;
+    const normalizeClassRow = (row, index) => {
+      const meta = getProgramMeta(row, programs, allEvents);
+      return {
+        ...row,
+        id: row.id || `class-${index}`,
+        studentName: studentNameFor(row) || selectedStudentName,
+        program: row.program || meta.title || '-',
+        term: row.term || meta.term || 'Spring 2026',
+        programDates: row.programDates || row.schedule || meta.date || meta.schedule || formatDateShort(row.createdAt),
+        amount: getMoneyAmount(row),
+        status: row.status || (isPaidRegistration(row) ? 'Confirmed' : 'Pending')
+      };
+    };
+    const normalizeEventRow = (row, index) => {
+      const meta = getProgramMeta(row, programs, allEvents);
+      return {
+        ...row,
+        id: row.id || `event-${index}`,
+        studentName: studentNameFor(row) || selectedStudentName,
+        program: row.program || meta.title || '-',
+        date: row.date || meta.startOn || meta.date || formatDateShort(row.createdAt),
+        location: row.location || meta.location || '-',
+        amount: getMoneyAmount(row),
+        status: row.status || (isPaidRegistration(row) ? 'Confirmed' : 'Pending')
+      };
+    };
+    const classRegistrationRows = (hasLiveStudent ? liveClassRows : sampleStudentView.classRegistrations).map(normalizeClassRow);
+    const eventRegistrationRows = (hasLiveStudent ? liveEventRows : sampleStudentView.eventRegistrations).map(normalizeEventRow);
+    const registeredProgramNames = new Set(selectedRows.map((row) => row.program));
+    const liveAvailablePrograms = programs.filter((program) => !registeredProgramNames.has(program.title)).slice(0, 3).map((program, index) => ({
+      id: program.id || `available-${index}`,
+      title: program.title,
+      type: program.category || program.type || 'Kannada Class',
+      level: program.level || program.age || 'All Levels',
+      schedule: program.schedule || program.date || 'Schedule available',
+      fee: Number(program.fee || program.amount || 0)
+    }));
+    const availablePrograms = liveAvailablePrograms.length ? liveAvailablePrograms : sampleStudentView.availablePrograms;
+    const showClassRegistrations = studentViewTab !== 'events';
+    const showEventRegistrations = studentViewTab !== 'classes';
+    const renderStatus = (status) => {
+      const isConfirmed = /confirmed|paid|active/i.test(status || '');
+      return (
+        <span className={`student-view-status ${isConfirmed ? 'is-confirmed' : 'is-pending'}`}>
+          {isConfirmed ? <CheckCircle size={17} /> : <Clock3 size={17} />}
+          <span>{status || 'Pending'}</span>
+        </span>
+      );
+    };
     return (
       <>
         <PageHeader area="Student view" title="Student View" />
-        <section className="admin-page-panel">
-          <div className="student-matrix-scroll">
-            <table className="student-matrix">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  {programs.slice(0, 12).map((program) => <th key={program.title}>{program.title}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {students.map((student, index) => (
-                  <tr key={`${student.email || student.parentName || index}`}>
-                    <td>{student.studentName !== '-' ? student.studentName : student.parentName}</td>
-                    {programs.slice(0, 12).map((program) => {
-                      const active = student.program === program.title || student.program?.includes(program.title);
-                      return <td key={program.title}>{active ? <span className="confirmed-badge">Confirmed ✓</span> : '--'}</td>;
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <section className="student-view-workspace">
+          <aside className="student-view-profile-card">
+            <div className="student-view-profile-heading">
+              <h2>Student Profile</h2>
+              <a className="student-view-edit-button" href="/admin/profile"><Edit3 size={17} /> Edit</a>
+            </div>
+            <div className="student-view-profile-identity">
+              <span className="student-view-avatar">{getInitials(profileData.name)}</span>
+              <div>
+                <h3>{profileData.name}</h3>
+                <p>Student ID: {profileData.id}</p>
+                <span>Active</span>
+              </div>
+            </div>
+            <dl className="student-view-profile-details">
+              <div><dt><CalendarDays size={18} /> Date of Birth</dt><dd>{profileData.birthDate}</dd></div>
+              <div><dt><Mail size={18} /> Email</dt><dd>{profileData.email}</dd></div>
+              <div><dt><Phone size={18} /> Phone</dt><dd>{profileData.phone}</dd></div>
+              <div><dt><MapPin size={18} /> Address</dt><dd>{String(profileData.address).split('\n').map((line) => <span key={line}>{line}</span>)}</dd></div>
+              <div><dt><UsersRound size={18} /> Parent / Guardian</dt><dd><span>{profileData.parentName}</span><span>{profileData.parentEmail}</span><span>{profileData.parentPhone}</span></dd></div>
+            </dl>
+            <div className="student-view-family-card">
+              <div className="student-view-family-title"><UsersRound size={23} /><strong>Family Members ({familyMembers.length})</strong><ChevronRight size={19} /></div>
+              {familyMembers.map((member) => (
+                <button
+                  className={member.name === selectedStudentName ? 'is-selected' : ''}
+                  type="button"
+                  key={member.name}
+                  onClick={() => setStudentViewSelectedName(member.name)}
+                >
+                  <span className={`student-view-family-avatar is-${member.tone}`}>{member.initials}</span>
+                  <span><strong>{member.name}</strong><small>Student • {member.level}</small></span>
+                  <em>Active</em>
+                  <ChevronRight size={18} />
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <div className="student-view-main">
+            <nav className="student-view-tabs" aria-label="Student record sections">
+              <button className={studentViewTab === 'registrations' ? 'is-active' : ''} type="button" onClick={() => setStudentViewTab('registrations')}><ReceiptText size={22} /> Registrations</button>
+              <button className={studentViewTab === 'classes' ? 'is-active' : ''} type="button" onClick={() => setStudentViewTab('classes')}><GraduationCap size={23} /> Classes</button>
+              <button className={studentViewTab === 'events' ? 'is-active' : ''} type="button" onClick={() => setStudentViewTab('events')}><CalendarDays size={22} /> Events</button>
+            </nav>
+
+            {showClassRegistrations && (
+              <section className="student-view-data-card">
+                <div className="student-view-section-heading"><h2>Class Registrations</h2><button type="button" onClick={() => setStudentViewTab('classes')}>View all</button></div>
+                <div className="student-view-table-scroll">
+                  <table>
+                    <thead><tr><th>Student</th><th>Class</th><th>Term</th><th>Program Dates</th><th>Paid Amount</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {classRegistrationRows.length ? classRegistrationRows.map((row) => (
+                        <tr key={row.id}>
+                          <td><span className="student-view-table-student"><i>{getInitials(row.studentName)}</i>{row.studentName}</span></td>
+                          <td>{row.program}</td><td>{row.term}</td><td>{row.programDates}</td><td>${Number(row.amount || 0).toLocaleString()}</td><td>{renderStatus(row.status)}</td>
+                          <td><button className="student-view-more-button" type="button" aria-label={`View ${row.program} registration`} onClick={() => setRegistrationDetail(row)}><MoreHorizontal size={19} /></button></td>
+                        </tr>
+                      )) : <tr><td colSpan={7}>No class registrations found for this student.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {showEventRegistrations && (
+              <section className="student-view-data-card">
+                <div className="student-view-section-heading"><h2>Event Registrations</h2><button type="button" onClick={() => setStudentViewTab('events')}>View all</button></div>
+                <div className="student-view-table-scroll">
+                  <table>
+                    <thead><tr><th>Student</th><th>Event</th><th>Date</th><th>Location</th><th>Paid Amount</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {eventRegistrationRows.length ? eventRegistrationRows.map((row) => (
+                        <tr key={row.id}>
+                          <td><span className="student-view-table-student"><i>{getInitials(row.studentName)}</i>{row.studentName}</span></td>
+                          <td>{row.program}</td><td>{row.date}</td><td>{row.location}</td><td>${Number(row.amount || 0).toLocaleString()}</td><td>{renderStatus(row.status)}</td>
+                          <td><button className="student-view-more-button" type="button" aria-label={`View ${row.program} registration`} onClick={() => setRegistrationDetail(row)}><MoreHorizontal size={19} /></button></td>
+                        </tr>
+                      )) : <tr><td colSpan={7}>No event registrations found for this student.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            <section className="student-view-data-card student-view-available-card">
+              <div className="student-view-section-heading student-view-program-heading">
+                <h2>Available Programs for This Student</h2>
+                <div><select aria-label="Program type"><option>All Program Types</option><option>Kannada Class</option><option>Special Program</option></select><select aria-label="Term"><option>Spring 2026</option><option>Summer 2026</option></select></div>
+              </div>
+              <div className="student-view-table-scroll">
+                <table>
+                  <thead><tr><th>Program</th><th>Type</th><th>Age / Level</th><th>Schedule</th><th>Fee</th><th>Availability</th><th>Action</th></tr></thead>
+                  <tbody>{availablePrograms.map((program) => (
+                    <tr key={program.id || program.title}><td><strong>{program.title}</strong></td><td>{program.type}</td><td>{program.level}</td><td>{program.schedule}</td><td>${Number(program.fee || 0).toLocaleString()}</td><td><span className="student-view-open"><i /> Open</span></td><td><button className="student-view-register-button" type="button" onClick={() => { window.location.href = `/admin/register-member?program=${encodeURIComponent(program.title)}`; }}>Register</button></td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </section>
           </div>
         </section>
+        {registrationDetail && <RegistrationDetailModal row={registrationDetail} onClose={() => setRegistrationDetail(null)} />}
       </>
     );
   }
@@ -5456,7 +6590,6 @@ export default function AdminSectionPage({ view }) {
       ['Announcements', announcements.length],
       ['Email outbox', emailOutbox.length]
     ];
-    const totalDiagnostics = tableCounts.reduce((sum, [, count]) => sum + count, 0);
     const systemStatuses = [
       ['API mode', import.meta.env.VITE_API_URL ? 'Configured API URL' : 'Default /api proxy', Boolean(import.meta.env.VITE_API_URL)],
       ['Google login', import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'Configured' : 'Missing client id', Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID)],
@@ -5465,18 +6598,6 @@ export default function AdminSectionPage({ view }) {
     return (
       <>
         <PageHeader area="Developer" title="Admin developer tools" />
-        <section className="developer-hero-panel">
-          <div>
-            <p className="eyebrow">System overview</p>
-            <h2>{totalDiagnostics} records tracked across core modules</h2>
-            <p>Use this page to verify data volume, integration readiness, email templates, and local browser cache during admin testing.</p>
-          </div>
-          <div className="developer-hero-stats">
-            <article><strong>{tableCounts.length}</strong><span>Data groups</span></article>
-            <article><strong>{templatePreviews.length}</strong><span>Email templates</span></article>
-            <article><strong>{localKeys.length}</strong><span>Local keys</span></article>
-          </div>
-        </section>
         <section className="admin-page-panel developer-panel">
           <div className="admin-page-panel-heading"><h2>System diagnostics</h2><span>{tableCounts.reduce((sum, [, count]) => sum + count, 0)}</span></div>
           <div className="developer-diagnostic-grid">
@@ -5593,12 +6714,10 @@ export default function AdminSectionPage({ view }) {
     );
   }
 
-  const dashboardRows = [...programs.slice(0, 4), ...allEvents.slice(0, 3)];
   const dashboardName = [
     profile.firstName || user?.firstName || user?.name,
     profile.lastName || user?.lastName
   ].filter(Boolean).join(' ').trim() || user?.email || 'Member';
-  const dashboardFirstName = profile.firstName || user?.firstName || user?.name?.split(' ')?.[0] || user?.email?.split('@')?.[0] || 'Member';
   const dashboardInitials = dashboardName
     .split(' ')
     .filter(Boolean)
@@ -5607,113 +6726,113 @@ export default function AdminSectionPage({ view }) {
     .join('')
     .toUpperCase();
   const dashboardSpouseName = [profile.spouseFirstName, profile.spouseLastName].filter(Boolean).join(' ') || '-';
+  const dashboardPhone = profile.phone || user?.phone || '-';
+  const dashboardEvents = allEvents
+    .filter((row) => `${row.title || ''} ${row.location || ''}`.toLowerCase().includes(dashboardEventSearch.trim().toLowerCase()))
+    .slice(0, 4);
+  const memberMetrics = [
+    { label: 'My registrations', value: userRegistrations.length, icon: UserRound, href: '/admin/registration-classes' },
+    { label: 'My classes', value: userClassRegistrations.length, icon: CalendarDays, href: '/admin/registration-classes' },
+    { label: 'My events', value: userEventRegistrations.length, icon: ReceiptText, href: '/admin/registrations' },
+    { label: 'Announcements', value: announcements.length, icon: Megaphone, href: '/admin/announcements' }
+  ];
+  const communityCards = [
+    { label: 'All registrations', value: registrations.length, icon: UsersRound, href: '/admin/registrations' },
+    { label: 'Current events', value: allEvents.length, icon: CalendarDays, href: '/admin/events' },
+    { label: 'Expenses', value: expenses.length, icon: ReceiptText, href: '/admin/expense' },
+    { label: 'Announcements', value: announcements.length, icon: Megaphone, href: '/admin/announcements' }
+  ];
 
   return (
-    <>
-      <PageHeader area="Dashboard" title="" />
+    <div className="member-dashboard-page">
+      <nav className="member-dashboard-breadcrumb" aria-label="Breadcrumb"><strong>Admin</strong><span>/</span>Dashboard</nav>
+
       <section className="member-dashboard-welcome">
         <div className="member-dashboard-welcome-copy">
-          <span>Member area</span>
           <h1>Member dashboard</h1>
-          <p>Welcome, {dashboardFirstName}</p>
+          <p>Welcome, {dashboardName}</p>
         </div>
-        <div className="member-dashboard-welcome-art" aria-hidden="true" />
-      </section>
-      <section className="member-dashboard-metrics" aria-label="Member summary">
-        <article className="member-dashboard-metric">
-          <span className="member-dashboard-metric-icon"><UsersRound size={22} /></span>
-          <span><small>My registrations</small><strong>{userRegistrations.length}</strong></span>
-        </article>
-        <article className="member-dashboard-metric">
-          <span className="member-dashboard-metric-icon"><CalendarDays size={22} /></span>
-          <span><small>My classes</small><strong>{userClassRegistrations.length}</strong></span>
-        </article>
-        <article className="member-dashboard-metric">
-          <span className="member-dashboard-metric-icon"><ReceiptText size={22} /></span>
-          <span><small>My events</small><strong>{userEventRegistrations.length}</strong></span>
-        </article>
-        <article className="member-dashboard-metric">
-          <span className="member-dashboard-metric-icon"><Megaphone size={22} /></span>
-          <span><small>Announcements</small><strong>{announcements.length}</strong></span>
-        </article>
+        <span className="member-dashboard-welcome-art" aria-hidden="true" />
       </section>
 
-      <section className={`member-dashboard-main-grid ${isAdmin(user) ? '' : 'is-member-only'}`}>
-        <article className="member-dashboard-card member-dashboard-profile-card">
+      <section className="member-dashboard-metrics" aria-label="Member dashboard summary">
+        {memberMetrics.map((card) => {
+          const Icon = card.icon;
+          return (
+            <a className="member-dashboard-metric" href={card.href} key={card.label}>
+              <span className="member-dashboard-metric-icon"><Icon size={22} /></span>
+              <span><small>{card.label}</small><strong>{card.value}</strong></span>
+              <ChevronRight size={16} aria-hidden="true" />
+            </a>
+          );
+        })}
+      </section>
+
+      <section className="member-dashboard-workspace">
+        <article className="member-dashboard-card member-dashboard-information">
           <div className="member-dashboard-card-heading">
             <h2>My information</h2>
-            <a className="member-dashboard-edit" href="/admin/profile"><Edit3 size={15} />Update profile</a>
+            <a className="member-dashboard-edit" href="/admin/profile"><Edit3 size={14} />Update profile</a>
           </div>
           <div className="member-dashboard-identity">
             <span className="member-dashboard-avatar">{dashboardInitials}</span>
             <strong>{dashboardName}</strong>
           </div>
           <div className="member-dashboard-profile-details">
-            <div><Mail size={16} /><span>{tr('Email')}</span><strong>{user?.email || '-'}</strong></div>
+            <div><Mail size={16} /><span>Email</span><strong>{user?.email || '-'}</strong></div>
+            <div><Phone size={16} /><span>Phone</span><strong>{dashboardPhone}</strong></div>
+            <div><Building2 size={16} /><span>Company</span><strong>{profile.company || '-'}</strong></div>
             <div><UsersRound size={16} /><span>Spouse</span><strong>{dashboardSpouseName}</strong></div>
-            <div><Phone size={16} /><span>Phone</span><strong>{profile.phone || user?.phone || '-'}</strong></div>
-            <div><UserPlus size={16} /><span>Children</span><strong>{profileChildren.length}</strong></div>
-            <div><BookOpen size={16} /><span>Company</span><strong>{profile.company || '-'}</strong></div>
+            <div><UserRound size={16} /><span>Children</span><strong>{profileChildren.length}</strong></div>
           </div>
         </article>
 
-        {isAdmin(user) && (
+        <div className="member-dashboard-right-column">
           <article className="member-dashboard-card member-dashboard-community-card">
             <div className="member-dashboard-card-heading"><h2>Community overview</h2></div>
             <div className="member-dashboard-community-grid">
-              <div><span className="member-dashboard-metric-icon"><UsersRound size={21} /></span><span><small>All registrations</small><strong>{registrations.length}</strong></span></div>
-              <div><span className="member-dashboard-metric-icon"><CalendarDays size={21} /></span><span><small>Current events</small><strong>{allEvents.length}</strong></span></div>
-              <div><span className="member-dashboard-metric-icon"><ReceiptText size={21} /></span><span><small>Expenses</small><strong>{expenses.length}</strong></span></div>
-              <div><span className="member-dashboard-metric-icon"><Megaphone size={21} /></span><span><small>Announcements</small><strong>{announcements.length}</strong></span></div>
+              {communityCards.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <a href={card.href} key={card.label}>
+                    <span className="member-dashboard-metric-icon"><Icon size={20} /></span>
+                    <span><small>{card.label}</small><strong>{card.value}</strong></span>
+                    <ChevronRight size={15} aria-hidden="true" />
+                  </a>
+                );
+              })}
             </div>
           </article>
-        )}
+
+          <article className="member-dashboard-card member-dashboard-current-events">
+            <div className="member-dashboard-card-heading">
+              <h2>Current events</h2>
+              <span className="member-dashboard-count">{allEvents.length}</span>
+            </div>
+            <label className="member-dashboard-event-search">
+              <Search size={16} />
+              <input value={dashboardEventSearch} onChange={(event) => setDashboardEventSearch(event.target.value)} placeholder="Search" />
+            </label>
+            <div className="member-dashboard-event-list">
+              {dashboardEvents.map((event) => (
+                <a href={`/admin/register-member?program=${encodeURIComponent(event.title || '')}`} key={event.id || event.title}>
+                  <span className="member-dashboard-event-date"><CalendarDays size={17} /></span>
+                  <span><strong>{event.title}</strong><small>{event.date || event.startOn || event.month || 'Date to be announced'}{event.location ? ` · ${event.location}` : ''}</small></span>
+                  <ChevronRight size={16} />
+                </a>
+              ))}
+              {dashboardEvents.length === 0 && (
+                <div className="member-dashboard-events-empty">
+                  <CalendarDays size={38} />
+                  <span>No matching events</span>
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
       </section>
-      <div className="member-dashboard-current-events">
-        <AdminTable
-          title="Current events"
-          rows={dashboardRows}
-          columns={[
-            { key: 'title', label: 'Name' },
-            { key: 'summary', label: 'Details', render: (row) => (
-              <div className="dashboard-row-summary">
-                <strong>{row.date || row.month || row.startOn || 'Date to be announced'}</strong>
-                <span>{row.time || row.location || row.eventType || '-'}</span>
-                <button className="mini-action-link secondary" type="button" onClick={() => setDetailRecord(row)}>{tr('Details')}</button>
-              </div>
-            ) },
-            { key: 'register', label: 'Register', render: (row) => <a className="mini-action-link" href={`/admin/register-member?program=${encodeURIComponent(row.title)}`}>{tr('Register')}</a> }
-          ]}
-        />
-      </div>
-      <AdminTable
-        title="My class registrations"
-        rows={userClassRegistrations}
-        emptyText="You have not registered for any classes yet."
-        columns={[
-          { key: 'createdAt', label: 'Registered on' },
-          { key: 'program', label: 'Class' },
-          { key: 'familyMember', label: 'Member', render: (row) => row.familyMember || row.studentName || '-' },
-          { key: 'status', label: 'Status' },
-          { key: 'paid', label: 'Paid', render: (row) => row.paid ? 'Yes' : 'No' },
-          { key: 'amount', label: 'Amount', render: (row) => `$${Number(row.amount || 0).toLocaleString()}` }
-        ]}
-      />
-      <AdminTable
-        title="My event registrations"
-        rows={userEventRegistrations}
-        emptyText="You have not registered for any events yet."
-        columns={[
-          { key: 'createdAt', label: 'Registered on' },
-          { key: 'program', label: 'Event' },
-          { key: 'familyMember', label: 'Member', render: (row) => row.familyMember || row.studentName || '-' },
-          { key: 'status', label: 'Status' },
-          { key: 'paid', label: 'Paid', render: (row) => row.paid ? 'Yes' : 'No' },
-          { key: 'amount', label: 'Amount', render: (row) => `$${Number(row.amount || 0).toLocaleString()}` }
-        ]}
-      />
       {detailRecord && <EventDetailModal item={detailRecord} onClose={() => setDetailRecord(null)} />}
-    </>
+    </div>
   );
 }
 

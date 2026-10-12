@@ -657,7 +657,7 @@ function normalizePayload(table, payload) {
 
   if (table === 'kb_events') {
     return {
-      event_id: payload.event_id || payload.eventId || null,
+      event_id: payload.event_id || payload.eventId || crypto.randomUUID(),
       url_key: payload.url_key || payload.urlKey || null,
       event_type: payload.event_type || payload.eventType || null,
       month: payload.month,
@@ -1142,9 +1142,61 @@ function normalizeSiteMessageSetting(value = {}) {
   };
 }
 
+function isRegistrationCheckInPayload(payload = {}) {
+  return Object.prototype.hasOwnProperty.call(payload, 'checkedIn')
+    || Object.prototype.hasOwnProperty.call(payload, 'checked_in')
+    || Object.prototype.hasOwnProperty.call(payload, 'checkedInAt')
+    || Object.prototype.hasOwnProperty.call(payload, 'checked_in_at');
+}
+
+async function updateRegistrationWithListRefresh(id, payload) {
+  const supabase = requireSupabase();
+  const patch = normalizePatch('kb_registrations', payload);
+  if (Object.prototype.hasOwnProperty.call(payload, 'checkedIn')) {
+    patch.checked_in = booleanValue(payload.checkedIn, false);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'checked_in')) {
+    patch.checked_in = booleanValue(payload.checked_in, false);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'checkedInAt')) {
+    patch.checked_in_at = payload.checkedInAt;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'checked_in_at')) {
+    patch.checked_in_at = payload.checked_in_at;
+  }
+  const { error } = await supabase
+    .from('kb_registrations')
+    .update(patch)
+    .eq('id', id);
+  if (error) throw error;
+
+  const { data, error: refreshError } = await supabase
+    .from('kb_registrations')
+    .select('*')
+    .eq('id', id)
+    .limit(1);
+  if (refreshError) throw refreshError;
+
+  const refreshed = data?.[0] || null;
+  if (!refreshed) {
+    const missing = new Error('Registration was not found after update.');
+    missing.status = 404;
+    throw missing;
+  }
+  return refreshed;
+}
+
 async function updateRecord(table, id, payload) {
   const supabase = requireSupabase();
   let patch = normalizePatch(table, payload);
+  const isRegistrationCheckInPatch = table === 'kb_registrations'
+    && (Object.prototype.hasOwnProperty.call(patch, 'checked_in')
+      || Object.prototype.hasOwnProperty.call(patch, 'checked_in_at'));
+
+  if (isRegistrationCheckInPatch) {
+    return updateRegistrationWithListRefresh(id, payload);
+  }
+
   let result = await supabase
     .from(table)
     .update(patch)
@@ -1468,9 +1520,9 @@ async function getRegistrationById(id) {
     .from('kb_registrations')
     .select('*')
     .eq('id', id)
-    .maybeSingle();
+    .limit(1);
   if (error) throw error;
-  return data;
+  return data?.[0] || null;
 }
 
 async function markRegistrationPaid({ registrationId, orderId, captureId, paymentPayload, paypalOrder = null, kind = 'event', status }) {
@@ -1816,6 +1868,14 @@ function emailCopy(value) {
   return escapeHtml(value).replace(/\r?\n/g, '<br>');
 }
 
+function emailLines(value, limit = 12) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
 function emailAssetUrl(assetPath) {
   return `${String(appBaseUrl).replace(/\/+$/, '')}/${String(assetPath || '').replace(/^\/+/, '')}`;
 }
@@ -1839,6 +1899,8 @@ function renderBrandedEmail({
   ctaUrl = '',
   ctaLabel = '',
   highlight = '',
+  extraContentHtml = '',
+  extraText = [],
   logoSrc = emailAssetUrl('assets/kannada-bharati-logo.png'),
   backgroundSrc = emailAssetUrl('assets/kannada-bharati-email-background.png')
 }) {
@@ -1847,6 +1909,7 @@ function renderBrandedEmail({
   const text = [
     'KANNADA BHARATI', subject, contextLabel, '', intro, body, '',
     ...rows.map(([label, value]) => `${label}: ${value}`),
+    ...extraText,
     safeCtaUrl && ctaLabel ? `${ctaLabel}: ${safeCtaUrl}` : '',
     highlight, '', 'Regards,', 'Kannada Bharati Team', appBaseUrl
   ].filter(Boolean).join('\n');
@@ -1868,6 +1931,7 @@ function renderBrandedEmail({
               <p style="margin:0 0 18px;">${emailCopy(intro)}</p>
               ${body ? `<div style="margin:0 0 22px;color:#33443f;">${emailCopy(body)}</div>` : ''}
               ${renderEmailDetails(rows)}
+              ${extraContentHtml}
             </td></tr>
             ${safeCtaUrl && ctaLabel ? `<tr><td align="center" style="padding:2px 32px 26px;background:#ffffff;">
               <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" style="border-radius:5px;background:#e85d2a;">
@@ -1894,17 +1958,87 @@ function renderBrandedEmail({
   return { text, html };
 }
 
+function renderBulkMessageSections(message = {}) {
+  const highlights = emailLines(message.highlights);
+  const agenda = emailLines(message.agenda).map((line) => {
+    const separator = line.indexOf('|');
+    if (separator < 0) return { time: '', activity: line };
+    return { time: line.slice(0, separator).trim(), activity: line.slice(separator + 1).trim() };
+  });
+  const registrationTitle = String(message.registrationTitle || '').trim();
+  const registrationFee = String(message.registrationFee || '').trim();
+  const registrationNote = String(message.registrationNote || '').trim();
+  const communityNote = String(message.communityNote || '').trim();
+  const sponsorAcknowledgement = String(message.sponsorAcknowledgement || '').trim();
+
+  const sections = [];
+  const text = [];
+
+  if (highlights.length) {
+    text.push('', 'What awaits you', ...highlights.map((item) => `- ${item}`));
+    sections.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 20px;background:#eef8f1;border-left:4px solid #087345;"><tr><td style="padding:16px 18px;">
+      <div style="margin:0 0 9px;color:#087345;font-size:15px;font-weight:700;">What awaits you</div>
+      ${highlights.map((item) => `<div style="padding:3px 0;color:#33443f;font-size:13px;line-height:1.55;"><span style="color:#e85d2a;font-weight:700;">&#8226;</span>&nbsp; ${escapeHtml(item)}</div>`).join('')}
+    </td></tr></table>`);
+  }
+
+  if (agenda.length) {
+    text.push('', 'Event agenda', ...agenda.map(({ time, activity }) => `${time ? `${time}: ` : ''}${activity}`));
+    sections.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 20px;border:1px solid #e5b64a;background:#fffaf0;border-collapse:collapse;">
+      <tr><td colspan="2" style="padding:14px 16px 8px;color:#8a3c13;font-size:15px;font-weight:700;">Event agenda</td></tr>
+      ${agenda.map(({ time, activity }) => `<tr>
+        <td width="30%" style="padding:7px 8px 7px 16px;color:#8a3c13;font-size:12px;font-weight:700;vertical-align:top;">${escapeHtml(time)}</td>
+        <td style="padding:7px 16px 7px 8px;color:#33443f;font-size:13px;line-height:1.5;vertical-align:top;">${escapeHtml(activity)}</td>
+      </tr>`).join('')}
+      <tr><td colspan="2" style="height:8px;font-size:0;line-height:0;">&nbsp;</td></tr>
+    </table>`);
+  }
+
+  if (registrationTitle || registrationFee || registrationNote) {
+    text.push('', registrationTitle || 'Registration', registrationFee, registrationNote);
+    sections.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 20px;background:#eef4ff;border:1px solid #9bb9e8;"><tr><td align="center" style="padding:17px 18px;color:#203858;">
+      <div style="font-size:15px;font-weight:700;">${escapeHtml(registrationTitle || 'Registration')}</div>
+      ${registrationFee ? `<div style="margin-top:7px;font-size:13px;font-weight:700;">${escapeHtml(registrationFee)}</div>` : ''}
+      ${registrationNote ? `<div style="margin-top:5px;font-size:12px;line-height:1.5;">${escapeHtml(registrationNote)}</div>` : ''}
+    </td></tr></table>`);
+  }
+
+  if (communityNote) {
+    text.push('', communityNote);
+    sections.push(`<div style="margin:0 0 20px;text-align:center;color:#087345;font-size:13px;font-weight:700;line-height:1.6;">${emailCopy(communityNote)}</div>`);
+  }
+
+  if (sponsorAcknowledgement) {
+    text.push('', 'With gratitude', sponsorAcknowledgement);
+    sections.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 20px;background:#fff8e8;border-top:2px solid #f2b51d;"><tr><td align="center" style="padding:17px 18px;color:#574416;">
+      <div style="margin-bottom:6px;color:#8a6810;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">With gratitude</div>
+      <div style="font-size:13px;line-height:1.6;">${emailCopy(sponsorAcknowledgement)}</div>
+    </td></tr></table>`);
+  }
+
+  return { html: sections.join(''), text };
+}
+
 function renderBulkMessageEmail(subject, message = {}, logoSrc, backgroundSrc) {
+  const sections = renderBulkMessageSections(message);
+  const rows = [
+    ['Date', message.eventDate],
+    ['Time', message.eventTime],
+    ['Venue', message.eventVenue]
+  ].filter(([, value]) => String(value || '').trim());
   return renderBrandedEmail({
     subject,
-    contextLabel: message.target
+    contextLabel: String(message.contextLabel || '').trim() || (message.target
       ? `${message.audience === 'class' ? 'Class' : 'Event'} update · ${message.target}`
-      : 'Community update',
+      : 'Community update'),
     intro: String(message.intro || 'Hello Kannada Bharati family,').trim(),
     body: String(message.body || '').trim(),
+    rows,
     ctaUrl: message.ctaUrl,
     ctaLabel: String(message.ctaLabel || '').trim(),
     highlight: String(message.footer || '').trim(),
+    extraContentHtml: sections.html,
+    extraText: sections.text,
     logoSrc,
     backgroundSrc
   });
@@ -2049,7 +2183,18 @@ function sampleTemplateMessage(template) {
       payload: {
         message: {
           intro: 'Namaskara Kannada Bharati family,',
-          body: 'Registration is now open for our upcoming classes and community programs. Seats are limited, so please register early.',
+          contextLabel: "Kannada's pride · Festival of lights · Togetherness",
+          body: 'Join us for an evening filled with culture, connection, and celebration. Bring your family and friends and make beautiful memories with our community.',
+          eventDate: 'Sunday, November 1, 2026',
+          eventTime: '2:00 PM - 7:00 PM',
+          eventVenue: 'Together Hall, Redmond',
+          highlights: 'Live dance and music\nDelicious food and refreshments\nCultural performances and activities for children',
+          agenda: '2:00 PM | Deepavali art workshop\n3:00 PM | Indoor games\n4:00 PM | Cultural program\n6:00 PM | Dinner',
+          registrationTitle: 'Register today',
+          registrationFee: 'Entry is free for everyone',
+          registrationNote: 'Registration closes October 25.',
+          communityNote: 'Come · Celebrate · Connect · Create memories',
+          sponsorAcknowledgement: 'Thank you to our annual sponsors for supporting Kannada Bharati programs and our community.',
           footer: 'Registrations are subject to approval and seat availability.',
           ctaLabel: 'View details and register',
           ctaUrl: '/classes',
@@ -3477,7 +3622,7 @@ async function createWelcomeDeskCheckIn(req, res) {
   if (booleanValue(existingRegistration.checked_in, false) || existingRegistration.checked_in_at) {
     return res.status(403).json({ error: 'Already checked in.' });
   }
-  const registration = await updateRecord('kb_registrations', registrationId, {
+  const registration = await updateRegistrationWithListRefresh(registrationId, {
     checkedIn: true,
     checkedInAt: new Date().toISOString()
   });
@@ -3879,7 +4024,7 @@ app.post('/api/eventmgmt/seats', authenticate, requireRole('welcomedesk', 'recep
     seat_number: seatNumber,
     registration_id: req.body.registrationId || null,
     assigned_to: req.body.assignedTo || null,
-    status: req.body.status || (req.body.registrationId ? 'Assigned' : 'Available')
+    status: req.body.status || (req.body.registrationId || req.body.assignedTo ? 'Assigned' : 'Available')
   });
   try {
     const supabase = requireSupabase();
@@ -4007,6 +4152,17 @@ app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, as
   const body = String(req.body.body || '').trim();
   const intro = String(req.body.intro || '').trim();
   const footer = String(req.body.footer || '').trim();
+  const contextLabel = String(req.body.contextLabel || '').trim().slice(0, 180);
+  const eventDate = String(req.body.eventDate || '').trim().slice(0, 120);
+  const eventTime = String(req.body.eventTime || '').trim().slice(0, 120);
+  const eventVenue = String(req.body.eventVenue || '').trim().slice(0, 240);
+  const highlights = String(req.body.highlights || '').trim().slice(0, 2500);
+  const agenda = String(req.body.agenda || '').trim().slice(0, 2500);
+  const registrationTitle = String(req.body.registrationTitle || '').trim().slice(0, 120);
+  const registrationFee = String(req.body.registrationFee || '').trim().slice(0, 120);
+  const registrationNote = String(req.body.registrationNote || '').trim().slice(0, 240);
+  const communityNote = String(req.body.communityNote || '').trim().slice(0, 300);
+  const sponsorAcknowledgement = String(req.body.sponsorAcknowledgement || '').trim().slice(0, 1200);
   const ctaLabel = String(req.body.ctaLabel || '').trim().slice(0, 60);
   const ctaUrl = String(req.body.ctaUrl || '').trim();
 
@@ -4029,6 +4185,17 @@ app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, as
           intro: intro || `Hello ${recipient.name || 'Kannada Bharati member'},`,
           body,
           footer,
+          contextLabel,
+          eventDate,
+          eventTime,
+          eventVenue,
+          highlights,
+          agenda,
+          registrationTitle,
+          registrationFee,
+          registrationNote,
+          communityNote,
+          sponsorAcknowledgement,
           ctaLabel,
           ctaUrl,
           audience,
@@ -4159,6 +4326,9 @@ app.post('/api/submissions/:type', requireSubmissionCreateAccess, asyncHandler(a
 app.patch('/api/submissions/:type/:id', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const table = submissionTables[req.params.type];
   if (!table) return res.status(404).json({ error: 'Unknown submission type.' });
+  if (table === 'kb_registrations' && isRegistrationCheckInPayload(req.body)) {
+    return res.json(await updateRegistrationWithListRefresh(req.params.id, req.body));
+  }
   res.json(await updateRecord(table, req.params.id, req.body));
 }));
 

@@ -1,5 +1,5 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { BellRing, Camera, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Mail, Megaphone, Menu, MessagesSquare, Play, UserCircle, X } from 'lucide-react';
+import { BellRing, Camera, ChevronDown, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Mail, Megaphone, Menu, MessagesSquare, Play, UserCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
 import { getCurrentUser, readJson, setCurrentUser, writeJson } from './utils/storage.js';
@@ -157,17 +157,38 @@ export default function App() {
 
   const isAdminRoute = location.pathname.startsWith('/admin');
   const showSiteMessage = !isAdminRoute && isEnabledValue(siteMessage.enabled) && siteMessage.title && siteMessage.message;
+  const adminInitials = [
+    memberProfile.firstName || user?.firstName || user?.name?.split(' ')?.[0],
+    memberProfile.lastName || user?.lastName || user?.name?.split(' ')?.slice(1).join(' ')
+  ]
+    .filter(Boolean)
+    .map((part) => String(part).trim().charAt(0))
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || String(user?.email || 'KB').slice(0, 2).toUpperCase();
 
   return (
     <div className={isAdminRoute ? 'site-shell is-admin-route' : 'site-shell'}>
       <PageLoader active={routeLoading} />
-      <header className="site-header">
+      <header className={isAdminRoute ? 'site-header admin-site-header' : 'site-header'}>
         <Link className="brand" to="/" onClick={() => setOpen(false)}>
-          <img className="brand-logo" src="/assets/kannada-bharati-logo.png" alt="Kannada Bharati logo" />
-          <span>
-            <strong>ಕನ್ನಡ ಭಾರತಿ</strong>
-            <small>Kannada Bharati</small>
-          </span>
+          {isAdminRoute ? (
+            <>
+              <strong className="admin-brand-wordmark">Kannada Bharathi</strong>
+              <span className="admin-mobile-brand" aria-hidden="true">
+                <img src="/assets/kannada-bharati-logo.png" alt="" />
+                <span><strong>ಕನ್ನಡ ಭಾರತಿ</strong><small>Kannada Bharati</small></span>
+              </span>
+            </>
+          ) : (
+            <>
+              <img className="brand-logo" src="/assets/kannada-bharati-logo.png" alt="Kannada Bharati logo" />
+              <span>
+                <strong>ಕನ್ನಡ ಭಾರತಿ</strong>
+                <small>Kannada Bharati</small>
+              </span>
+            </>
+          )}
         </Link>
 
         <button
@@ -182,7 +203,13 @@ export default function App() {
 
         <nav className={open ? 'main-nav is-open' : 'main-nav'}>
           {nav.map(([label, href]) => (
-            <NavLink key={href} to={href} onClick={() => setOpen(false)}>
+            <NavLink
+              key={href}
+              to={href}
+              className={({ isActive }) => `${href === '/donate' ? 'nav-donate' : ''}${isActive ? ' active' : ''}`.trim() || undefined}
+              onClick={() => setOpen(false)}
+            >
+              {href === '/donate' && <HeartHandshake size={17} />}
               {t(label)}
             </NavLink>
           ))}
@@ -203,7 +230,8 @@ export default function App() {
                 aria-expanded={profileOpen}
                 onClick={() => setProfileOpen((value) => !value)}
               >
-                {memberProfile.photo ? <img src={memberProfile.photo} alt="" /> : <UserCircle size={24} />}
+                {memberProfile.photo ? <img src={memberProfile.photo} alt="" /> : isAdminRoute ? <span>{adminInitials}</span> : <UserCircle size={24} />}
+                {isAdminRoute && <ChevronDown className="admin-profile-chevron" size={15} />}
               </button>
               {profileOpen && (
                 <div className="nav-profile-dropdown">

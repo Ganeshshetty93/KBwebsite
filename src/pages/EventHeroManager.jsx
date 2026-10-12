@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, EyeOff, GalleryHorizontal, Image, ImagePlus, Save, Trash2, Upload } from 'lucide-react';
+import ContentSettingsNav from '../components/ContentSettingsNav.jsx';
 import PageLoader from '../components/PageLoader.jsx';
 import { apiReadSiteSetting, apiSaveSiteSetting, apiUploadFile } from '../utils/api.js';
 import {
@@ -316,7 +317,8 @@ export default function EventHeroManager() {
       <header className="admin-page-header event-hero-admin-header">
         <div>
           <p>Website / Gallery</p>
-          <h1>Page background gallery</h1>
+          <h1>Content & Settings</h1>
+          <small>Manage events, galleries, announcements and site content</small>
         </div>
         <div className="event-hero-admin-actions">
           <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={uploadPhotos} />
@@ -328,6 +330,7 @@ export default function EventHeroManager() {
           </button>
         </div>
       </header>
+      <ContentSettingsNav />
 
       <div className="page-hero-tabs-slider">
         <button className="page-hero-tabs-arrow previous" type="button" onClick={() => scrollPageTabs(-1)} disabled={tabScroll.atStart} aria-label="Previous page menu items">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Images, ReceiptText, UsersRound, X } from 'lucide-react';
 import EventHeroCarousel from '../components/EventHeroCarousel.jsx';
+import ModalTitle from '../components/ModalTitle.jsx';
 import { events } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { apiAppendRecord, apiCompleteFlowPayment, apiCreateFlowPayment, apiReadRecords, apiReadSiteSetting } from '../utils/api.js';
@@ -348,7 +349,7 @@ export default function Events() {
             </div>
             <div className="event-registration-heading">
               <span>{tr(user ? 'Member registration' : 'Guest registration')}</span>
-              <h2>{registeringEvent.title}</h2>
+              <ModalTitle matchText="Event registration">{registeringEvent.title}</ModalTitle>
               <p>{registeringEvent.body}</p>
             </div>
             {registrationStep === 1 && (
@@ -433,8 +434,7 @@ export default function Events() {
         <div className="popup-backdrop registration-message-backdrop" role="presentation">
           <div className="popup-panel registration-message-popup" role="dialog" aria-modal="true" aria-label={eventNotice.title}>
             <button className="popup-close" type="button" aria-label="Close message" onClick={() => setEventNotice(null)}><X size={20} /></button>
-            <span className="registration-message-icon"><CheckCircle2 size={34} /></span>
-            <h2>{eventNotice.title}</h2>
+            <ModalTitle matchText="Registration success">{eventNotice.title}</ModalTitle>
             <p>{eventNotice.message}</p>
             <button className="button primary" type="button" onClick={() => setEventNotice(null)}>Done</button>
           </div>

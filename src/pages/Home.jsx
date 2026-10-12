@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { BookOpen, ChevronLeft, ChevronRight, HandHeart, HeartHandshake, Music2, Pause, Play, Sparkles, UsersRound } from 'lucide-react';
 import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
+import ModalTitle from '../components/ModalTitle.jsx';
 import { events, heroStats } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { apiReadAboutContent, apiReadRecords } from '../utils/api.js';
@@ -319,7 +320,7 @@ function SponsorCarousel({ sponsors }) {
             </div>
             <div className="sponsor-detail-copy">
               {activeSponsor.level && <span>{activeSponsor.level}</span>}
-              <h3>{activeSponsor.name || 'Kannada Bharati sponsor'}</h3>
+              <ModalTitle matchText="Sponsor details">{activeSponsor.name || 'Kannada Bharati sponsor'}</ModalTitle>
               {activeSponsor.note && <p>{activeSponsor.note}</p>}
               {activeSponsor.website && (
                 <a href={activeSponsor.website} target="_blank" rel="noreferrer">Visit sponsor</a>
