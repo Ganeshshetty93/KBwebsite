@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
 import FormPanel from '../components/FormPanel.jsx';
+import ModalTitle from '../components/ModalTitle.jsx';
 import { volunteerAreas } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { readJson } from '../utils/storage.js';
@@ -104,6 +105,10 @@ export default function Volunteer() {
             <button className="popup-close" type="button" aria-label="Close Google Form" onClick={() => setShowGoogleForm(false)}>
               <X size={20} />
             </button>
+            <div className="volunteer-form-popup-heading">
+              <ModalTitle matchText="Volunteer registration">Volunteer registration</ModalTitle>
+              <p>Complete the Kannada Bharati volunteer interest form below.</p>
+            </div>
             <div className="google-form-frame-wrap">
               <iframe
                 title="Kannada Bharati volunteer Google Form"

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { appendAdminRecordAsync, readJson } from '../utils/storage.js';
 import { apiUploadFile } from '../utils/api.js';
 import DatePicker from './DatePicker.jsx';
+import ModalTitle from './ModalTitle.jsx';
 import {
   cleanText,
   firstError,
@@ -286,7 +287,7 @@ export default function AdminCreateForm({ type, onCreated }) {
 
   return (
     <form className="admin-create-form" onSubmit={handleSubmit}>
-      <h2>{isFundraiser ? 'Add fundraising cause' : isClass ? 'Add class' : 'Add event'}</h2>
+      <ModalTitle>{isFundraiser ? 'Add fundraising cause' : isClass ? 'Add class' : 'Add event'}</ModalTitle>
       <p className="admin-form-note">
         {isFundraiser
           ? 'Create a donation cause for education, health, emergency support, or community needs.'

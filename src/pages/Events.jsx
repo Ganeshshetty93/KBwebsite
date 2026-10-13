@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Images, ReceiptText, UsersRound, X } from 'lucide-react';
 import EventHeroCarousel from '../components/EventHeroCarousel.jsx';
+import ModalTitle from '../components/ModalTitle.jsx';
 import { events } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { apiAppendRecord, apiCompleteFlowPayment, apiCreateFlowPayment, apiReadRecords, apiReadSiteSetting } from '../utils/api.js';
@@ -32,6 +33,20 @@ function eventPriceOptions(event) {
     label: item.label || item.name || item.title || `Option ${index + 1}`,
     amount: Number(item.amount || item.price || 0)
   }));
+}
+
+function priceSelectionKeys(value) {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((item) => String(item).trim()).filter(Boolean))];
+}
+
+function shouldSelectPriceOption(option, index, draft) {
+  const selected = priceSelectionKeys(draft?.priceSelections || draft?.priceSelection);
+  if (selected.length) return selected.includes(String(option.key));
+  const label = String(option.label || '').toLowerCase();
+  if (label.includes('adult')) return Number(draft?.adults || 0) > 0;
+  if (label.includes('child') || label.includes('kid')) return Number(draft?.kids || 0) + Number(draft?.youngKids || 0) > 0;
+  return index === 0;
 }
 
 function memberOptions(user) {
@@ -129,16 +144,23 @@ export default function Events() {
   }
 
   function buildRegistrationRecord(form) {
-    const payload = Object.fromEntries(new FormData(form).entries());
+    const formData = new FormData(form);
+    const payload = Object.fromEntries(formData.entries());
+    const priceSelections = priceSelectionKeys(formData.getAll('priceSelection'));
     if (registrationStep === 3 && eventDraft) return eventDraft;
     if (registrationStep > 1 && eventDraft) {
       const amount = eventAmount(registeringEvent);
-      const priceOption = eventPriceOptions(registeringEvent).find((option) => option.key === payload.priceSelection);
+      const priceOptions = eventPriceOptions(registeringEvent);
+      if (priceOptions.length && !priceSelections.length) throw new Error('Select at least one price option.');
+      const selectedOptions = priceOptions.filter((option) => priceSelections.includes(String(option.key)));
       return {
         ...eventDraft,
-        amount: priceOption ? priceOption.amount : eventDraft.amount || amount,
+        amount: selectedOptions.length
+          ? selectedOptions.reduce((sum, option) => sum + option.amount, 0)
+          : eventDraft.amount || amount,
         rsvp: payload.rsvp || eventDraft.rsvp || '',
-        priceSelection: payload.priceSelection || eventDraft.priceSelection || ''
+        priceSelections,
+        priceSelection: priceSelections.join(', ')
       };
     }
     const guest = payload.registrationMode === 'guest' || !user;
@@ -150,8 +172,6 @@ export default function Events() {
     if (validation) throw new Error(validation);
 
     const amount = eventAmount(registeringEvent);
-    const priceOption = eventPriceOptions(registeringEvent).find((option) => option.key === payload.priceSelection);
-    const finalAmount = priceOption ? priceOption.amount : amount;
     const adults = Number(payload.adults || 1);
     const kids = Number(payload.kids || 0);
     const youngKids = Number(payload.youngKids || 0);
@@ -170,9 +190,10 @@ export default function Events() {
       youngKids,
       totalMembers: adults + kids + youngKids,
       seats: adults + kids + youngKids,
-      amount: finalAmount,
+      amount,
       rsvp: payload.rsvp || '',
-      priceSelection: payload.priceSelection || '',
+      priceSelections: [],
+      priceSelection: '',
       priceMenu: registeringEvent.priceMenu || registeringEvent.price_menu || null
     };
   }
@@ -328,7 +349,7 @@ export default function Events() {
             </div>
             <div className="event-registration-heading">
               <span>{tr(user ? 'Member registration' : 'Guest registration')}</span>
-              <h2>{registeringEvent.title}</h2>
+              <ModalTitle matchText="Event registration">{registeringEvent.title}</ModalTitle>
               <p>{registeringEvent.body}</p>
             </div>
             {registrationStep === 1 && (
@@ -371,15 +392,23 @@ export default function Events() {
                   </label>
                 )}
                 {eventPriceOptions(registeringEvent).length > 0 ? (
-                  <div className="price-option-grid">
-                    {eventPriceOptions(registeringEvent).map((option, index) => (
-                      <label key={option.key} className="price-option-card">
-                        <input name="priceSelection" type="radio" value={option.key} defaultChecked={index === 0} />
-                        <span>{option.label}</span>
-                        <strong>${option.amount.toFixed(2)}</strong>
-                      </label>
-                    ))}
-                  </div>
+                  <fieldset className="price-option-fieldset">
+                    <legend>Select all that apply</legend>
+                    <div className="price-option-grid">
+                      {eventPriceOptions(registeringEvent).map((option, index) => (
+                        <label key={option.key} className="price-option-card">
+                          <input
+                            name="priceSelection"
+                            type="checkbox"
+                            value={option.key}
+                            defaultChecked={shouldSelectPriceOption(option, index, eventDraft)}
+                          />
+                          <span>{option.label}</span>
+                          <strong>${option.amount.toFixed(2)}</strong>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
                 ) : (
                   <p className="notice-box">Base payment amount: ${eventAmount(registeringEvent).toFixed(2)}</p>
                 )}
@@ -405,8 +434,7 @@ export default function Events() {
         <div className="popup-backdrop registration-message-backdrop" role="presentation">
           <div className="popup-panel registration-message-popup" role="dialog" aria-modal="true" aria-label={eventNotice.title}>
             <button className="popup-close" type="button" aria-label="Close message" onClick={() => setEventNotice(null)}><X size={20} /></button>
-            <span className="registration-message-icon"><CheckCircle2 size={34} /></span>
-            <h2>{eventNotice.title}</h2>
+            <ModalTitle matchText="Registration success">{eventNotice.title}</ModalTitle>
             <p>{eventNotice.message}</p>
             <button className="button primary" type="button" onClick={() => setEventNotice(null)}>Done</button>
           </div>

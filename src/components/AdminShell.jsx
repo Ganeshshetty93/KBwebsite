@@ -8,8 +8,6 @@ import {
   Gauge,
   GraduationCap,
   HandCoins,
-  Info,
-  Images,
   KeyRound,
   Mail,
   Menu,
@@ -24,6 +22,20 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { canAccessAdminPath, canUseAdminArea, defaultAdminPath, getCurrentUser, hasAnyRole, isAdmin } from '../utils/storage.js';
+
+const contentSettingsPaths = [
+  '/admin/events',
+  '/admin/event-settings',
+  '/admin/event-hero',
+  '/admin/announcements',
+  '/admin/about',
+  '/admin/paata-teachers'
+];
+
+function pathMatchesLink(pathname, link) {
+  const paths = [link.to, ...(link.aliases || [])];
+  return paths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
 
 const groups = [
   {
@@ -81,13 +93,15 @@ const groups = [
       { label: 'Find User', to: '/admin/user-search', icon: Search },
       { label: 'Roles & Access', to: '/admin/role-access', icon: KeyRound },
       { label: 'Classes', to: '/admin/classes', icon: BookOpen },
-      { label: 'Event', to: '/admin/events', icon: ClipboardCheck },
-      { label: 'Event Settings', to: '/admin/event-settings', icon: Wrench },
-      { label: 'Gallery', to: '/admin/event-hero', icon: Images },
+      { label: 'Content & Settings', to: '/admin/events', icon: Megaphone, aliases: contentSettingsPaths },
+      // Content workspace pages are navigated from the top tab bar.
+      // { label: 'Event', to: '/admin/events', icon: ClipboardCheck },
+      // { label: 'Event Settings', to: '/admin/event-settings', icon: Wrench },
+      // { label: 'Gallery', to: '/admin/event-hero', icon: Images },
       { label: 'Teacher Allotment', to: '/admin/teacher-allotments', icon: GraduationCap },
-      { label: 'Announcement', to: '/admin/announcements', icon: Megaphone },
-      { label: 'About Us', to: '/admin/about', icon: Info },
-      { label: 'Paata Teachers', to: '/admin/paata-teachers', icon: BookOpen },
+      // { label: 'Announcement', to: '/admin/announcements', icon: Megaphone },
+      // { label: 'About Us', to: '/admin/about', icon: Info },
+      // { label: 'Paata Teachers', to: '/admin/paata-teachers', icon: BookOpen },
       { label: 'Fund Raising', to: '/admin/fundraising', icon: HandCoins },
       { label: 'Donations', to: '/admin/donations', icon: Banknote },
       { label: 'Messages', to: '/admin/messages', icon: Mail },
@@ -107,15 +121,21 @@ export default function AdminShell() {
   const visibleGroups = useMemo(() => groups
     .map((group) => ({
       ...group,
-      links: group.links.filter((link) => canAccessAdminPath(user, link.to))
+      links: group.links.filter((link) => (
+        canAccessAdminPath(user, link.to)
+        || (link.aliases || []).some((path) => canAccessAdminPath(user, path))
+      ))
     }))
-    .filter((group) => group.links.length && (!group.roles || isAdmin(user) || hasAnyRole(user, group.roles) || group.links.some((link) => canAccessAdminPath(user, link.to)))),
+    .filter((group) => group.links.length && (!group.roles || isAdmin(user) || hasAnyRole(user, group.roles) || group.links.some((link) => (
+      canAccessAdminPath(user, link.to)
+      || (link.aliases || []).some((path) => canAccessAdminPath(user, path))
+    )))),
     [userAccessKey]
   );
-  const activeGroupTitle = visibleGroups.find((group) => group.links.some((link) => location.pathname === link.to || location.pathname.startsWith(`${link.to}/`)))?.title;
+  const activeGroupTitle = visibleGroups.find((group) => group.links.some((link) => pathMatchesLink(location.pathname, link)))?.title;
   const activeLinkLabel = visibleGroups
     .flatMap((group) => group.links)
-    .find((link) => location.pathname === link.to || location.pathname.startsWith(`${link.to}/`))?.label || 'Dashboard';
+    .find((link) => pathMatchesLink(location.pathname, link))?.label || 'Dashboard';
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set(groups.map((group) => group.title)));
   const [sideCollapsed, setSideCollapsed] = useState(() => localStorage.getItem('kb-admin-side-collapsed') === 'true');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -174,17 +194,17 @@ export default function AdminShell() {
         <div className="admin-side-menu-content" id="admin-navigation-panel">
           <div className="admin-kannada-motto" title="ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ">
             <span>ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ</span>
+            <button
+              className="admin-side-collapse"
+              type="button"
+              aria-label={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
+              title={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
+              onClick={() => setSideCollapsed((value) => !value)}
+            >
+              {sideCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
           </div>
-          <button
-            className="admin-side-collapse"
-            type="button"
-            aria-label={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
-            title={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
-            onClick={() => setSideCollapsed((value) => !value)}
-          >
-            {sideCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          </button>
-          <NavLink className="admin-side-root" to="/admin" title={sideCollapsed ? tr('Dashboard') : undefined}>
+          <NavLink className="admin-side-root" to="/admin" end title={sideCollapsed ? tr('Dashboard') : undefined}>
             <Gauge size={18} /> <span className="admin-nav-label">{tr('Dashboard')}</span>
           </NavLink>
           {visibleGroups.map((group) => {
@@ -211,7 +231,13 @@ export default function AdminShell() {
                   {group.links.map((link) => {
                     const LinkIcon = link.icon || group.icon;
                     return (
-                      <NavLink key={link.to} to={link.to} end={link.to === '/admin'} title={sideCollapsed ? tr(link.label) : undefined}>
+                      <NavLink
+                        key={link.to}
+                        to={link.to}
+                        end={link.to === '/admin'}
+                        title={sideCollapsed ? tr(link.label) : undefined}
+                        className={({ isActive }) => (isActive || pathMatchesLink(location.pathname, link) ? 'active' : undefined)}
+                      >
                         <LinkIcon size={16} />
                         <span>{tr(link.label)}</span>
                       </NavLink>

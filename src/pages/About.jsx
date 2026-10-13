@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Award, ChevronLeft, ChevronRight, HeartHandshake, Mail, Pause, Phone, Play, Sparkles, UsersRound } from 'lucide-react';
 import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
+import ModalTitle from '../components/ModalTitle.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { apiReadAboutContent } from '../utils/api.js';
 import { defaultAboutContent, normalizeAboutContent } from '../utils/aboutContent.js';
@@ -320,11 +321,12 @@ export default function About() {
             <span><Award size={18} /> Past Committees</span>
             <strong>{pastCount}</strong>
           </div>
-          <AutoSlideTrack
-            className="past-committee-grid"
+          <AboutCoverFlow
+            className="is-past"
+            label="Past committees"
             items={aboutContent.pastCommittees}
-            renderItem={(committee, key) => (
-              <article className="past-committee-card" key={key}>
+            renderItem={(committee) => (
+              <article className="past-committee-card">
                 <div className="past-committee-image">
                   {committee.photo ? <img src={committee.photo} alt={committee.title || committee.term} /> : <Award size={32} />}
                 </div>
@@ -373,7 +375,7 @@ export default function About() {
             </div>
             <div className="sponsor-detail-copy">
               {activeSponsor.level && <span>{activeSponsor.level}</span>}
-              <h3>{activeSponsor.name || 'Kannada Bharati sponsor'}</h3>
+              <ModalTitle matchText="Sponsor details">{activeSponsor.name || 'Kannada Bharati sponsor'}</ModalTitle>
               {activeSponsor.note && <p>{activeSponsor.note}</p>}
               {activeSponsor.website && <a href={activeSponsor.website} target="_blank" rel="noreferrer">Visit sponsor</a>}
             </div>

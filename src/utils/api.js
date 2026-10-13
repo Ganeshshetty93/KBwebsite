@@ -79,6 +79,8 @@ function normalizeRegistration(row) {
     registrationType: row.registration_type || row.registrationType || 'member',
     rsvp: row.rsvp || null,
     priceMenu,
+    priceSelection: row.price_selection || row.priceSelection || paymentDetails?.priceSelection || (paymentDetails?.priceSelections || []).join(', '),
+    priceSelections: row.price_selections || row.priceSelections || paymentDetails?.priceSelections || [],
     paymentStatus: row.payment_status || row.paymentStatus || paymentDetails?.status || (paid ? 'Paid' : 'Pending'),
     invoiceId: row.invoice_id || row.invoiceId || paymentDetails?.invoiceId || '',
     paypalOrderId: row.paypal_order_id || row.paypalOrderId || paymentDetails?.orderId || '',
@@ -124,6 +126,17 @@ function normalizeContact(row) {
     email: row.email,
     topic: row.topic,
     message: row.message
+  };
+}
+
+function normalizeNewsletterSubscriber(row) {
+  return {
+    ...normalizeBase(row),
+    email: row.email,
+    status: row.status || 'Active',
+    source: row.source || 'website-footer',
+    subscribedAt: row.subscribed_at || row.subscribedAt || row.created_at || row.createdAt,
+    unsubscribedAt: row.unsubscribed_at || row.unsubscribedAt || ''
   };
 }
 
@@ -547,6 +560,13 @@ export async function apiSendBulkEmail(payload) {
   });
 }
 
+export async function apiSubscribeNewsletter(email) {
+  return request('/newsletter/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({ email })
+  });
+}
+
 export async function apiCreateFlowPayment(kind, payload) {
   return request(`/payments/${encodeURIComponent(kind)}/create`, {
     method: 'POST',
@@ -858,6 +878,7 @@ export async function apiAdminDashboard() {
     donations: data.donations.map(normalizeDonation),
     volunteers: data.volunteers.map(normalizeVolunteer),
     contacts: data.contacts.map(normalizeContact),
+    newsletterSubscribers: (data.newsletterSubscribers || []).map(normalizeNewsletterSubscriber),
     logins: data.logins.map(normalizeLogin),
     classes: data.classes.map(normalizeClass),
     events: data.events.map(normalizeEvent),

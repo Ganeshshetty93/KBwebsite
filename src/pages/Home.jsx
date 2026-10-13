@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { BookOpen, ChevronLeft, ChevronRight, HandHeart, HeartHandshake, Music2, Pause, Play, Sparkles, UsersRound } from 'lucide-react';
 import PageHeroCarousel from '../components/EventHeroCarousel.jsx';
+import ModalTitle from '../components/ModalTitle.jsx';
 import { events, heroStats } from '../data/siteData.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { apiReadAboutContent, apiReadRecords } from '../utils/api.js';
@@ -200,7 +201,7 @@ function SponsorCarousel({ sponsors }) {
   const [isInteracting, setIsInteracting] = useState(false);
   const realSponsors = sponsors.filter(hasSponsorContent);
   const supplementalSlides = sponsorShowcaseSlides.filter((slide) => !realSponsors.some((sponsor) => sponsor.id === slide.id));
-  const visibleSponsors = [...realSponsors, ...supplementalSlides].slice(0, Math.max(6, realSponsors.length));
+  const visibleSponsors = [...realSponsors, ...supplementalSlides].slice(0, Math.max(8, realSponsors.length));
   const sponsorHasDetails = (sponsor) => Boolean(sponsor.name || sponsor.level || sponsor.note || sponsor.website);
 
   const moveCarousel = (direction) => {
@@ -259,7 +260,7 @@ function SponsorCarousel({ sponsors }) {
             const distance = Math.abs(offset);
             return (
               <button
-                className={`home-sponsor-card${index === activeIndex ? ' is-active' : ''}${hasDetails ? ' has-details' : ' image-only'}${distance > 3 ? ' is-hidden' : ''}`}
+                className={`home-sponsor-card${index === activeIndex ? ' is-active' : ''}${hasDetails ? ' has-details' : ' image-only'}${distance > 4 ? ' is-hidden' : ''}`}
                 type="button"
                 key={sponsor.id || `${sponsor.name || 'sponsor'}-${index}`}
                 onClick={() => handleSponsorClick(sponsor, index)}
@@ -319,7 +320,7 @@ function SponsorCarousel({ sponsors }) {
             </div>
             <div className="sponsor-detail-copy">
               {activeSponsor.level && <span>{activeSponsor.level}</span>}
-              <h3>{activeSponsor.name || 'Kannada Bharati sponsor'}</h3>
+              <ModalTitle matchText="Sponsor details">{activeSponsor.name || 'Kannada Bharati sponsor'}</ModalTitle>
               {activeSponsor.note && <p>{activeSponsor.note}</p>}
               {activeSponsor.website && (
                 <a href={activeSponsor.website} target="_blank" rel="noreferrer">Visit sponsor</a>

@@ -5,6 +5,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BlobServiceClient } from '@azure/storage-blob';
 import { requireSupabase } from './supabaseClient.js';
 import { submissionTables } from './tableMap.js';
@@ -30,12 +32,15 @@ const smtpUser = process.env.EMAIL_SMTP_USER || process.env.SMTP_USER || '';
 const smtpPass = (process.env.EMAIL_SMTP_PASS || process.env.SMTP_PASS || '').replace(/\s+/g, '');
 const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpUser || 'no-reply@kannadabharati.org';
 const emailFromHeader = /<.+@.+>/.test(emailFromAddress) ? emailFromAddress : `"Kannada Bharati" <${emailFromAddress}>`;
+const emailLogoPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets/kannada-bharati-logo.png');
+const emailBackgroundPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets/kannada-bharati-email-background.png');
 const recaptchaSecret = process.env.GOOGLE_RECAPTCHA_SECRET || '';
 const defaultVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true';
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || '';
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || '';
 const twilioFromPhone = process.env.TWILIO_FROM_PHONE || '';
-const paypalBaseUrl = (process.env.PAYPAL_ENV || 'live').toLowerCase() === 'sandbox'
+const paypalEnvironment = (process.env.PAYPAL_ENV || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
+const paypalBaseUrl = paypalEnvironment === 'sandbox'
   ? 'https://api-m.sandbox.paypal.com'
   : 'https://api-m.paypal.com';
 const appBaseUrl = process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'http://localhost:5174';
@@ -652,7 +657,7 @@ function normalizePayload(table, payload) {
 
   if (table === 'kb_events') {
     return {
-      event_id: payload.event_id || payload.eventId || null,
+      event_id: payload.event_id || payload.eventId || crypto.randomUUID(),
       url_key: payload.url_key || payload.urlKey || null,
       event_type: payload.event_type || payload.eventType || null,
       month: payload.month,
@@ -1137,9 +1142,61 @@ function normalizeSiteMessageSetting(value = {}) {
   };
 }
 
+function isRegistrationCheckInPayload(payload = {}) {
+  return Object.prototype.hasOwnProperty.call(payload, 'checkedIn')
+    || Object.prototype.hasOwnProperty.call(payload, 'checked_in')
+    || Object.prototype.hasOwnProperty.call(payload, 'checkedInAt')
+    || Object.prototype.hasOwnProperty.call(payload, 'checked_in_at');
+}
+
+async function updateRegistrationWithListRefresh(id, payload) {
+  const supabase = requireSupabase();
+  const patch = normalizePatch('kb_registrations', payload);
+  if (Object.prototype.hasOwnProperty.call(payload, 'checkedIn')) {
+    patch.checked_in = booleanValue(payload.checkedIn, false);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'checked_in')) {
+    patch.checked_in = booleanValue(payload.checked_in, false);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'checkedInAt')) {
+    patch.checked_in_at = payload.checkedInAt;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'checked_in_at')) {
+    patch.checked_in_at = payload.checked_in_at;
+  }
+  const { error } = await supabase
+    .from('kb_registrations')
+    .update(patch)
+    .eq('id', id);
+  if (error) throw error;
+
+  const { data, error: refreshError } = await supabase
+    .from('kb_registrations')
+    .select('*')
+    .eq('id', id)
+    .limit(1);
+  if (refreshError) throw refreshError;
+
+  const refreshed = data?.[0] || null;
+  if (!refreshed) {
+    const missing = new Error('Registration was not found after update.');
+    missing.status = 404;
+    throw missing;
+  }
+  return refreshed;
+}
+
 async function updateRecord(table, id, payload) {
   const supabase = requireSupabase();
   let patch = normalizePatch(table, payload);
+  const isRegistrationCheckInPatch = table === 'kb_registrations'
+    && (Object.prototype.hasOwnProperty.call(patch, 'checked_in')
+      || Object.prototype.hasOwnProperty.call(patch, 'checked_in_at'));
+
+  if (isRegistrationCheckInPatch) {
+    return updateRegistrationWithListRefresh(id, payload);
+  }
+
   let result = await supabase
     .from(table)
     .update(patch)
@@ -1463,9 +1520,9 @@ async function getRegistrationById(id) {
     .from('kb_registrations')
     .select('*')
     .eq('id', id)
-    .maybeSingle();
+    .limit(1);
   if (error) throw error;
-  return data;
+  return data?.[0] || null;
 }
 
 async function markRegistrationPaid({ registrationId, orderId, captureId, paymentPayload, paypalOrder = null, kind = 'event', status }) {
@@ -1535,9 +1592,13 @@ async function findEventByRegistrationPayload(payload) {
 
 function priceFromMenu(priceMenu, selection) {
   const values = Array.isArray(priceMenu) ? priceMenu : priceMenu?.items || priceMenu?.options || [];
-  const selected = String(selection || '').toLowerCase();
-  const match = values.find((item) => String(item.id || item.key || item.name || item.label || '').toLowerCase() === selected);
-  return numberValue(match?.price ?? match?.amount, 0);
+  const selected = [...new Set((Array.isArray(selection) ? selection : String(selection || '').split(','))
+    .map((item) => String(item).trim().toLowerCase())
+    .filter(Boolean))];
+  return values.reduce((total, item) => {
+    const key = String(item.id || item.key || item.name || item.label || '').trim().toLowerCase();
+    return selected.includes(key) ? total + numberValue(item.price ?? item.amount, 0) : total;
+  }, 0);
 }
 
 function mergePaymentDetails(priceMenu, details = {}) {
@@ -1676,8 +1737,11 @@ async function calculateRegistrationPayload(payload) {
   const usedSeats = registrations.reduce((sum, registration) => sum + numberValue(registration.total_members ?? registration.seats, 1), 0);
   const isWaitlist = capacity > 0 && usedSeats + requestedSeats > capacity;
   let amount = numberValue(payload.amount ?? payload.fee, 0);
+  const priceSelections = Array.isArray(payload.priceSelections)
+    ? payload.priceSelections
+    : String(payload.priceSelection || payload.price_selection || '').split(',').map((item) => item.trim()).filter(Boolean);
   if (event?.price_menu) {
-    amount = priceFromMenu(event.price_menu, payload.priceSelection || payload.price_selection) || amount;
+    amount = priceFromMenu(event.price_menu, priceSelections) || amount;
   }
   if (booleanValue(event?.free_for_volunteers, false) && booleanValue(payload.isVolunteer, false)) amount = 0;
   if (booleanValue(event?.enable_volunteer_discount, false) && booleanValue(payload.isVolunteer, false)) {
@@ -1694,7 +1758,10 @@ async function calculateRegistrationPayload(payload) {
     amount,
     status: isWaitlist ? 'Waitlist' : (booleanValue(event?.is_auto_approved, false) ? 'Confirmed' : (payload.status || 'Submitted')),
     rsvp: payload.rsvp || event?.rsvp || null,
-    priceMenu: payload.priceMenu || event?.price_menu || null
+    priceMenu: mergePaymentDetails(payload.priceMenu || event?.price_menu || null, {
+      priceSelection: priceSelections.join(', '),
+      priceSelections
+    })
   };
 }
 
@@ -1801,48 +1868,83 @@ function emailCopy(value) {
   return escapeHtml(value).replace(/\r?\n/g, '<br>');
 }
 
-function renderBulkMessageEmail(subject, message = {}) {
-  const intro = String(message.intro || 'Hello Kannada Bharati family,').trim();
-  const body = String(message.body || '').trim();
-  const footer = String(message.footer || '').trim();
-  const ctaUrl = safeEmailLink(message.ctaUrl);
-  const ctaLabel = String(message.ctaLabel || '').trim();
-  const contextLabel = message.target
-    ? `${message.audience === 'class' ? 'Class' : 'Event'} update · ${message.target}`
-    : 'Community update';
+function emailLines(value, limit = 12) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function emailAssetUrl(assetPath) {
+  return `${String(appBaseUrl).replace(/\/+$/, '')}/${String(assetPath || '').replace(/^\/+/, '')}`;
+}
+
+function renderEmailDetails(rows = []) {
+  if (!rows.length) return '';
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:2px 0 22px;border-collapse:collapse;">
+    ${rows.map(([label, value]) => `<tr>
+      <td width="38%" style="padding:10px 12px;border:1px solid #dce3df;background:#f6f8f5;color:#52625d;font-size:13px;font-weight:700;vertical-align:top;">${escapeHtml(label)}</td>
+      <td style="padding:10px 12px;border:1px solid #dce3df;color:#172723;font-size:13px;vertical-align:top;word-break:break-word;">${escapeHtml(value)}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function renderBrandedEmail({
+  subject,
+  contextLabel = 'Kannada Bharati update',
+  intro = 'Namaskara,',
+  body = '',
+  rows = [],
+  ctaUrl = '',
+  ctaLabel = '',
+  highlight = '',
+  extraContentHtml = '',
+  extraText = [],
+  logoSrc = emailAssetUrl('assets/kannada-bharati-logo.png'),
+  backgroundSrc = emailAssetUrl('assets/kannada-bharati-email-background.png')
+}) {
+  const safeCtaUrl = safeEmailLink(ctaUrl);
+  const preview = String(body || intro).replace(/\s+/g, ' ').slice(0, 140);
   const text = [
-    'KANNADA BHARATI', subject, contextLabel, '', intro, '', body,
-    ctaUrl && ctaLabel ? `${ctaLabel}: ${ctaUrl}` : '', footer, '',
-    'Regards,', 'Kannada Bharati Team', appBaseUrl
+    'KANNADA BHARATI', subject, contextLabel, '', intro, body, '',
+    ...rows.map(([label, value]) => `${label}: ${value}`),
+    ...extraText,
+    safeCtaUrl && ctaLabel ? `${ctaLabel}: ${safeCtaUrl}` : '',
+    highlight, '', 'Regards,', 'Kannada Bharati Team', appBaseUrl
   ].filter(Boolean).join('\n');
   const html = `<!doctype html>
     <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head>
-      <body style="margin:0;padding:0;background:#f2f5f3;color:#172723;font-family:Arial,Helvetica,sans-serif;">
-        <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(body.slice(0, 140))}</div>
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f2f5f3;"><tr><td align="center" style="padding:28px 12px;">
-          <table role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;border:1px solid #d8e0dc;background:#ffffff;">
+      <body bgcolor="#650014" style="margin:0;padding:0;background-color:#650014;background-image:url('${escapeHtml(backgroundSrc)}');background-repeat:no-repeat;background-position:center bottom;background-size:cover;color:#172723;font-family:Arial,Helvetica,sans-serif;">
+        <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(preview)}</div>
+        <!--[if gte mso 9]><v:background xmlns:v="urn:schemas-microsoft-com:vml" fill="t"><v:fill type="frame" src="${escapeHtml(backgroundSrc)}" color="#650014" /></v:background><![endif]-->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" background="${escapeHtml(backgroundSrc)}" bgcolor="#650014" style="width:100%;background-color:#650014;background-image:url('${escapeHtml(backgroundSrc)}');background-repeat:no-repeat;background-position:center bottom;background-size:cover;"><tr><td align="center" style="padding:34px 12px 120px;">
+          <table role="presentation" width="620" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:620px;border:1px solid #d8e0dc;background:#ffffff;box-shadow:0 12px 32px rgba(48,0,7,0.24);">
             <tr><td style="height:6px;background:#f2b51d;font-size:0;line-height:0;">&nbsp;</td></tr>
-            <tr><td align="center" style="padding:26px 28px 24px;background:#087345;color:#ffffff;">
+            <tr><td align="center" style="padding:24px 24px 22px;background:#087345;color:#ffffff;">
+              <img src="${escapeHtml(logoSrc)}" width="76" alt="Kannada Bharati logo" style="display:block;width:76px;max-width:76px;height:auto;margin:0 auto 10px;border:0;outline:none;text-decoration:none;">
               <div style="margin-bottom:8px;font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;">Kannada Bharati</div>
-              <h1 style="margin:0;font-size:27px;line-height:1.18;font-weight:700;color:#ffffff;">${escapeHtml(subject)}</h1>
-              <div style="margin-top:10px;font-size:12px;line-height:1.4;color:#d9f2e6;">${escapeHtml(contextLabel)}</div>
+              <h1 style="margin:0;font-size:27px;line-height:1.2;font-weight:700;color:#ffffff;">${escapeHtml(subject)}</h1>
+              <div style="margin-top:9px;font-size:12px;line-height:1.45;color:#e0f3e8;">${escapeHtml(contextLabel)}</div>
             </td></tr>
             <tr><td style="padding:30px 32px 10px;background:#ffffff;color:#172723;font-size:15px;line-height:1.7;">
-              <p style="margin:0 0 18px;color:#172723;">${emailCopy(intro)}</p>
-              <div style="margin:0;color:#33443f;">${emailCopy(body)}</div>
+              <p style="margin:0 0 18px;">${emailCopy(intro)}</p>
+              ${body ? `<div style="margin:0 0 22px;color:#33443f;">${emailCopy(body)}</div>` : ''}
+              ${renderEmailDetails(rows)}
+              ${extraContentHtml}
             </td></tr>
-            ${ctaUrl && ctaLabel ? `<tr><td align="center" style="padding:22px 32px 26px;background:#ffffff;">
+            ${safeCtaUrl && ctaLabel ? `<tr><td align="center" style="padding:2px 32px 26px;background:#ffffff;">
               <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" style="border-radius:5px;background:#e85d2a;">
-                <a href="${escapeHtml(ctaUrl)}" style="display:inline-block;padding:13px 24px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">${escapeHtml(ctaLabel)}</a>
+                <a href="${escapeHtml(safeCtaUrl)}" style="display:inline-block;padding:13px 24px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">${escapeHtml(ctaLabel)}</a>
               </td></tr></table>
             </td></tr>` : ''}
-            ${footer ? `<tr><td style="padding:0 32px 24px;background:#ffffff;">
+            ${highlight ? `<tr><td style="padding:0 32px 24px;background:#ffffff;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f6f8f5;border-left:4px solid #087345;"><tr>
-                <td style="padding:16px 18px;color:#33443f;font-size:13px;line-height:1.6;">${emailCopy(footer)}</td>
+                <td style="padding:16px 18px;color:#33443f;font-size:13px;line-height:1.6;">${emailCopy(highlight)}</td>
               </tr></table>
             </td></tr>` : ''}
             <tr><td style="padding:4px 32px 30px;background:#ffffff;color:#33443f;font-size:13px;line-height:1.6;">Regards,<br><strong style="color:#172723;">Kannada Bharati Team</strong></td></tr>
-            <tr><td align="center" style="padding:20px 24px;background:#073f3c;color:#dcebe6;font-size:11px;line-height:1.6;">
+            <tr><td align="center" style="padding:20px 18px;background:#073f3c;color:#dcebe6;font-size:11px;line-height:1.7;">
               <strong style="color:#ffffff;">Kannada Bharati · A Washington Kannada Association</strong><br>
               <a href="${escapeHtml(appBaseUrl)}" style="color:#f4c343;text-decoration:none;">Website</a>&nbsp; · &nbsp;
               <a href="https://www.facebook.com/kannada.bharati.92" style="color:#f4c343;text-decoration:none;">Facebook</a>&nbsp; · &nbsp;
@@ -1856,11 +1958,97 @@ function renderBulkMessageEmail(subject, message = {}) {
   return { text, html };
 }
 
-function renderEmail({ subject, template, payload = {} }) {
+function renderBulkMessageSections(message = {}) {
+  const highlights = emailLines(message.highlights);
+  const agenda = emailLines(message.agenda).map((line) => {
+    const separator = line.indexOf('|');
+    if (separator < 0) return { time: '', activity: line };
+    return { time: line.slice(0, separator).trim(), activity: line.slice(separator + 1).trim() };
+  });
+  const registrationTitle = String(message.registrationTitle || '').trim();
+  const registrationFee = String(message.registrationFee || '').trim();
+  const registrationNote = String(message.registrationNote || '').trim();
+  const communityNote = String(message.communityNote || '').trim();
+  const sponsorAcknowledgement = String(message.sponsorAcknowledgement || '').trim();
+
+  const sections = [];
+  const text = [];
+
+  if (highlights.length) {
+    text.push('', 'What awaits you', ...highlights.map((item) => `- ${item}`));
+    sections.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 20px;background:#eef8f1;border-left:4px solid #087345;"><tr><td style="padding:16px 18px;">
+      <div style="margin:0 0 9px;color:#087345;font-size:15px;font-weight:700;">What awaits you</div>
+      ${highlights.map((item) => `<div style="padding:3px 0;color:#33443f;font-size:13px;line-height:1.55;"><span style="color:#e85d2a;font-weight:700;">&#8226;</span>&nbsp; ${escapeHtml(item)}</div>`).join('')}
+    </td></tr></table>`);
+  }
+
+  if (agenda.length) {
+    text.push('', 'Event agenda', ...agenda.map(({ time, activity }) => `${time ? `${time}: ` : ''}${activity}`));
+    sections.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 20px;border:1px solid #e5b64a;background:#fffaf0;border-collapse:collapse;">
+      <tr><td colspan="2" style="padding:14px 16px 8px;color:#8a3c13;font-size:15px;font-weight:700;">Event agenda</td></tr>
+      ${agenda.map(({ time, activity }) => `<tr>
+        <td width="30%" style="padding:7px 8px 7px 16px;color:#8a3c13;font-size:12px;font-weight:700;vertical-align:top;">${escapeHtml(time)}</td>
+        <td style="padding:7px 16px 7px 8px;color:#33443f;font-size:13px;line-height:1.5;vertical-align:top;">${escapeHtml(activity)}</td>
+      </tr>`).join('')}
+      <tr><td colspan="2" style="height:8px;font-size:0;line-height:0;">&nbsp;</td></tr>
+    </table>`);
+  }
+
+  if (registrationTitle || registrationFee || registrationNote) {
+    text.push('', registrationTitle || 'Registration', registrationFee, registrationNote);
+    sections.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 20px;background:#eef4ff;border:1px solid #9bb9e8;"><tr><td align="center" style="padding:17px 18px;color:#203858;">
+      <div style="font-size:15px;font-weight:700;">${escapeHtml(registrationTitle || 'Registration')}</div>
+      ${registrationFee ? `<div style="margin-top:7px;font-size:13px;font-weight:700;">${escapeHtml(registrationFee)}</div>` : ''}
+      ${registrationNote ? `<div style="margin-top:5px;font-size:12px;line-height:1.5;">${escapeHtml(registrationNote)}</div>` : ''}
+    </td></tr></table>`);
+  }
+
+  if (communityNote) {
+    text.push('', communityNote);
+    sections.push(`<div style="margin:0 0 20px;text-align:center;color:#087345;font-size:13px;font-weight:700;line-height:1.6;">${emailCopy(communityNote)}</div>`);
+  }
+
+  if (sponsorAcknowledgement) {
+    text.push('', 'With gratitude', sponsorAcknowledgement);
+    sections.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 20px;background:#fff8e8;border-top:2px solid #f2b51d;"><tr><td align="center" style="padding:17px 18px;color:#574416;">
+      <div style="margin-bottom:6px;color:#8a6810;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">With gratitude</div>
+      <div style="font-size:13px;line-height:1.6;">${emailCopy(sponsorAcknowledgement)}</div>
+    </td></tr></table>`);
+  }
+
+  return { html: sections.join(''), text };
+}
+
+function renderBulkMessageEmail(subject, message = {}, logoSrc, backgroundSrc) {
+  const sections = renderBulkMessageSections(message);
+  const rows = [
+    ['Date', message.eventDate],
+    ['Time', message.eventTime],
+    ['Venue', message.eventVenue]
+  ].filter(([, value]) => String(value || '').trim());
+  return renderBrandedEmail({
+    subject,
+    contextLabel: String(message.contextLabel || '').trim() || (message.target
+      ? `${message.audience === 'class' ? 'Class' : 'Event'} update · ${message.target}`
+      : 'Community update'),
+    intro: String(message.intro || 'Hello Kannada Bharati family,').trim(),
+    body: String(message.body || '').trim(),
+    rows,
+    ctaUrl: message.ctaUrl,
+    ctaLabel: String(message.ctaLabel || '').trim(),
+    highlight: String(message.footer || '').trim(),
+    extraContentHtml: sections.html,
+    extraText: sections.text,
+    logoSrc,
+    backgroundSrc
+  });
+}
+
+function renderEmail({ subject, template, payload = {}, logoSrc, backgroundSrc }) {
   const registration = payload.registration || {};
   const donation = payload.donation || {};
   const bulkMessage = payload.message || {};
-  if (template === 'bulk-message') return renderBulkMessageEmail(subject, bulkMessage);
+  if (template === 'bulk-message') return renderBulkMessageEmail(subject, bulkMessage, logoSrc, backgroundSrc);
   const amountDue = Number(registration.amount || 0);
   const registrationPaid = registration.paid === true || registration.payment_received === true;
   const payUrl = amountDue > 0 && !registrationPaid ? payload.payUrl || '' : '';
@@ -1881,45 +2069,56 @@ function renderEmail({ subject, template, payload = {} }) {
   ].filter(([, value]) => value !== undefined && value !== null && value !== '');
   const rows = template === 'donation-confirmation' ? donationRows : registrationRows;
   const cta = template === 'confirm-email' ? payload.confirmUrl : template === 'forgot-password' ? payload.resetUrl : payUrl;
-  const ctaLabel = payUrl ? 'Pay Registration Fee' : 'Open link';
+  const ctaLabels = {
+    'confirm-email': 'Confirm email address',
+    'forgot-password': 'Reset password',
+    'registration-update': 'Pay registration fee',
+    'class-registration': 'Pay registration fee'
+  };
   const introByTemplate = {
-    'confirm-email': 'Please confirm your Kannada Bharati account.',
-    'forgot-password': 'Use the link below to reset your Kannada Bharati password.',
-    'two-factor-code': `Use this code to finish signing in: ${payload.code || ''}`,
-    'registration-update': 'Your Kannada Bharati registration has been updated.',
-    'class-registration': 'Your class registration details are below.',
-    'bulk-message': bulkMessage.intro || 'Kannada Bharati has sent you an update.',
-    'payment-confirmation': 'Thank you. Your payment has been received.',
-    'donation-confirmation': 'Thank you for supporting Kannada Bharati.'
+    'confirm-email': 'Welcome to Kannada Bharati.',
+    'forgot-password': 'We received a request to reset your password.',
+    'two-factor-code': 'Use the verification code below to finish signing in.',
+    'registration-update': 'Your Kannada Bharati registration has been received or updated.',
+    'class-registration': 'Your Kannada Bharati class registration has been received.',
+    'payment-confirmation': 'Thank you. Your payment has been received successfully.',
+    'donation-confirmation': 'Thank you for supporting Kannada Bharati and our community programs.'
   };
   const intro = introByTemplate[template] || 'Kannada Bharati notification.';
-  const bodyText = template === 'bulk-message' ? String(bulkMessage.body || '').trim() : '';
-  const footerText = template === 'bulk-message' ? String(bulkMessage.footer || '').trim() : '';
-  const text = [
+  const bodyByTemplate = {
+    'confirm-email': 'Confirm your email address to finish setting up your account.',
+    'forgot-password': 'Use the secure button below to choose a new password. If you did not request this, you can ignore this email.',
+    'registration-update': payUrl ? 'Payment is pending. Review the registration details and use the button below to complete payment.' : 'Your registration details are listed below.',
+    'class-registration': payUrl ? 'Payment is pending. Review the class details and use the button below to complete payment.' : 'Your class registration details are listed below.',
+    'payment-confirmation': 'Keep this email for your records. Your registration details are listed below.',
+    'donation-confirmation': 'Your donation details are listed below.'
+  };
+  const contextByTemplate = {
+    'confirm-email': 'Account verification',
+    'forgot-password': 'Password assistance',
+    'two-factor-code': payload.purpose === 'two-factor-setup' ? 'Two-factor authentication setup' : 'Secure login verification',
+    'registration-update': 'Event registration update',
+    'class-registration': 'Class registration update',
+    'payment-confirmation': 'Payment confirmation',
+    'donation-confirmation': 'Donation confirmation'
+  };
+  const highlight = template === 'two-factor-code'
+    ? `Verification code: ${payload.code || ''}\nThis code expires in 10 minutes. Do not share it with anyone.`
+    : template === 'donation-confirmation'
+      ? 'Your support helps Kannada Bharati continue cultural, educational, and community programs.'
+      : '';
+  return renderBrandedEmail({
     subject,
-    '',
+    contextLabel: contextByTemplate[template] || 'Kannada Bharati update',
     intro,
-    bodyText,
-    cta ? `Link: ${cta}` : '',
-    payUrl ? `Pay online: ${cta}` : '',
-    ...rows.map(([label, value]) => `${label}: ${value}`),
-    footerText,
-    '',
-    'Kannada Bharati'
-  ].filter(Boolean).join('\n');
-  const html = `
-    <div style="font-family:Arial,sans-serif;color:#102a26;line-height:1.5;max-width:680px">
-      <h2 style="color:#004d46">${escapeHtml(subject)}</h2>
-      <p>${escapeHtml(intro)}</p>
-      ${bodyText ? `<div style="white-space:pre-line;margin:16px 0">${escapeHtml(bodyText)}</div>` : ''}
-      ${payUrl ? `<p style="margin:16px 0 8px"><strong>Payment is pending.</strong> Use the button below to open your account and pay this registration fee.</p>` : ''}
-      ${cta ? `<p><a style="display:inline-block;background:#edae13;color:#111;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700" href="${escapeHtml(cta)}">${escapeHtml(ctaLabel)}</a></p>` : ''}
-      ${rows.length ? `<table style="border-collapse:collapse;width:100%;margin-top:16px">${rows.map(([label, value]) => `<tr><th style="text-align:left;background:#f4f7f2;border:1px solid #d7dfda;padding:8px">${escapeHtml(label)}</th><td style="border:1px solid #d7dfda;padding:8px">${escapeHtml(value)}</td></tr>`).join('')}</table>` : ''}
-      ${footerText ? `<p style="margin-top:18px;color:#51615d">${escapeHtml(footerText)}</p>` : ''}
-      <p style="margin-top:18px">Kannada Bharati</p>
-    </div>
-  `;
-  return { text, html };
+    body: bodyByTemplate[template] || '',
+    rows,
+    ctaUrl: cta,
+    ctaLabel: ctaLabels[template] || (payUrl ? 'Pay registration fee' : ''),
+    highlight,
+    logoSrc,
+    backgroundSrc
+  });
 }
 
 function sampleTemplateMessage(template) {
@@ -1953,6 +2152,11 @@ function sampleTemplateMessage(template) {
       template: 'forgot-password',
       payload: { resetUrl: `${appBaseUrl}/login?resetToken=sample-token` }
     },
+    'two-factor-code': {
+      subject: 'Your Kannada Bharati login code',
+      template: 'two-factor-code',
+      payload: { code: '482913', email: adminEmail, purpose: 'two-factor' }
+    },
     registration: {
       subject: 'Kannada Bharati registration received',
       template: 'registration-update',
@@ -1968,13 +2172,29 @@ function sampleTemplateMessage(template) {
       template: 'donation-confirmation',
       payload: { donation }
     },
+    payment: {
+      subject: 'Kannada Bharati payment confirmation',
+      template: 'payment-confirmation',
+      payload: { registration: { ...registration, status: 'Confirmed', paid: true, payment_received: true } }
+    },
     'bulk-message': {
       subject: 'Classes Registration Now Open',
       template: 'bulk-message',
       payload: {
         message: {
           intro: 'Namaskara Kannada Bharati family,',
-          body: 'Registration is now open for our upcoming classes and community programs. Seats are limited, so please register early.',
+          contextLabel: "Kannada's pride · Festival of lights · Togetherness",
+          body: 'Join us for an evening filled with culture, connection, and celebration. Bring your family and friends and make beautiful memories with our community.',
+          eventDate: 'Sunday, November 1, 2026',
+          eventTime: '2:00 PM - 7:00 PM',
+          eventVenue: 'Together Hall, Redmond',
+          highlights: 'Live dance and music\nDelicious food and refreshments\nCultural performances and activities for children',
+          agenda: '2:00 PM | Deepavali art workshop\n3:00 PM | Indoor games\n4:00 PM | Cultural program\n6:00 PM | Dinner',
+          registrationTitle: 'Register today',
+          registrationFee: 'Entry is free for everyone',
+          registrationNote: 'Registration closes October 25.',
+          communityNote: 'Come · Celebrate · Connect · Create memories',
+          sponsorAcknowledgement: 'Thank you to our annual sponsors for supporting Kannada Bharati programs and our community.',
           footer: 'Registrations are subject to approval and seat availability.',
           ctaLabel: 'View details and register',
           ctaUrl: '/classes',
@@ -2028,14 +2248,30 @@ async function sendEmailNow(message) {
       pass: smtpPass
     }
   });
-  const rendered = renderEmail(message);
+  const rendered = renderEmail({
+    ...message,
+    logoSrc: 'cid:kannada-bharati-logo',
+    backgroundSrc: 'cid:kannada-bharati-email-background'
+  });
   const info = await transporter.sendMail({
     from: emailFromHeader,
     replyTo: emailFromAddress,
     to: message.to,
     subject: message.subject,
     text: rendered.text,
-    html: rendered.html
+    html: rendered.html,
+    attachments: [
+      {
+        filename: 'kannada-bharati-logo.png',
+        path: emailLogoPath,
+        cid: 'kannada-bharati-logo'
+      },
+      {
+        filename: 'kannada-bharati-email-background.png',
+        path: emailBackgroundPath,
+        cid: 'kannada-bharati-email-background'
+      }
+    ]
   });
   return {
     accepted: info.accepted || [],
@@ -2060,6 +2296,43 @@ function uniqueEmailRows(rows = []) {
     });
 }
 
+function newsletterSubscriberFromContact(row = {}) {
+  return {
+    id: row.id,
+    email: row.email,
+    status: 'Active',
+    source: 'website-footer',
+    subscribed_at: row.created_at,
+    created_at: row.created_at,
+    updated_at: row.created_at
+  };
+}
+
+function isMissingNewsletterTable(error) {
+  return error?.code === 'PGRST205'
+    || error?.code === '42P01'
+    || String(error?.message || '').includes('kb_newsletter_subscribers');
+}
+
+async function listNewsletterSubscribers() {
+  const supabase = requireSupabase();
+  const subscriberResult = await supabase
+    .from('kb_newsletter_subscribers')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (!subscriberResult.error) return subscriberResult.data || [];
+  if (!isMissingNewsletterTable(subscriberResult.error)) throw subscriberResult.error;
+
+  const fallbackResult = await supabase
+    .from('kb_contacts')
+    .select('*')
+    .eq('topic', 'Newsletter')
+    .order('created_at', { ascending: false });
+  if (fallbackResult.error) throw fallbackResult.error;
+  return (fallbackResult.data || []).map(newsletterSubscriberFromContact);
+}
+
 function matchesProgram(row, target) {
   const value = String(target || '').trim().toLowerCase();
   if (!value) return false;
@@ -2071,6 +2344,11 @@ async function resolveBulkEmailRecipients({ audience, target }) {
   const scope = String(audience || '').toLowerCase();
   if (scope === 'all-users') {
     return uniqueEmailRows(await listTable('kb_users'));
+  }
+
+  if (scope === 'newsletter') {
+    const subscribers = await listNewsletterSubscribers();
+    return uniqueEmailRows(subscribers.filter((row) => String(row.status || 'Active').toLowerCase() === 'active'));
   }
 
   if (scope === 'event' || scope === 'class') {
@@ -2086,7 +2364,7 @@ async function resolveBulkEmailRecipients({ audience, target }) {
     }));
   }
 
-  const error = new Error('Choose all users, an event, or a class audience.');
+  const error = new Error('Choose all users, newsletter subscribers, an event, or a class audience.');
   error.status = 400;
   throw error;
 }
@@ -3344,7 +3622,7 @@ async function createWelcomeDeskCheckIn(req, res) {
   if (booleanValue(existingRegistration.checked_in, false) || existingRegistration.checked_in_at) {
     return res.status(403).json({ error: 'Already checked in.' });
   }
-  const registration = await updateRecord('kb_registrations', registrationId, {
+  const registration = await updateRegistrationWithListRefresh(registrationId, {
     checkedIn: true,
     checkedInAt: new Date().toISOString()
   });
@@ -3416,6 +3694,8 @@ app.post('/api/payments/paypal/orders', asyncHandler(async (req, res) => {
 app.get('/api/payments/paypal/donate-link', asyncHandler(async (req, res) => {
   res.json({
     donateUrl: kbPaypalDonateUrl,
+    environment: paypalEnvironment,
+    gatewayConfigured: Boolean(paypalClientId && paypalClientSecret),
     legacyHostedButtonId: process.env.KB_PAYPAL_HOSTED_BUTTON_ID || 'EY5YVURQPDWEE',
     legacyFormUrl: 'https://www.paypal.com/cgi-bin/webscr'
   });
@@ -3744,7 +4024,7 @@ app.post('/api/eventmgmt/seats', authenticate, requireRole('welcomedesk', 'recep
     seat_number: seatNumber,
     registration_id: req.body.registrationId || null,
     assigned_to: req.body.assignedTo || null,
-    status: req.body.status || (req.body.registrationId ? 'Assigned' : 'Available')
+    status: req.body.status || (req.body.registrationId || req.body.assignedTo ? 'Assigned' : 'Available')
   });
   try {
     const supabase = requireSupabase();
@@ -3872,6 +4152,17 @@ app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, as
   const body = String(req.body.body || '').trim();
   const intro = String(req.body.intro || '').trim();
   const footer = String(req.body.footer || '').trim();
+  const contextLabel = String(req.body.contextLabel || '').trim().slice(0, 180);
+  const eventDate = String(req.body.eventDate || '').trim().slice(0, 120);
+  const eventTime = String(req.body.eventTime || '').trim().slice(0, 120);
+  const eventVenue = String(req.body.eventVenue || '').trim().slice(0, 240);
+  const highlights = String(req.body.highlights || '').trim().slice(0, 2500);
+  const agenda = String(req.body.agenda || '').trim().slice(0, 2500);
+  const registrationTitle = String(req.body.registrationTitle || '').trim().slice(0, 120);
+  const registrationFee = String(req.body.registrationFee || '').trim().slice(0, 120);
+  const registrationNote = String(req.body.registrationNote || '').trim().slice(0, 240);
+  const communityNote = String(req.body.communityNote || '').trim().slice(0, 300);
+  const sponsorAcknowledgement = String(req.body.sponsorAcknowledgement || '').trim().slice(0, 1200);
   const ctaLabel = String(req.body.ctaLabel || '').trim().slice(0, 60);
   const ctaUrl = String(req.body.ctaUrl || '').trim();
 
@@ -3894,6 +4185,17 @@ app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, as
           intro: intro || `Hello ${recipient.name || 'Kannada Bharati member'},`,
           body,
           footer,
+          contextLabel,
+          eventDate,
+          eventTime,
+          eventVenue,
+          highlights,
+          agenda,
+          registrationTitle,
+          registrationFee,
+          registrationNote,
+          communityNote,
+          sponsorAcknowledgement,
           ctaLabel,
           ctaUrl,
           audience,
@@ -3942,6 +4244,75 @@ app.get('/api/submissions/:type', authenticate, requireAdmin, asyncHandler(async
   res.json(await listTable(table));
 }));
 
+app.post('/api/newsletter/subscribe', authRateLimit, asyncHandler(async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const atIndex = email.indexOf('@');
+  const lastDotIndex = email.lastIndexOf('.');
+  const hasWhitespace = [...email].some((character) => character.charCodeAt(0) <= 32);
+  const isValidEmail = email.length <= 254
+    && atIndex > 0
+    && atIndex === email.lastIndexOf('@')
+    && lastDotIndex > atIndex + 1
+    && lastDotIndex < email.length - 1
+    && !hasWhitespace;
+  if (!isValidEmail) {
+    return res.status(400).json({ error: 'Enter a valid email address.' });
+  }
+
+  const now = new Date().toISOString();
+  const supabase = requireSupabase();
+  const { data, error } = await supabase
+    .from('kb_newsletter_subscribers')
+    .upsert({
+      email,
+      status: 'Active',
+      source: 'website-footer',
+      subscribed_at: now,
+      unsubscribed_at: null,
+      updated_at: now
+    }, { onConflict: 'email' })
+    .select('*')
+    .single();
+
+  let subscriber = data;
+  if (error && isMissingNewsletterTable(error)) {
+    const existingResult = await supabase
+      .from('kb_contacts')
+      .select('*')
+      .eq('topic', 'Newsletter')
+      .ilike('email', email)
+      .limit(1)
+      .maybeSingle();
+    if (existingResult.error) throw existingResult.error;
+
+    if (existingResult.data) {
+      subscriber = newsletterSubscriberFromContact(existingResult.data);
+    } else {
+      const fallbackResult = await supabase
+        .from('kb_contacts')
+        .insert({
+          name: 'Newsletter subscriber',
+          email,
+          topic: 'Newsletter',
+          message: 'Active newsletter subscription',
+          created_at: now
+        })
+        .select('*')
+        .single();
+      if (fallbackResult.error) throw fallbackResult.error;
+      subscriber = newsletterSubscriberFromContact(fallbackResult.data);
+    }
+  } else if (error) {
+    throw error;
+  }
+
+  res.status(201).json({
+    ok: true,
+    message: 'You are subscribed to Kannada Bharati updates.',
+    subscriber
+  });
+}));
+
 app.post('/api/submissions/:type', requireSubmissionCreateAccess, asyncHandler(async (req, res) => {
   const table = submissionTables[req.params.type];
   if (!table) return res.status(404).json({ error: 'Unknown submission type.' });
@@ -3955,6 +4326,9 @@ app.post('/api/submissions/:type', requireSubmissionCreateAccess, asyncHandler(a
 app.patch('/api/submissions/:type/:id', authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const table = submissionTables[req.params.type];
   if (!table) return res.status(404).json({ error: 'Unknown submission type.' });
+  if (table === 'kb_registrations' && isRegistrationCheckInPayload(req.body)) {
+    return res.json(await updateRegistrationWithListRefresh(req.params.id, req.body));
+  }
   res.json(await updateRecord(table, req.params.id, req.body));
 }));
 
@@ -4025,6 +4399,7 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
       donations: donations.data || [],
       volunteers: [],
       contacts: [],
+      newsletterSubscribers: [],
       logins: [],
       classes: classes.data || [],
       events: events.data || [],
@@ -4069,6 +4444,7 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
       donations,
       volunteers,
       contacts,
+      newsletterSubscribers: [],
       logins: [],
       classes,
       events,
@@ -4082,12 +4458,13 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
     });
   }
 
-  const [users, registrations, donations, volunteers, contacts, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory] = await Promise.all([
+  const [users, registrations, donations, volunteers, contacts, newsletterSubscribers, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory] = await Promise.all([
     listTable('kb_users'),
     listTable('kb_registrations'),
     listTable('kb_donations'),
     listTable('kb_volunteers'),
     listTable('kb_contacts'),
+    listNewsletterSubscribers(),
     listTable('kb_logins'),
     listTable('kb_classes'),
     listTable('kb_events'),
@@ -4100,7 +4477,7 @@ app.get('/api/admin/dashboard', authenticate, asyncHandler(async (req, res) => {
     listOptionalTable('kb_defaulter_history')
   ]);
 
-  res.json({ users, registrations, donations, volunteers, contacts, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory });
+  res.json({ users, registrations, donations, volunteers, contacts, newsletterSubscribers, logins, classes, events, fundraisers, announcements, expenses, checkins, attendance, emailOutbox, defaulterHistory });
 }));
 
 app.use((error, req, res, next) => {

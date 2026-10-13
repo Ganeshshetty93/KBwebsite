@@ -157,6 +157,17 @@ create table if not exists public.kb_contacts (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.kb_newsletter_subscribers (
+  id uuid primary key default gen_random_uuid(),
+  email text unique not null,
+  status text not null default 'Active',
+  source text not null default 'website-footer',
+  subscribed_at timestamptz not null default now(),
+  unsubscribed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.kb_classes (
   id uuid primary key default gen_random_uuid(),
   title text not null,

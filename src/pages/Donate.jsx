@@ -58,7 +58,7 @@ export default function Donate() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [paymentProcessing, setPaymentProcessing] = useState(false);
-  const [hostedPayment, setHostedPayment] = useState({ donateUrl: fallbackDonateLink });
+  const [hostedPayment, setHostedPayment] = useState({ donateUrl: fallbackDonateLink, environment: 'unknown' });
   const donationFormRef = useRef(null);
   const { language, t } = useLanguage();
   const causes = useMemo(() => fundraisers.filter((cause) => cause.status !== 'Completed'), [fundraisers]);
@@ -100,7 +100,7 @@ export default function Donate() {
         if (!ignore && config?.donateUrl) setHostedPayment(config);
       })
       .catch(() => {
-        if (!ignore) setHostedPayment({ donateUrl: fallbackDonateLink });
+        if (!ignore) setHostedPayment({ donateUrl: fallbackDonateLink, environment: 'unknown' });
       });
 
     return () => {
@@ -159,24 +159,38 @@ export default function Donate() {
     };
   }, [language]);
 
-  function openPayPalCheckout(url) {
+  function createPayPalWindow() {
     const width = Math.min(620, window.screen?.availWidth || 620);
     const height = Math.min(820, window.screen?.availHeight || 820);
     const left = Math.max(0, ((window.screen?.availWidth || width) - width) / 2);
     const top = Math.max(0, ((window.screen?.availHeight || height) - height) / 2);
     const popup = window.open(
-      url,
+      'about:blank',
       'kb-paypal-checkout',
       `popup=yes,width=${Math.round(width)},height=${Math.round(height)},left=${Math.round(left)},top=${Math.round(top)},resizable=yes,scrollbars=yes`
     );
 
-    if (!popup) {
-      window.location.assign(url);
-      return false;
+    if (popup) {
+      popup.document.title = 'Opening PayPal';
+      const status = popup.document.createElement('p');
+      status.textContent = 'Preparing your secure PayPal checkout...';
+      status.style.cssText = 'font:600 16px system-ui,sans-serif;color:#073f3c;padding:32px;text-align:center';
+      popup.document.body.appendChild(status);
+      popup.focus();
     }
 
-    popup.focus();
-    return true;
+    return popup;
+  }
+
+  function openPayPalCheckout(url, checkoutWindow) {
+    if (checkoutWindow && !checkoutWindow.closed) {
+      checkoutWindow.location.replace(url);
+      checkoutWindow.focus();
+      return true;
+    }
+
+    window.location.assign(url);
+    return false;
   }
 
   function checkoutUrlForMode(url, paymentMode) {
@@ -218,6 +232,7 @@ export default function Donate() {
       return;
     }
 
+    const checkoutWindow = createPayPalWindow();
     setPaymentProcessing(true);
 
     try {
@@ -253,15 +268,19 @@ export default function Donate() {
         throw new Error('PayPal approval link was not returned.');
       }
 
-      setMessage(language === 'kn' ? `PayPal ಗೆ ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ: $${amount}.` : `Opening PayPal for $${amount}.`);
-      openPayPalCheckout(checkoutUrlForMode(order.approvalUrl, paymentMode));
+      const sandbox = hostedPayment?.environment === 'sandbox';
+      setMessage(language === 'kn'
+        ? `PayPal${sandbox ? ' Sandbox' : ''} ಗೆ ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ: $${amount}.`
+        : `Opening PayPal${sandbox ? ' Sandbox' : ''} for $${amount}.`);
+      openPayPalCheckout(checkoutUrlForMode(order.approvalUrl, paymentMode), checkoutWindow);
       form.reset();
       setCustom('');
       setPaymentProcessing(false);
     } catch (paymentError) {
       const hostedUrl = hostedPayment?.donateUrl || fallbackDonateLink;
+      setError(paymentError.message || 'PayPal checkout could not be started.');
       setMessage(language === 'kn' ? 'PayPal hosted donation ಪುಟವನ್ನು ತೆರೆಯಲಾಗುತ್ತಿದೆ.' : 'Opening the Kannada Bharati hosted PayPal donation page.');
-      openPayPalCheckout(hostedUrl);
+      openPayPalCheckout(hostedUrl, checkoutWindow);
       setPaymentProcessing(false);
     }
   }
@@ -395,11 +414,17 @@ export default function Donate() {
             />
           </label>
           <div className="paypal-smart-buttons" aria-label={language === 'kn' ? 'PayPal ಪಾವತಿ ಆಯ್ಕೆಗಳು' : 'PayPal payment options'}>
+            {hostedPayment?.environment === 'sandbox' && (
+              <p className="payment-mode-notice">
+                <strong>PayPal test mode</strong>
+                <span>Use a PayPal Sandbox buyer account. Real PayPal accounts and cards will not work until live credentials are configured.</span>
+              </p>
+            )}
             <button className="paypal-smart-button paypal-smart-button-primary" type="submit" disabled={paymentProcessing}>
               {paymentProcessing ? (
                 <span>{language === 'kn' ? 'ತೆರೆಯಲಾಗುತ್ತಿದೆ...' : 'Opening...'}</span>
               ) : (
-                <span>{language === 'kn' ? 'ಉಳಿಸಿ ಮತ್ತು ಪಾವತಿಸಿ' : 'Save and Pay'}</span>
+                <span>{language === 'kn' ? 'ಉಳಿಸಿ ಮತ್ತು ಪಾವತಿಸಿ' : hostedPayment?.environment === 'sandbox' ? 'Test with PayPal Sandbox' : 'Save and Pay'}</span>
               )}
             </button>
             <button
@@ -421,7 +446,7 @@ export default function Donate() {
             rel="noreferrer"
             target="_blank"
           >
-            <span>{language === 'kn' ? 'Hosted PayPal ದೇಣಿಗೆ' : 'Hosted PayPal donation'}</span>
+            <span>{language === 'kn' ? 'Hosted PayPal ದೇಣಿಗೆ' : hostedPayment?.environment === 'sandbox' ? 'Use live hosted PayPal donation' : 'Hosted PayPal donation'}</span>
             <small>{language === 'kn' ? 'ಹಳೆಯ Kannada Bharati PayPal ಬಟನ್' : `Legacy button ${hostedPayment?.legacyHostedButtonId || 'EY5YVURQPDWEE'}`}</small>
           </a>
           {error && <p className="form-error">{error}</p>}
