@@ -113,7 +113,8 @@ export default function Events() {
   const [eventSaved, setEventSaved] = useState(false);
   const [eventMessage, setEventMessage] = useState('');
   const [eventDraft, setEventDraft] = useState(null);
-  const [eventNotice, setEventNotice] = useState(null);
+  const [eventToast, setEventToast] = useState(null);
+  const [eventSubmitting, setEventSubmitting] = useState(false);
   const user = getCurrentUser();
   const availableMembers = memberOptions(user);
 
@@ -140,7 +141,15 @@ export default function Events() {
     setEventError('');
     setEventSaved(false);
     setEventDraft(null);
-    setEventNotice(null);
+    setEventToast(null);
+    setEventSubmitting(false);
+  }
+
+  function showEventToast(type, title, message) {
+    setEventToast({ type, title, message, id: Date.now() });
+    window.setTimeout(() => {
+      setEventToast((current) => (current?.title === title && current?.message === message ? null : current));
+    }, 4200);
   }
 
   function buildRegistrationRecord(form) {
@@ -208,6 +217,7 @@ export default function Events() {
       record = buildRegistrationRecord(form);
     } catch (error) {
       setEventError(error.message);
+      showEventToast('error', 'Check registration details', error.message);
       return;
     }
 
@@ -218,22 +228,10 @@ export default function Events() {
     }
 
     let savedRegistration = record;
+    setEventSubmitting(true);
     try {
       savedRegistration = await apiAppendRecord('kb-registration-submissions', record);
-    } catch (error) {
-      appendRecord('kb-registration-submissions', record);
-      setEventError('Registration was saved locally, but payment cannot start until the server is reachable.');
-      return;
-    }
-    setEventSaved(true);
-    setEventNotice({
-      title: record.amount > 0 ? 'Registration saved' : 'Registration submitted',
-      message: record.amount > 0
-        ? 'We saved your registration and sent the email confirmation. Opening payment now.'
-        : 'We saved your registration and sent the email confirmation.'
-    });
-    if (record.amount > 0) {
-      try {
+      if (record.amount > 0) {
         const payment = await apiCreateFlowPayment(record.registrationType === 'guest' ? 'guest-event' : 'event', {
           registrationId: savedRegistration?.id,
           email: record.email,
@@ -247,15 +245,28 @@ export default function Events() {
           returnUrl: `${window.location.origin}/events?payment=complete&kind=${record.registrationType === 'guest' ? 'guest-event' : 'event'}&registrationId=${encodeURIComponent(savedRegistration?.id || '')}`,
           cancelUrl: `${window.location.origin}/events?payment=cancel`
         });
+        setEventSaved(true);
+        setRegisteringEvent(null);
+        showEventToast('success', 'Registration saved', 'Registration saved successfully. Opening payment now.');
         if (payment.approvalUrl) {
           window.setTimeout(() => {
             window.location.href = payment.approvalUrl;
           }, 900);
         }
-      } catch (error) {
-        setEventError(error.message || 'Payment could not be started.');
+        return;
       }
+    } catch (error) {
+      if (!/payment/i.test(error.message || '')) appendRecord('kb-registration-submissions', record);
+      const message = error.message || 'Registration could not be submitted.';
+      setEventError(message);
+      showEventToast('error', 'Registration failed', message);
+      setEventSubmitting(false);
+      return;
     }
+    setEventSubmitting(false);
+    setEventSaved(true);
+    setRegisteringEvent(null);
+    showEventToast('success', 'Registration submitted', 'Registration submitted successfully. We sent the email confirmation.');
   }
 
   return (
@@ -425,19 +436,19 @@ export default function Events() {
             {eventSaved && <p className="success">Registration submitted. {Number(eventDraft?.amount || 0) > 0 ? 'Opening payment...' : 'No payment is required.'}</p>}
             <div className="event-registration-actions">
               {registrationStep > 1 && <button className="button secondary-dark" type="button" onClick={() => setRegistrationStep((step) => step - 1)}>{tr('Back')}</button>}
-              <button className="button primary" type="submit">{tr(registrationStep < 3 ? 'Continue' : Number(eventDraft?.amount || eventAmount(registeringEvent)) > 0 ? 'Save & Pay' : 'Submit Registration')}</button>
+              <button className="button primary" type="submit" disabled={eventSubmitting}>{eventSubmitting ? tr('Saving...') : tr(registrationStep < 3 ? 'Continue' : Number(eventDraft?.amount || eventAmount(registeringEvent)) > 0 ? 'Save & Pay' : 'Submit Registration')}</button>
             </div>
           </form>
         </div>
       )}
-      {eventNotice && (
-        <div className="popup-backdrop registration-message-backdrop" role="presentation">
-          <div className="popup-panel registration-message-popup" role="dialog" aria-modal="true" aria-label={eventNotice.title}>
-            <button className="popup-close" type="button" aria-label="Close message" onClick={() => setEventNotice(null)}><X size={20} /></button>
-            <ModalTitle matchText="Registration success">{eventNotice.title}</ModalTitle>
-            <p>{eventNotice.message}</p>
-            <button className="button primary" type="button" onClick={() => setEventNotice(null)}>Done</button>
+      {eventToast && (
+        <div className={`registration-toast is-${eventToast.type}`} role="status" aria-live="polite">
+          <CheckCircle2 size={20} />
+          <div>
+            <strong>{eventToast.title}</strong>
+            <span>{eventToast.message}</span>
           </div>
+          <button type="button" aria-label="Close message" onClick={() => setEventToast(null)}><X size={16} /></button>
         </div>
       )}
     </>

@@ -97,7 +97,7 @@ export default function ClassCard({ item, registerSignal = 0 }) {
   const [showGuestForm, setShowGuestForm] = useState(false);
   const [guestError, setGuestError] = useState('');
   const [guestSaved, setGuestSaved] = useState(false);
-  const [registrationNotice, setRegistrationNotice] = useState(null);
+  const [registrationToast, setRegistrationToast] = useState(null);
   const classImage = getClassImage(item);
   const registerUrl = `/register?program=${encodeURIComponent(item.title)}`;
   const feeText = getFeeText(item);
@@ -112,6 +112,13 @@ export default function ClassCard({ item, registerSignal = 0 }) {
     setSelectedMember(memberOptions[0]?.value || '');
     setMemberError('');
     setMemberSaved(false);
+  }
+
+  function showRegistrationToast(type, title, message) {
+    setRegistrationToast({ type, title, message, id: Date.now() });
+    window.setTimeout(() => {
+      setRegistrationToast((current) => (current?.title === title && current?.message === message ? null : current));
+    }, 4200);
   }
 
   useEffect(() => {
@@ -154,6 +161,7 @@ export default function ClassCard({ item, registerSignal = 0 }) {
 
     if (validationError) {
       setGuestError(validationError);
+      showRegistrationToast('error', 'Check guest details', validationError);
       return;
     }
 
@@ -173,16 +181,16 @@ export default function ClassCard({ item, registerSignal = 0 }) {
     try {
       await saveRegistration(record);
       setGuestSaved(true);
-      setRegistrationNotice({
-        title: 'Guest registration submitted',
-        message: 'We saved the registration and sent the email confirmation. Admin will review it before payment is completed.'
-      });
+      setShowDetails(false);
+      showRegistrationToast('success', 'Guest registration submitted', 'We saved the registration and sent the email confirmation.');
     } catch (error) {
-      setGuestError(/already registered/i.test(error.message || '')
+      const message = /already registered/i.test(error.message || '')
         ? error.message
         : error.localSaved
           ? 'Guest registration was saved locally, but could not reach the server.'
-          : error.message || 'Guest registration could not be submitted.');
+          : error.message || 'Guest registration could not be submitted.';
+      setGuestError(message);
+      showRegistrationToast('error', 'Guest registration failed', message);
     }
   }
 
@@ -194,10 +202,12 @@ export default function ClassCard({ item, registerSignal = 0 }) {
     const member = memberOptions.find((option) => option.value === selectedMember);
     if (!user) {
       setMemberError('Please login before registering for this class.');
+      showRegistrationToast('error', 'Login required', 'Please login before registering for this class.');
       return;
     }
     if (!member) {
       setMemberError('Please select the member to register.');
+      showRegistrationToast('error', 'Select member', 'Please select the member to register.');
       return;
     }
 
@@ -210,6 +220,7 @@ export default function ClassCard({ item, registerSignal = 0 }) {
     ));
     if (existing) {
       setMemberError('This member is already registered for this class.');
+      showRegistrationToast('error', 'Already registered', 'This member is already registered for this class.');
       return;
     }
 
@@ -233,16 +244,16 @@ export default function ClassCard({ item, registerSignal = 0 }) {
       await saveRegistration(record);
       setMemberSaved(true);
       setShowGuestForm(false);
-      setRegistrationNotice({
-        title: 'Registration submitted',
-        message: 'We saved the class registration and sent the email confirmation. Wait for approval before completing payment.'
-      });
+      setShowDetails(false);
+      showRegistrationToast('success', 'Registration submitted', 'We saved the class registration and sent the email confirmation.');
     } catch (error) {
-      setMemberError(/already registered/i.test(error.message || '')
+      const message = /already registered/i.test(error.message || '')
         ? error.message
         : error.localSaved
           ? 'Registration was saved locally, but could not reach the server.'
-          : error.message || 'Registration could not be submitted.');
+          : error.message || 'Registration could not be submitted.';
+      setMemberError(message);
+      showRegistrationToast('error', 'Registration failed', message);
     }
   }
 
@@ -357,16 +368,14 @@ export default function ClassCard({ item, registerSignal = 0 }) {
           </div>
         </div>
       )}
-      {registrationNotice && (
-        <div className="popup-backdrop registration-message-backdrop" role="presentation">
-          <div className="popup-panel registration-message-popup" role="dialog" aria-modal="true" aria-label={registrationNotice.title}>
-            <button className="popup-close" type="button" aria-label="Close message" onClick={() => setRegistrationNotice(null)}>
-              <X size={20} />
-            </button>
-            <ModalTitle matchText="Registration success">{registrationNotice.title}</ModalTitle>
-            <p>{registrationNotice.message}</p>
-            <button className="button primary" type="button" onClick={() => setRegistrationNotice(null)}>{tr('Done')}</button>
+      {registrationToast && (
+        <div className={`registration-toast is-${registrationToast.type}`} role="status" aria-live="polite">
+          <CheckCircle2 size={20} />
+          <div>
+            <strong>{registrationToast.title}</strong>
+            <span>{registrationToast.message}</span>
           </div>
+          <button type="button" aria-label="Close message" onClick={() => setRegistrationToast(null)}><X size={16} /></button>
         </div>
       )}
     </>
