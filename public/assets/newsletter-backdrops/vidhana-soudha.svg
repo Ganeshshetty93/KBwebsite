@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 220" role="img" aria-label="Vidhana Soudha landmark">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#075850"/><stop offset="1" stop-color="#003f3c"/></linearGradient></defs>
+  <rect width="640" height="220" fill="url(#g)"/>
+  <circle cx="510" cy="32" r="34" fill="#f1c763" opacity=".78"/>
+  <rect x="46" y="126" width="548" height="58" rx="8" fill="#f4d483"/>
+  <rect x="72" y="102" width="496" height="36" rx="16" fill="#fff0ba" opacity=".9"/>
+  <rect x="112" y="78" width="416" height="58" rx="15" fill="#d7a142"/>
+  <path d="M248 78c14-40 130-40 144 0" fill="#fff0ba"/>
+  <path d="M286 70c8-28 60-28 68 0" fill="#f4d483"/>
+  <g fill="#8a6810" opacity=".72">
+    <rect x="82" y="126" width="8" height="58"/><rect x="113" y="126" width="8" height="58"/><rect x="144" y="126" width="8" height="58"/><rect x="175" y="126" width="8" height="58"/><rect x="206" y="126" width="8" height="58"/><rect x="237" y="126" width="8" height="58"/><rect x="268" y="126" width="8" height="58"/><rect x="299" y="126" width="8" height="58"/><rect x="330" y="126" width="8" height="58"/><rect x="361" y="126" width="8" height="58"/><rect x="392" y="126" width="8" height="58"/><rect x="423" y="126" width="8" height="58"/><rect x="454" y="126" width="8" height="58"/><rect x="485" y="126" width="8" height="58"/><rect x="516" y="126" width="8" height="58"/><rect x="547" y="126" width="8" height="58"/>
+  </g>
+</svg>

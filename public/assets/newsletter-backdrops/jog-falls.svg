@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 220" role="img" aria-label="Jog Falls landscape">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#074f5b"/><stop offset="1" stop-color="#4a8d88"/></linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#f8ffff"/><stop offset="1" stop-color="#9bd7d7" stop-opacity=".3"/></linearGradient>
+  </defs>
+  <rect width="640" height="220" fill="url(#sky)"/>
+  <path d="M0 147c76-29 119-29 180-9 76 25 120 25 190-4 73-31 150-20 270 21v65H0z" fill="#145f4d" opacity=".9"/>
+  <path d="M0 178c90-28 155-32 245-12 97 22 151 15 244-22 58-23 99-25 151-8v84H0z" fill="#083f3c" opacity=".72"/>
+  <rect x="402" y="36" width="20" height="143" rx="10" fill="url(#water)"/>
+  <rect x="465" y="18" width="34" height="169" rx="17" fill="url(#water)"/>
+  <rect x="548" y="55" width="10" height="122" rx="5" fill="url(#water)" opacity=".8"/>
+  <path d="M384 181c25 11 58 13 93 8 41-6 64-4 91 9" stroke="#bfeeee" stroke-width="5" fill="none" opacity=".45"/>
+</svg>
