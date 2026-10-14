@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
-import { BookOpen, Building2, CalendarDays, CheckCircle, ChevronRight, Clock3, CloudUpload, Copy, CreditCard, Download, Edit3, ExternalLink, Eye, FileSpreadsheet, FileText, GraduationCap, HandCoins, ImagePlus, ListChecks, Mail, MapPin, Megaphone, MoreHorizontal, Phone, Plus, Printer, ReceiptText, RefreshCw, Save, Search, Send, Trash2, UserRound, UserPlus, UsersRound, X } from 'lucide-react';
+import { BookOpen, Building2, CalendarDays, CheckCircle, ChevronRight, Clock3, CloudUpload, Copy, CreditCard, Download, Drama, Edit3, ExternalLink, Eye, FileSpreadsheet, FileText, Gamepad2, Globe2, GraduationCap, HandCoins, ImagePlus, Lamp, Link2, ListChecks, Mail, MapPin, Megaphone, Monitor, MoreHorizontal, Palette, Phone, Plus, Printer, ReceiptText, RefreshCw, Save, Search, Send, Smartphone, Sparkles, Trash2, UserRound, UserPlus, UsersRound, X } from 'lucide-react';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
 import ContentSettingsNav, { contentSettingsTitles } from '../components/ContentSettingsNav.jsx';
 import DatePicker from '../components/DatePicker.jsx';
@@ -2966,7 +2966,42 @@ export default function AdminSectionPage({ view }) {
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [emailOutboxNotice, setEmailOutboxNotice] = useState('');
   const [emailOutboxError, setEmailOutboxError] = useState('');
-  const [bulkEmail, setBulkEmail] = useState({ audience: 'all-users', target: '', sending: false, notice: '', error: '' });
+  const [bulkEmail, setBulkEmail] = useState({ audience: 'newsletter', target: '', sending: false, notice: '', error: '' });
+  const defaultNewsletterDraft = {
+    tab: 'theme',
+    theme: 'heritage',
+    backdrop: 'mysore',
+    backdropImage: '',
+    accent: '#00756f',
+    includeSponsors: true,
+    registrationType: 'google',
+    previewMode: 'desktop',
+    headerImage: '',
+    audience: 'newsletter',
+    target: '',
+    subject: 'Kannada Rajyotsava & Deepavali Celebration 2026',
+    contextLabel: 'Celebrate Kannada culture, lights and togetherness',
+    intro: 'Hello Kannada Bharati family,',
+    eventName: 'Kannada Rajyotsava & Deepavali Celebration 2026',
+    subtitle: 'Celebrate Kannada culture, lights and togetherness',
+    date: 'Sunday, November 1, 2026',
+    location: 'Timberline Middle School, Redmond',
+    time: '2:00 PM - 7:00 PM',
+    buttonLabel: 'Register for the celebration',
+    paymentAmount: '$35.00',
+    paymentLink: '',
+    googleFormUrl: '',
+    customLink: '',
+    highlights: 'Clay Diya & Rangoli Workshop\nIndoor Games\nCultural Performances',
+    agenda: '2:00-3:00 PM | Clay Diya making and Rangoli competition\n3:00-5:00 PM | Indoor games\n5:00-6:30 PM | Cultural performances\n6:30-7:00 PM | Snacks and time to connect',
+    footer: 'Come - Celebrate - Connect - Create Tomorrow',
+    sponsorAcknowledgement: 'Our Annual Sponsors'
+  };
+  const [newsletterDraft, setNewsletterDraft] = useState(() => ({
+    ...defaultNewsletterDraft,
+    ...readJson('kb-event-newsletter-draft', {})
+  }));
+  const newsletterPreviewStageRef = useRef(null);
   const [userSearchResult, setUserSearchResult] = useState(null);
   const [userSearchError, setUserSearchError] = useState('');
   const [seatError, setSeatError] = useState('');
@@ -3110,6 +3145,189 @@ export default function AdminSectionPage({ view }) {
     });
     return new Set(rows.map((row) => String(row.email || '').toLowerCase()).filter(Boolean)).size;
   })();
+  const newsletterThemes = [
+    { id: 'heritage', label: 'Heritage', description: 'Temple inspired green and gold' },
+    { id: 'festive', label: 'Festive', description: 'Deepavali red and lamp glow' },
+    { id: 'minimal', label: 'Minimal', description: 'Clean white invitation' }
+  ];
+  const newsletterBackdrops = [
+    { id: 'mysore', label: 'Mysore Palace', note: 'Royal palace arch', image: '/assets/culture-clean/mysuru-palace-clean.png' },
+    { id: 'hampi', label: 'Hampi', note: 'Stone chariot and ruins', image: '/assets/culture-clean/hampi-clean.png' },
+    { id: 'jog', label: 'Jog Falls', note: 'Waterfall landscape', image: '/assets/newsletter-backdrops/jog-falls.svg' },
+    { id: 'vidhana', label: 'Vidhana Soudha', note: 'Bengaluru landmark', image: '/assets/newsletter-backdrops/vidhana-soudha.svg' },
+    { id: 'coorg', label: 'Coorg Hills', note: 'Western Ghats greenery', image: '/assets/newsletter-backdrops/coorg-hills.svg' },
+    { id: 'minimal', label: 'Minimal', note: 'Clean cream backdrop', image: '/assets/newsletter-backdrops/minimal-palace.svg' },
+    { id: 'custom', label: 'Custom image', note: 'Upload your own backdrop', image: '' }
+  ];
+  const newsletterAccents = ['#00756f', '#c04444', '#d49a2f', '#76509b', '#4a90d9', '#3b9457'];
+  const newsletterHighlights = cleanText(newsletterDraft.highlights)
+    .split('\n')
+    .map((item) => cleanText(item))
+    .filter(Boolean)
+    .slice(0, 3);
+  const newsletterAgendaRows = cleanText(newsletterDraft.agenda)
+    .split('\n')
+    .map((item) => cleanText(item))
+    .filter(Boolean)
+    .slice(0, 5)
+    .map((item) => {
+      const [time, ...details] = item.split('|');
+      return { time: cleanText(time), detail: cleanText(details.join('|') || item) };
+    });  const newsletterFeatureIcons = [Lamp, Gamepad2, Drama, Sparkles];
+  const newsletterFeatureNotes = ['Hands-on festive fun', 'Games for every age', 'Music, dance and culture', 'Community moments'];
+  const newsletterRegistrationUrl = newsletterDraft.registrationType === 'google'
+    ? newsletterDraft.googleFormUrl
+    : newsletterDraft.registrationType === 'custom'
+      ? newsletterDraft.customLink
+      : '/events';
+
+  function formatNewsletterDate(value) {
+    if (!value) return '';
+    const [year, month, day] = String(value).split('-').map(Number);
+    if (!year || !month || !day) return value;
+    return new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric'
+    }).format(new Date(year, month - 1, day));
+  }
+
+  function formatNewsletterTime(value) {
+    if (!value) return '';
+    const [hourText, minuteText] = String(value).split(':');
+    const hour = Number(hourText);
+    const minute = Number(minuteText || 0);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return value;
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }).format(new Date(2026, 0, 1, hour, minute)).replace(/\s/g, ' ');
+  }
+
+  function formatNewsletterTimeRange(start, end) {
+    return [formatNewsletterTime(start), formatNewsletterTime(end)].filter(Boolean).join(' - ');
+  }
+
+  function getNewsletterImageShape(width, height) {
+    const ratio = width && height ? width / height : 1;
+    if (ratio >= 2.4) return 'wide';
+    if (ratio <= 0.72) return 'tall';
+    if (ratio <= 1.25) return 'logo';
+    return 'balanced';
+  }
+
+  function updateNewsletterHeaderImageShape(event) {
+    const image = event.currentTarget;
+    const shape = getNewsletterImageShape(image.naturalWidth, image.naturalHeight);
+    if (shape && shape !== newsletterDraft.headerImageShape) {
+      setNewsletterDraft((current) => ({ ...current, headerImageShape: shape }));
+    }
+  }
+
+  function updateNewsletterDate(value) {
+    setNewsletterDraft((current) => ({ ...current, dateValue: value, date: formatNewsletterDate(value) }));
+    setBulkEmail((current) => ({ ...current, notice: '', error: '' }));
+  }
+
+  function updateNewsletterTime(key, value) {
+    setNewsletterDraft((current) => {
+      const next = { ...current, [key]: value };
+      return { ...next, time: formatNewsletterTimeRange(next.startTime, next.endTime) };
+    });
+    setBulkEmail((current) => ({ ...current, notice: '', error: '' }));
+  }
+
+  function updateNewsletterDraft(key, value) {
+    setNewsletterDraft((current) => ({ ...current, [key]: value }));
+    setBulkEmail((current) => ({ ...current, notice: '', error: '' }));
+  }
+
+  async function saveNewsletterDraft() {
+    writeJson('kb-event-newsletter-draft', newsletterDraft);
+    try {
+      const saved = await apiSaveSiteSetting('newsletter-draft', newsletterDraft);
+      const nextDraft = { ...defaultNewsletterDraft, ...(saved || newsletterDraft) };
+      setNewsletterDraft(nextDraft);
+      writeJson('kb-event-newsletter-draft', nextDraft);
+      setBulkEmail((current) => ({ ...current, notice: 'Newsletter draft saved to database.', error: '' }));
+    } catch (error) {
+      setBulkEmail((current) => ({ ...current, notice: 'Newsletter draft saved locally. Database save failed.', error: error.message || '' }));
+    }
+  }
+
+  function handleNewsletterImageUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type || '')) {
+      setBulkEmail((current) => ({ ...current, notice: '', error: 'Please upload a PNG or JPG image.' }));
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setBulkEmail((current) => ({ ...current, notice: '', error: 'Header image must be 2 MB or smaller.' }));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const source = String(reader.result || '');
+      const image = new Image();
+      image.onload = () => {
+        const ratio = image.width && image.height ? image.width / image.height : 1;
+        const shape = ratio >= 2.4 ? 'wide' : ratio <= 0.72 ? 'tall' : ratio <= 1.25 ? 'logo' : 'balanced';
+        setNewsletterDraft((current) => ({ ...current, headerImage: source, headerImageShape: shape }));
+        setBulkEmail((current) => ({ ...current, notice: '', error: '' }));
+      };
+      image.onerror = () => updateNewsletterDraft('headerImage', source);
+      image.src = source;
+    };
+    reader.onerror = () => setBulkEmail((current) => ({ ...current, notice: '', error: 'Could not read the uploaded image.' }));
+    reader.readAsDataURL(file);
+  }
+  function handleNewsletterBackdropUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type || '')) {
+      setBulkEmail((current) => ({ ...current, notice: '', error: 'Please upload a PNG or JPG image.' }));
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setBulkEmail((current) => ({ ...current, notice: '', error: 'Backdrop image must be 2 MB or smaller.' }));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setNewsletterDraft((current) => ({ ...current, backdrop: 'custom', backdropImage: String(reader.result || '') }));
+      setBulkEmail((current) => ({ ...current, notice: '', error: '' }));
+    };
+    reader.onerror = () => setBulkEmail((current) => ({ ...current, notice: '', error: 'Could not read the uploaded backdrop image.' }));
+    reader.readAsDataURL(file);
+  }
+
+  function removeNewsletterHeaderImage() {
+    setNewsletterDraft((current) => ({ ...current, headerImage: '', headerImageShape: '' }));
+    setBulkEmail((current) => ({ ...current, notice: '', error: '' }));
+  }
+
+  function removeNewsletterBackdropImage() {
+    setNewsletterDraft((current) => ({
+      ...current,
+      backdropImage: '',
+      backdrop: current.backdrop === 'custom' ? 'mysore' : current.backdrop
+    }));
+    setBulkEmail((current) => ({ ...current, notice: '', error: '' }));
+  }
+
+  function syncNewsletterAudience(audience) {
+    updateNewsletterDraft('audience', audience);
+    updateNewsletterDraft('target', '');
+    setBulkEmail((current) => ({ ...current, audience, target: '', notice: '', error: '' }));
+  }
+
+  function syncNewsletterTarget(target) {
+    updateNewsletterDraft('target', target);
+    setBulkEmail((current) => ({ ...current, target, notice: '', error: '' }));
+  }
   const assignedClassTitles = teacherAllotments
     .filter((row) => row.enabled !== false && String(row.teacherEmail || '').toLowerCase() === currentUserEmail)
     .map((row) => row.classTitle);
@@ -3279,6 +3497,25 @@ export default function AdminSectionPage({ view }) {
       ignore = true;
     };
   }, [view]);
+  useEffect(() => {
+    if (view !== 'messages') return;
+    let ignore = false;
+    apiReadSiteSetting('newsletter-draft')
+      .then((setting) => {
+        if (ignore || !setting || typeof setting !== 'object') return;
+        const nextDraft = { ...defaultNewsletterDraft, ...setting };
+        setNewsletterDraft(nextDraft);
+        writeJson('kb-event-newsletter-draft', nextDraft);
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, [view]);
+  useEffect(() => {
+    if (view !== 'messages') return;
+    newsletterPreviewStageRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [view, newsletterDraft.backdrop, newsletterDraft.backdropImage, newsletterDraft.headerImage, newsletterDraft.theme, newsletterDraft.previewMode]);
 
   if (!canAccessAdminPath(user, location.pathname)) {
     return <Navigate to={defaultAdminPath(user)} replace />;
@@ -3822,6 +4059,7 @@ export default function AdminSectionPage({ view }) {
     const target = cleanText(payload.target);
     const ctaLabel = cleanText(payload.ctaLabel);
     const ctaUrl = cleanText(payload.ctaUrl);
+    const paymentLink = cleanText(payload.paymentLink);
     const validationError = firstError([
       validateRequired(audience, 'Audience'),
       ['event', 'class'].includes(audience) ? validateRequired(target, 'Target') : '',
@@ -3831,7 +4069,8 @@ export default function AdminSectionPage({ view }) {
       cleanText(payload.body).length < 10 ? 'Message must be at least 10 characters.' : '',
       ctaLabel && !ctaUrl ? 'Action button URL is required when a label is entered.' : '',
       ctaUrl && !ctaLabel ? 'Action button label is required when a URL is entered.' : '',
-      ctaUrl ? validateUrl(ctaUrl, 'Action button URL') : ''
+      ctaUrl ? validateUrl(ctaUrl, 'Action button URL') : '',
+      paymentLink ? validateUrl(paymentLink, 'Payment link') : ''
     ]);
 
     if (validationError) {
@@ -3855,6 +4094,7 @@ export default function AdminSectionPage({ view }) {
         agenda: cleanText(payload.agenda),
         registrationTitle: cleanText(payload.registrationTitle),
         registrationFee: cleanText(payload.registrationFee),
+        paymentLink,
         registrationNote: cleanText(payload.registrationNote),
         communityNote: cleanText(payload.communityNote),
         sponsorAcknowledgement: cleanText(payload.sponsorAcknowledgement),
@@ -3862,8 +4102,7 @@ export default function AdminSectionPage({ view }) {
         ctaLabel,
         ctaUrl
       });
-      form.reset();
-      setBulkEmail({ audience: 'all-users', target: '', sending: false, notice: `Message prepared for ${result.count} recipient(s). Sent: ${result.sent}. Queued/stored: ${result.queued}.`, error: '' });
+      setBulkEmail((current) => ({ ...current, sending: false, notice: `Message prepared for ${result.count} recipient(s). Sent: ${result.sent}. Queued/stored: ${result.queued}.`, error: '' }));
       refresh();
     } catch (error) {
       setBulkEmail((current) => ({ ...current, sending: false, notice: '', error: error.message || 'Could not send group email.' }));
@@ -5041,129 +5280,417 @@ export default function AdminSectionPage({ view }) {
 
   if (view === 'messages') {
     const targetOptions = bulkEmail.audience === 'class' ? bulkClassOptions : bulkEventOptions;
+    const activeTheme = newsletterThemes.find((item) => item.id === newsletterDraft.theme) || newsletterThemes[0];
+    const activeBackdrop = newsletterBackdrops.find((item) => item.id === newsletterDraft.backdrop) || newsletterBackdrops[0];
+    const activeBackdropImage = newsletterDraft.backdrop === 'custom' ? newsletterDraft.backdropImage : '';
+    const registrationCards = [
+      { id: 'website', title: 'Website registration', note: 'Link to your website', icon: Globe2 },
+      { id: 'google', title: 'Google Form', note: 'Use a Google Form link', icon: CheckCircle },
+      { id: 'custom', title: 'Custom link', note: 'Add any registration link', icon: Link2 }
+    ];
     return (
       <>
-        <PageHeader area="Messages" title="Group email and contact messages" />
-        <form className="admin-page-panel bulk-email-composer" onSubmit={handleBulkEmailSubmit}>
-          <div className="admin-page-panel-heading">
-            <h2>Send group email</h2>
-            <span>{bulkRecipientCount} recipient(s)</span>
-          </div>
-          <div className="bulk-email-grid">
-            <label>
-              Audience
-              <select
-                name="audience"
-                value={bulkEmail.audience}
-                onChange={(event) => setBulkEmail((current) => ({ ...current, audience: event.target.value, target: '', notice: '', error: '' }))}
-              >
-                <option value="all-users">All users</option>
-                <option value="newsletter">Newsletter subscribers</option>
-                <option value="event">Specific event registrations</option>
-                <option value="class">Specific class registrations</option>
-              </select>
-            </label>
-            {['event', 'class'].includes(bulkEmail.audience) && (
-              <label>
-                {bulkEmail.audience === 'class' ? 'Class' : 'Event'}
-                <select
-                  name="target"
-                  value={bulkEmail.target}
-                  onChange={(event) => setBulkEmail((current) => ({ ...current, target: event.target.value, notice: '', error: '' }))}
-                  required
+        <section className="newsletter-builder-shell">
+          <header className="newsletter-builder-header">
+            <div>
+              <h1>Event newsletter</h1>
+              <p>Choose a theme, add your event details and preview your invitation.</p>
+            </div>
+            <div className="newsletter-builder-actions">
+              <button className="button ghost" type="button" onClick={saveNewsletterDraft}>
+                <Save size={16} />
+                Save draft
+              </button>
+              <button className="button primary" type="button" onClick={() => updateNewsletterDraft('previewMode', 'desktop')}>
+                <Eye size={16} />
+                Preview
+              </button>
+            </div>
+          </header>
+
+          <div className="newsletter-builder-grid">
+            <form className="newsletter-editor-panel" onSubmit={handleBulkEmailSubmit}>
+              <input type="hidden" name="subject" readOnly value={newsletterDraft.subject} />
+              <input type="hidden" name="contextLabel" readOnly value={newsletterDraft.contextLabel} />
+              <input type="hidden" name="intro" readOnly value={newsletterDraft.intro} />
+              <input type="hidden" name="body" readOnly value={`${newsletterDraft.subtitle}\n\n${newsletterDraft.highlights}`} />
+              <input type="hidden" name="eventDate" readOnly value={newsletterDraft.date} />
+              <input type="hidden" name="eventTime" readOnly value={newsletterDraft.time} />
+              <input type="hidden" name="eventVenue" readOnly value={newsletterDraft.location} />
+              <input type="hidden" name="highlights" readOnly value={newsletterDraft.highlights} />
+              <input type="hidden" name="agenda" readOnly value={newsletterDraft.agenda} />
+              <input type="hidden" name="registrationTitle" readOnly value="Register today" />
+              <input type="hidden" name="backdrop" readOnly value={newsletterDraft.backdrop} />
+              <input type="hidden" name="registrationFee" readOnly value={newsletterDraft.paymentAmount} />
+              <input type="hidden" name="paymentLink" readOnly value={newsletterDraft.paymentLink} />
+              <input type="hidden" name="registrationNote" readOnly value={newsletterDraft.subtitle} />
+              <input type="hidden" name="communityNote" readOnly value={newsletterDraft.footer} />
+              <input type="hidden" name="sponsorAcknowledgement" readOnly value={newsletterDraft.includeSponsors ? newsletterDraft.sponsorAcknowledgement : ''} />
+              <input type="hidden" name="footer" readOnly value={newsletterDraft.footer} />
+              <input type="hidden" name="ctaLabel" readOnly value={newsletterDraft.buttonLabel} />
+              <input type="hidden" name="ctaUrl" readOnly value={newsletterRegistrationUrl} />
+
+              <div className="newsletter-tabs" role="tablist" aria-label="Newsletter sections">
+                {[
+                  { id: 'content', label: 'Content', icon: FileText },
+                  { id: 'theme', label: 'Theme', icon: Palette },
+                  { id: 'registration', label: 'Registration', icon: ReceiptText }
+                ].map((tab) => {
+                  const TabIcon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      className={newsletterDraft.tab === tab.id ? 'is-active' : ''}
+                      onClick={() => updateNewsletterDraft('tab', tab.id)}
+                    >
+                      <TabIcon size={16} />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {newsletterDraft.tab === 'content' && (
+                <div className="newsletter-editor-body">
+                  <div className="newsletter-form-grid">
+                    <label>
+                      Event title
+                      <input value={newsletterDraft.eventName} onChange={(event) => updateNewsletterDraft('eventName', event.target.value)} />
+                    </label>
+                    <label>
+                      Email subject
+                      <input value={newsletterDraft.subject} onChange={(event) => updateNewsletterDraft('subject', event.target.value)} />
+                    </label>
+                    <label className="newsletter-wide">
+                      Subtitle
+                      <input value={newsletterDraft.subtitle} onChange={(event) => updateNewsletterDraft('subtitle', event.target.value)} />
+                    </label>
+                    <label className="newsletter-picker-label">
+                      Date
+                      <DatePicker value={newsletterDraft.dateValue || ''} onChange={updateNewsletterDate} placeholder="Choose event date" />
+                    </label>
+                    <div className="newsletter-time-picker-row">
+                      <label>
+                        Start time
+                        <input type="time" value={newsletterDraft.startTime || ''} onChange={(event) => updateNewsletterTime('startTime', event.target.value)} />
+                      </label>
+                      <label>
+                        End time
+                        <input type="time" value={newsletterDraft.endTime || ''} onChange={(event) => updateNewsletterTime('endTime', event.target.value)} />
+                      </label>
+                    </div>
+                    <label className="newsletter-wide">
+                      Location
+                      <input value={newsletterDraft.location} onChange={(event) => updateNewsletterDraft('location', event.target.value)} />
+                    </label>
+                    <label className="newsletter-wide">
+                      Highlights
+                      <textarea value={newsletterDraft.highlights} onChange={(event) => updateNewsletterDraft('highlights', event.target.value)} />
+                    </label>
+                    <label className="newsletter-wide">
+                      Agenda
+                      <textarea value={newsletterDraft.agenda} onChange={(event) => updateNewsletterDraft('agenda', event.target.value)} />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {newsletterDraft.tab === 'theme' && (
+                <div className="newsletter-editor-body">
+                  <div className="newsletter-field-group">
+                    <h3>Choose a theme</h3>
+                    <p>Select a design style for your newsletter.</p>
+                    <div className="newsletter-theme-grid">
+                      {newsletterThemes.map((theme) => (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          className={`newsletter-theme-card ${newsletterDraft.theme === theme.id ? 'is-active' : ''}`}
+                          onClick={() => updateNewsletterDraft('theme', theme.id)}
+                        >
+                          <span className={`newsletter-theme-art is-${theme.id}`} />
+                          <span><CheckCircle size={15} /> {theme.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="newsletter-field-group">
+                    <h3>Backdrop</h3>
+                    <p>Pick a Karnataka famous-place backdrop for the invitation.</p>
+                    <div className="newsletter-backdrop-grid">
+                      {newsletterBackdrops.map((backdrop) => {
+                        const backdropImage = backdrop.id === 'custom' ? newsletterDraft.backdropImage : '';
+                        return (
+                          <button
+                            key={backdrop.id}
+                            type="button"
+                            className={`newsletter-backdrop-card ${newsletterDraft.backdrop === backdrop.id ? 'is-active' : ''}`}
+                            onClick={() => updateNewsletterDraft('backdrop', backdrop.id)}
+                          >
+                            <span
+                              className={`newsletter-backdrop-art is-${backdrop.id} ${backdropImage ? 'has-image' : ''}`}
+                              style={backdropImage ? { backgroundImage: `url("${backdropImage}")` } : undefined}
+                            />
+                            <strong>{backdrop.label}</strong>
+                            <small>{backdrop.note}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="newsletter-field-group">
+                    <h3>Accent color</h3>
+                    <p>Choose a color to match your event.</p>
+                    <div className="newsletter-color-row">
+                      {newsletterAccents.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          className={newsletterDraft.accent === color ? 'is-active' : ''}
+                          style={{ '--swatch': color }}
+                          aria-label={`Use accent ${color}`}
+                          onClick={() => updateNewsletterDraft('accent', color)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="newsletter-field-group">
+                    <h3>Header image</h3>
+                    <p>Add a banner or logo for the top of your newsletter.</p>
+                    {newsletterDraft.headerImage ? (
+                      <div className="newsletter-selected-image">
+                        <img src={newsletterDraft.headerImage} alt="Selected newsletter header" onLoad={updateNewsletterHeaderImageShape} />
+                        <div>
+                          <strong>Selected header image</strong>
+                          <span>{newsletterDraft.headerImageShape ? `${newsletterDraft.headerImageShape} image` : 'Ready for preview'}</span>
+                        </div>
+                        <button type="button" onClick={removeNewsletterHeaderImage}>
+                          <Trash2 size={16} /> Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="newsletter-upload">
+                        <CloudUpload size={24} />
+                        <strong>Upload image</strong>
+                        <span>PNG, JPG up to 2 MB</span>
+                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleNewsletterImageUpload} />
+                      </label>
+                    )}
+                  </div>
+                  <div className="newsletter-field-group">
+                    <h3>Custom backdrop image</h3>
+                    <p>Upload an image and select Custom image above.</p>
+                    {newsletterDraft.backdropImage ? (
+                      <div className="newsletter-selected-image">
+                        <img src={newsletterDraft.backdropImage} alt="Selected custom backdrop" />
+                        <div>
+                          <strong>Selected custom backdrop</strong>
+                          <span>{newsletterDraft.backdrop === 'custom' ? 'Active in preview' : 'Select Custom image above to use it'}</span>
+                        </div>
+                        <button type="button" onClick={removeNewsletterBackdropImage}>
+                          <Trash2 size={16} /> Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="newsletter-upload">
+                        <CloudUpload size={24} />
+                        <strong>Upload backdrop</strong>
+                        <span>PNG, JPG up to 2 MB</span>
+                        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleNewsletterBackdropUpload} />
+                      </label>
+                    )}
+                  </div>
+
+                  <label className="newsletter-toggle-row">
+                    <span>
+                      <strong>Include sponsors section</strong>
+                      <small>Show sponsor logos in your newsletter.</small>
+                    </span>
+                    <input type="checkbox" checked={newsletterDraft.includeSponsors} onChange={(event) => updateNewsletterDraft('includeSponsors', event.target.checked)} />
+                  </label>
+                </div>
+              )}
+
+              {newsletterDraft.tab === 'registration' && (
+                <div className="newsletter-editor-body">
+                  <div className="newsletter-form-grid">
+                    <label>
+                      Audience
+                      <select name="audience" value={bulkEmail.audience} onChange={(event) => syncNewsletterAudience(event.target.value)}>
+                        <option value="all-users">All users</option>
+                        <option value="newsletter">Newsletter subscribers</option>
+                        <option value="event">Specific event registrations</option>
+                        <option value="class">Specific class registrations</option>
+                      </select>
+                    </label>
+                    {['event', 'class'].includes(bulkEmail.audience) ? (
+                      <label>
+                        {bulkEmail.audience === 'class' ? 'Class' : 'Event'}
+                        <select name="target" value={bulkEmail.target} onChange={(event) => syncNewsletterTarget(event.target.value)} required>
+                          <option value="" disabled>Choose {bulkEmail.audience === 'class' ? 'class' : 'event'}</option>
+                          {targetOptions.map((option) => <option key={option}>{option}</option>)}
+                        </select>
+                      </label>
+                    ) : <input type="hidden" name="target" readOnly value="" />}
+                  </div>
+
+                  <div className="newsletter-field-group">
+                    <h3>Registration button</h3>
+                    <p>Choose where attendees will register for your event.</p>
+                    <div className="newsletter-registration-grid">
+                      {registrationCards.map((item) => {
+                        const CardIcon = item.icon;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={newsletterDraft.registrationType === item.id ? 'is-active' : ''}
+                            onClick={() => updateNewsletterDraft('registrationType', item.id)}
+                          >
+                            <CardIcon size={18} />
+                            <strong>{item.title}</strong>
+                            <span>{item.note}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="newsletter-form-grid">
+                    <label>
+                      Amount
+                      <input value={newsletterDraft.paymentAmount} onChange={(event) => updateNewsletterDraft('paymentAmount', event.target.value)} placeholder="$35.00 or Free" />
+                    </label>
+                    <label>
+                      Button label
+                      <input value={newsletterDraft.buttonLabel} onChange={(event) => updateNewsletterDraft('buttonLabel', event.target.value)} />
+                    </label>
+                    <label className="newsletter-wide newsletter-link-field">
+                      Payment link
+                      <span>
+                        <input value={newsletterDraft.paymentLink} onChange={(event) => updateNewsletterDraft('paymentLink', event.target.value)} placeholder="https://paypal.me/... or payment checkout link" />
+                        {newsletterDraft.paymentLink && <a href={newsletterDraft.paymentLink} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open payment</a>}
+                      </span>
+                    </label>
+                    {newsletterDraft.registrationType === 'google' && (
+                      <label className="newsletter-wide newsletter-link-field">
+                        Google Form URL
+                        <span>
+                          <input value={newsletterDraft.googleFormUrl} onChange={(event) => updateNewsletterDraft('googleFormUrl', event.target.value)} placeholder="https://forms.gle/your-form-link" />
+                          {newsletterDraft.googleFormUrl && <a href={newsletterDraft.googleFormUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open form</a>}
+                        </span>
+                      </label>
+                    )}
+                    {newsletterDraft.registrationType === 'custom' && (
+                      <label className="newsletter-wide">
+                        Custom URL
+                        <input value={newsletterDraft.customLink} onChange={(event) => updateNewsletterDraft('customLink', event.target.value)} placeholder="https://example.com/register" />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="newsletter-send-row">
+                <span>{bulkRecipientCount} recipient(s). SMTP sends immediately; otherwise it stores in Email Outbox.</span>
+                <button className="button primary" type="submit" disabled={bulkEmail.sending || bulkRecipientCount === 0}>
+                  <Send size={16} />
+                  {bulkEmail.sending ? 'Sending...' : 'Send newsletter'}
+                </button>
+              </div>
+              {bulkEmail.notice && <p className="success newsletter-status">{bulkEmail.notice}</p>}
+              {bulkEmail.error && <p className="form-error newsletter-status">{bulkEmail.error}</p>}
+            </form>
+
+            <aside className="newsletter-preview-panel">
+              <div className="newsletter-preview-heading">
+                <div>
+                  <h2>Live preview</h2>
+                  <p>This is how your newsletter will look to your guests.</p>
+                </div>
+                <div className="newsletter-preview-toggle">
+                  <button type="button" className={newsletterDraft.previewMode === 'desktop' ? 'is-active' : ''} onClick={() => updateNewsletterDraft('previewMode', 'desktop')}><Monitor size={15} /> Desktop</button>
+                  <button type="button" className={newsletterDraft.previewMode === 'mobile' ? 'is-active' : ''} onClick={() => updateNewsletterDraft('previewMode', 'mobile')}><Smartphone size={15} /> Mobile</button>
+                </div>
+              </div>
+              <div className="newsletter-preview-stage" ref={newsletterPreviewStageRef}>
+                <article
+                  className={`newsletter-canvas is-${activeTheme.id} backdrop-${newsletterDraft.backdrop || 'mysore'} ${activeBackdropImage ? 'has-backdrop-image' : ''} ${newsletterDraft.headerImage ? 'has-header-image' : ''} ${newsletterDraft.previewMode === 'mobile' ? 'is-mobile' : ''}`}
+                  style={{ '--newsletter-accent': newsletterDraft.accent, '--newsletter-backdrop-image': activeBackdropImage ? `url("${activeBackdropImage}")` : undefined }}
                 >
-                  <option value="" disabled>Choose {bulkEmail.audience === 'class' ? 'class' : 'event'}</option>
-                  {targetOptions.map((option) => <option key={option}>{option}</option>)}
-                </select>
-              </label>
-            )}
-            {!['event', 'class'].includes(bulkEmail.audience) && <input type="hidden" name="target" value="" />}
-            <label className="bulk-email-wide">
-              Subject
-              <input name="subject" minLength="4" maxLength="140" required placeholder="Kannada Bharati update" />
-            </label>
-            <label className="bulk-email-wide">
-              Header subtitle
-              <input name="contextLabel" maxLength="180" placeholder="Kannada's Pride - Festival of Lights - Togetherness" />
-            </label>
-            <label className="bulk-email-wide">
-              Greeting / intro
-              <input name="intro" maxLength="160" placeholder="Hello Kannada Bharati family," />
-            </label>
-            <label className="bulk-email-wide">
-              Message
-              <textarea name="body" minLength="10" maxLength="4000" required placeholder="Type the message that should be sent to the selected group." />
-            </label>
-            <div className="bulk-email-section-title bulk-email-wide">
-              <strong>Event information</strong>
-              <span>Displayed together in a highlighted event-details panel.</span>
-            </div>
-            <label>
-              Event date
-              <input name="eventDate" maxLength="120" placeholder="Sunday, November 1, 2026" />
-            </label>
-            <label>
-              Event time
-              <input name="eventTime" maxLength="120" placeholder="2:00 PM - 7:00 PM" />
-            </label>
-            <label className="bulk-email-wide">
-              Venue
-              <input name="eventVenue" maxLength="240" placeholder="Venue name and full address" />
-            </label>
-            <label className="bulk-email-wide">
-              What awaits you
-              <textarea className="bulk-email-compact-textarea" name="highlights" maxLength="2500" placeholder={'Add one highlight per line\nLive dance and music\nFood and refreshments\nActivities for children'} />
-            </label>
-            <label className="bulk-email-wide">
-              Event agenda
-              <textarea className="bulk-email-compact-textarea" name="agenda" maxLength="2500" placeholder={'Add one agenda item per line using Time | Activity\n2:00 PM | Deepavali Art Workshop\n3:00 PM | Indoor games\n6:00 PM | Dinner'} />
-            </label>
-            <div className="bulk-email-section-title bulk-email-wide">
-              <strong>Registration</strong>
-              <span>Optional fee, note, and call-to-action shown in a registration panel.</span>
-            </div>
-            <label>
-              Registration heading
-              <input name="registrationTitle" maxLength="120" placeholder="Register today" />
-            </label>
-            <label>
-              Registration fee
-              <input name="registrationFee" maxLength="120" placeholder="Entry is free for everyone" />
-            </label>
-            <label className="bulk-email-wide">
-              Registration note
-              <input name="registrationNote" maxLength="240" placeholder="Registration closes October 25" />
-            </label>
-            <label className="bulk-email-wide">
-              Footer note
-              <input name="footer" maxLength="220" placeholder="Optional closing note" />
-            </label>
-            <label>
-              Action button label
-              <input name="ctaLabel" maxLength="60" placeholder="View details and register" />
-            </label>
-            <label>
-              Action button URL
-              <input name="ctaUrl" maxLength="500" placeholder="/classes or https://..." />
-            </label>
-            <label className="bulk-email-wide">
-              Community note
-              <input name="communityNote" maxLength="300" placeholder="Come, celebrate, connect and create memories with our community." />
-            </label>
-            <label className="bulk-email-wide">
-              Sponsor acknowledgement
-              <textarea className="bulk-email-compact-textarea" name="sponsorAcknowledgement" maxLength="1200" placeholder="Thank you to our annual sponsors for supporting Kannada Bharati programs." />
-            </label>
+                  <div className="newsletter-canvas-hero">
+                    <div className={newsletterDraft.headerImage ? ['newsletter-hero-emblem', 'has-upload', `is-${newsletterDraft.headerImageShape || 'balanced'}`].join(' ') : 'newsletter-hero-emblem'}>
+                      {newsletterDraft.headerImage ? <img src={newsletterDraft.headerImage} alt="Newsletter header" onLoad={updateNewsletterHeaderImageShape} /> : <Building2 size={76} />}
+                    </div>
+                    <div className="newsletter-hero-title-card">
+                      <h3>{newsletterDraft.eventName || 'Event title'}</h3>
+                      <p>{newsletterDraft.subtitle || 'Add a short event description'}</p>
+                    </div>
+                  </div>
+                  <div className="newsletter-meta-row">
+                    <span><CalendarDays size={17} /> {newsletterDraft.date}</span>
+                    <span><MapPin size={17} /> {newsletterDraft.location}</span>
+                    <span><Clock3 size={17} /> {newsletterDraft.time}</span>
+                  </div>
+                  <section className="newsletter-preview-box">
+                    <h4>What awaits you</h4>
+                    <div className="newsletter-preview-features">
+                      {(newsletterHighlights.length ? newsletterHighlights : ['Community gathering', 'Cultural program', 'Family activities']).map((item, index) => {
+                        const FeatureIcon = newsletterFeatureIcons[index % newsletterFeatureIcons.length];
+                        return (
+                          <span key={item}>
+                            <i><FeatureIcon size={20} /></i>
+                            <strong>{item}</strong>
+                            <small>{newsletterFeatureNotes[index % newsletterFeatureNotes.length]}</small>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </section>
+                  <section className="newsletter-preview-box">
+                    <h4>Event agenda</h4>
+                    <div className="newsletter-agenda-list">
+                      {(newsletterAgendaRows.length ? newsletterAgendaRows : [{ time: '2:00 PM', detail: 'Program begins' }]).map((item) => (
+                        <p key={`${item.time}-${item.detail}`}><strong>{item.time}</strong><span>{item.detail}</span></p>
+                      ))}
+                    </div>
+                  </section>
+                  {(newsletterDraft.paymentAmount || newsletterDraft.paymentLink) && (
+                    <section className="newsletter-preview-box newsletter-payment-box">
+                      <h4>Payment details</h4>
+                      <p><CreditCard size={17} /> <strong>{newsletterDraft.paymentAmount || 'Amount not set'}</strong></p>
+                      {newsletterDraft.paymentLink && <a href={newsletterDraft.paymentLink} target="_blank" rel="noreferrer">Open payment link <ExternalLink size={14} /></a>}
+                    </section>
+                  )}
+                  <a className="newsletter-preview-cta" href={newsletterRegistrationUrl || '#'} target={newsletterRegistrationUrl?.startsWith('http') ? '_blank' : undefined} rel="noreferrer">
+                    {newsletterDraft.buttonLabel || 'Register'} <ChevronRight size={16} />
+                  </a>
+                  {newsletterDraft.includeSponsors && (
+                    <section className="newsletter-sponsors">
+                      <h4>{newsletterDraft.sponsorAcknowledgement || 'Our Annual Sponsors'}</h4>
+                      <div><span>Sponsor logo</span><span>Sponsor logo</span><span>Sponsor logo</span></div>
+                    </section>
+                  )}
+                                    <footer className="newsletter-brand-footer">
+                    <img src="/assets/kannada-bharati-logo.png" alt="Kannada Bharathi logo" />
+                    <strong>Kannada Bharathi</strong>
+                    <small>{newsletterDraft.footer}</small>
+                    <span className="newsletter-kannada-motto">
+                      <b>ಸಿರಿಗನ್ನಡಂ ಗೆಲ್ಗೆ</b>
+                      <i />
+                      <b>ಸಿರಿಗನ್ನಡಂ ಬಾಳ್ಗೆ</b>
+                    </span>
+                  </footer>
+                </article>
+              </div>
+            </aside>
           </div>
-          <div className="bulk-email-actions">
-            <span>Emails are sent through SMTP when configured; otherwise they are stored in the Email Outbox.</span>
-            <button className="button primary" type="submit" disabled={bulkEmail.sending || bulkRecipientCount === 0}>
-              {bulkEmail.sending ? 'Sending...' : 'Send group email'}
-            </button>
-          </div>
-          {bulkEmail.notice && <p className="success">{bulkEmail.notice}</p>}
-          {bulkEmail.error && <p className="form-error">{bulkEmail.error}</p>}
-        </form>
+        </section>
+
         <AdminTable
           title="Newsletter subscribers"
           rows={newsletterSubscribers}
@@ -6848,4 +7375,24 @@ function CreateModal({ type, onClose, onCreated }) {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -1968,6 +1968,8 @@ function renderBulkMessageSections(message = {}) {
   const registrationTitle = String(message.registrationTitle || '').trim();
   const registrationFee = String(message.registrationFee || '').trim();
   const registrationNote = String(message.registrationNote || '').trim();
+  const paymentLink = String(message.paymentLink || '').trim();
+  const safePaymentLink = safeEmailLink(paymentLink);
   const communityNote = String(message.communityNote || '').trim();
   const sponsorAcknowledgement = String(message.sponsorAcknowledgement || '').trim();
 
@@ -1994,12 +1996,13 @@ function renderBulkMessageSections(message = {}) {
     </table>`);
   }
 
-  if (registrationTitle || registrationFee || registrationNote) {
-    text.push('', registrationTitle || 'Registration', registrationFee, registrationNote);
+  if (registrationTitle || registrationFee || registrationNote || safePaymentLink) {
+    text.push('', registrationTitle || 'Registration', registrationFee, registrationNote, safePaymentLink ? `Payment link: ${safePaymentLink}` : '');
     sections.push(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 20px;background:#eef4ff;border:1px solid #9bb9e8;"><tr><td align="center" style="padding:17px 18px;color:#203858;">
       <div style="font-size:15px;font-weight:700;">${escapeHtml(registrationTitle || 'Registration')}</div>
       ${registrationFee ? `<div style="margin-top:7px;font-size:13px;font-weight:700;">${escapeHtml(registrationFee)}</div>` : ''}
       ${registrationNote ? `<div style="margin-top:5px;font-size:12px;line-height:1.5;">${escapeHtml(registrationNote)}</div>` : ''}
+      ${safePaymentLink ? `<div style="margin-top:10px;"><a href="${escapeHtml(safePaymentLink)}" style="color:#087345;font-size:13px;font-weight:700;text-decoration:none;">Payment link</a></div>` : ''}
     </td></tr></table>`);
   }
 
@@ -3220,7 +3223,7 @@ app.put('/api/about-content', authenticate, requireAdmin, asyncHandler(async (re
 }));
 
 app.get('/api/settings/:key', asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides', 'page-hero-settings', 'event-memories']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides', 'page-hero-settings', 'event-memories', 'newsletter-draft']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
   if (req.params.key === 'about-content') {
     return res.json(await getAboutContent());
@@ -3240,13 +3243,16 @@ app.get('/api/settings/:key', asyncHandler(async (req, res) => {
   if (req.params.key === 'event-memories') {
     return res.json(await getSiteSetting(req.params.key, []));
   }
+  if (req.params.key === 'newsletter-draft') {
+    return res.json(await getSiteSetting(req.params.key, {}));
+  }
   const value = await getSiteSetting(req.params.key, req.params.key === 'volunteer-google-form' ? { enabled: false, url: defaultVolunteerGoogleFormUrl } : null);
   if (req.params.key === 'volunteer-google-form' && !value.url) value.url = defaultVolunteerGoogleFormUrl;
   res.json(value);
 }));
 
 app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides', 'page-hero-settings', 'event-memories']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides', 'page-hero-settings', 'event-memories', 'newsletter-draft']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
   if (req.params.key === 'about-content') {
     return res.json(await saveAboutContent(req.body));
@@ -3335,6 +3341,11 @@ app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (re
     if (value.some((item) => !item.title || !item.alt)) {
       return res.status(400).json({ error: 'Every event memory needs a title and accessible image text.' });
     }
+    return res.json(await saveSiteSetting(req.params.key, value));
+  }
+  if (req.params.key === 'newsletter-draft') {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const value = Object.fromEntries(Object.entries(body).map(([key, value]) => [String(key).slice(0, 80), typeof value === 'boolean' ? value : String(value || '').slice(0, ['headerImage', 'backdropImage'].includes(key) ? 1500000 : 4000)]));
     return res.json(await saveSiteSetting(req.params.key, value));
   }
   const value = {
@@ -4160,6 +4171,7 @@ app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, as
   const agenda = String(req.body.agenda || '').trim().slice(0, 2500);
   const registrationTitle = String(req.body.registrationTitle || '').trim().slice(0, 120);
   const registrationFee = String(req.body.registrationFee || '').trim().slice(0, 120);
+  const paymentLink = String(req.body.paymentLink || '').trim();
   const registrationNote = String(req.body.registrationNote || '').trim().slice(0, 240);
   const communityNote = String(req.body.communityNote || '').trim().slice(0, 300);
   const sponsorAcknowledgement = String(req.body.sponsorAcknowledgement || '').trim().slice(0, 1200);
@@ -4170,6 +4182,7 @@ app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, as
   if (!body || body.length < 10) return res.status(400).json({ error: 'Message body is required.' });
   if ((ctaLabel && !ctaUrl) || (!ctaLabel && ctaUrl)) return res.status(400).json({ error: 'Action button label and URL must be provided together.' });
   if (ctaUrl && !safeEmailLink(ctaUrl)) return res.status(400).json({ error: 'Action button URL must be a valid website or internal path.' });
+  if (paymentLink && !safeEmailLink(paymentLink)) return res.status(400).json({ error: 'Payment link must be a valid website or internal path.' });
 
   const recipients = await resolveBulkEmailRecipients({ audience, target });
   if (!recipients.length) return res.status(400).json({ error: 'No recipients found for the selected audience.' });
@@ -4193,6 +4206,7 @@ app.post('/api/email-outbox/bulk', authenticate, requireAdmin, authRateLimit, as
           agenda,
           registrationTitle,
           registrationFee,
+          paymentLink,
           registrationNote,
           communityNote,
           sponsorAcknowledgement,
@@ -4496,3 +4510,8 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+
+
+
+
+

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 220" role="img" aria-label="Coorg hills landscape">
+  <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#064b46"/><stop offset="1" stop-color="#1f6f4d"/></linearGradient></defs>
+  <rect width="640" height="220" fill="url(#sky)"/>
+  <circle cx="540" cy="48" r="28" fill="#ffd879" opacity=".86"/>
+  <path d="M0 153c75-44 140-62 228-48 83 13 138 6 219-18 81-24 141-21 193 1v132H0z" fill="#2f8558"/>
+  <path d="M0 184c105-44 184-48 278-26 95 23 159 11 244-24 43-18 82-24 118-19v105H0z" fill="#176444" opacity=".92"/>
+  <path d="M0 204c88-24 166-25 254-9 114 21 217-2 386-37v62H0z" fill="#073f3c" opacity=".76"/>
+  <path d="M62 88c86-18 170-25 252-21 71 4 131 1 207-13" stroke="#6fc084" stroke-width="12" opacity=".22" fill="none"/>
+</svg>
