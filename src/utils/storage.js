@@ -121,7 +121,7 @@ export function hasAnyRole(user, roles = []) {
 export const builtInAssignableRoles = ['member', 'admin', 'superadmin', 'welcomeDesk', 'teacher', 'volunteer', 'treasurer'];
 
 export const adminPageCatalog = [
-  { path: '/admin', label: 'Dashboard', fields: ['summary', 'registrations', 'events', 'announcements'] },
+  { path: '/admin', label: 'Dashboard', fields: ['summary', 'communityManagement', 'myActivity', 'notifications'] },
   { path: '/admin/profile', label: 'Profile', fields: ['name', 'email', 'phone', 'children', 'externalLogins'] },
   { path: '/admin/checkin', label: 'Welcome Desk check-in', fields: ['program', 'studentName', 'email', 'phone', 'status', 'action'] },
   { path: '/admin/guest-checkin', label: 'Guest check-in', fields: ['name', 'email', 'phone', 'event', 'seat'] },

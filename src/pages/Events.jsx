@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Images, ReceiptText, UsersRound, X } from 'lucide-react';
+import { CheckCircle2, Images, Loader2, ReceiptText, UsersRound, X } from 'lucide-react';
 import EventHeroCarousel from '../components/EventHeroCarousel.jsx';
 import ModalTitle from '../components/ModalTitle.jsx';
 import { events } from '../data/siteData.js';
@@ -22,7 +22,12 @@ function getEventImage(event) {
 }
 
 function eventAmount(event) {
+  if (event.isPaymentRequired === false) return 0;
   return Number(String(event.fee || event.price || event.donationAmount || event.amount || 0).replace(/[^\d.]/g, '')) || 0;
+}
+
+function eventRegistrationOpen(event) {
+  return event.enabled !== false && event.isOpenForRegistration !== false;
 }
 
 function eventPriceOptions(event) {
@@ -91,7 +96,7 @@ export default function Events() {
     return () => { ignore = true; };
   }, []);
 
-  const allEvents = dbEvents.length ? dbEvents : events;
+  const allEvents = (dbEvents.length ? dbEvents : events).filter((event) => event.enabled !== false);
   const [featuredEvent, ...upcomingEvents] = allEvents;
   const uploadedPastPhotos = allEvents.filter((event) => event.photo).map((event) => ({
     title: event.title,
@@ -296,7 +301,9 @@ export default function Events() {
               <h2>{featuredEvent.title}</h2>
               <p>{featuredEvent.body}</p>
               {featuredEvent.location && <p className="event-location">{featuredEvent.location}</p>}
-              <button className="button primary" type="button" onClick={() => openRegistration(featuredEvent)}>{tr('Register')}</button>
+              <button className="button primary" type="button" disabled={!eventRegistrationOpen(featuredEvent)} onClick={() => openRegistration(featuredEvent)}>
+                {eventRegistrationOpen(featuredEvent) ? tr('Register') : tr('Registration closed')}
+              </button>
             </div>
           </article>
         )}
@@ -310,7 +317,9 @@ export default function Events() {
                 <h3>{event.title}</h3>
                 <p>{event.body}</p>
                 {event.location && <p className="event-location">{event.location}</p>}
-                <button className="button compact" type="button" onClick={() => openRegistration(event)}>{tr('Register')}</button>
+                <button className="button compact" type="button" disabled={!eventRegistrationOpen(event)} onClick={() => openRegistration(event)}>
+                  {eventRegistrationOpen(event) ? tr('Register') : tr('Registration closed')}
+                </button>
               </div>
             </article>
           ))}
@@ -436,7 +445,10 @@ export default function Events() {
             {eventSaved && <p className="success">Registration submitted. {Number(eventDraft?.amount || 0) > 0 ? 'Opening payment...' : 'No payment is required.'}</p>}
             <div className="event-registration-actions">
               {registrationStep > 1 && <button className="button secondary-dark" type="button" onClick={() => setRegistrationStep((step) => step - 1)}>{tr('Back')}</button>}
-              <button className="button primary" type="submit" disabled={eventSubmitting}>{eventSubmitting ? tr('Saving...') : tr(registrationStep < 3 ? 'Continue' : Number(eventDraft?.amount || eventAmount(registeringEvent)) > 0 ? 'Save & Pay' : 'Submit Registration')}</button>
+              <button className="button primary submit-with-loader" type="submit" disabled={eventSubmitting}>
+                {eventSubmitting && <Loader2 className="spin-icon" size={17} aria-hidden="true" />}
+                {eventSubmitting ? tr('Saving...') : tr(registrationStep < 3 ? 'Continue' : Number(eventDraft?.amount || eventAmount(registeringEvent)) > 0 ? 'Save & Pay' : 'Submit Registration')}
+              </button>
             </div>
           </form>
         </div>

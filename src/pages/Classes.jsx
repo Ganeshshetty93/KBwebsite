@@ -36,7 +36,15 @@ export default function Classes() {
     };
   }, []);
 
-  const allClasses = useMemo(() => (dbClasses.length ? dbClasses : fallbackClasses), [dbClasses]);
+  const allClasses = useMemo(() => {
+    const records = dbClasses.length ? dbClasses : fallbackClasses;
+    return records.filter((item) => {
+      const status = String(item.status || '').trim().toLowerCase();
+      return item.enabled !== false
+        && item.isOpenForRegistration !== false
+        && !['draft', 'disabled', 'deleted', 'closed', 'archived'].includes(status);
+    });
+  }, [dbClasses]);
 
   const visible = filter === 'All' ? allClasses : allClasses.filter((item) => item.category === filter);
 

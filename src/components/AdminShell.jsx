@@ -4,6 +4,7 @@ import {
   Banknote,
   BookOpen,
   ChevronDown,
+  CircleHelp,
   ClipboardCheck,
   Gauge,
   GraduationCap,
@@ -108,7 +109,7 @@ const groups = [
       { label: 'Volunteer Interest', to: '/admin/volunteer-interest', icon: HandCoins },
       { label: 'Student View', to: '/admin/student-view', icon: BookOpen },
       { label: 'Email Outbox', to: '/admin/email-outbox', icon: Mail },
-      { label: 'Developer Tools', to: '/admin/developer', icon: Wrench }
+      // { label: 'Developer Tools', to: '/admin/developer', icon: Wrench }
     ]
   }
 ];
@@ -139,6 +140,16 @@ export default function AdminShell() {
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set(groups.map((group) => group.title)));
   const [sideCollapsed, setSideCollapsed] = useState(() => localStorage.getItem('kb-admin-side-collapsed') === 'true');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const profileName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim();
+  const displayName = profileName || user?.name || user?.fullName || user?.email?.split('@')[0] || 'Member';
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'KB';
+  const roleLabel = isAdmin(user) ? 'Administrator' : (user?.role || user?.roles?.[0] || 'Member');
 
   useEffect(() => {
     setCollapsedGroups(new Set(visibleGroups.filter((group) => group.title !== activeGroupTitle).map((group) => group.title)));
@@ -192,8 +203,13 @@ export default function AdminShell() {
           </button>
         </div>
         <div className="admin-side-menu-content" id="admin-navigation-panel">
-          <div className="admin-kannada-motto" title="ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ">
-            <span>ಕನ್ನಡವೇ ಸತ್ಯ, ಕನ್ನಡವೇ ನಿತ್ಯ</span>
+          <div className="admin-kannada-motto">
+            <div className="admin-sidebar-brand">
+              <img src="/assets/kannada-bharati-logo.png" alt="" aria-hidden="true" />
+              <strong>Kannada Bharathi</strong>
+              <span>ಕನ್ನಡ ಭಾರತಿ</span>
+              <i aria-hidden="true" />
+            </div>
             <button
               className="admin-side-collapse"
               type="button"
@@ -204,29 +220,31 @@ export default function AdminShell() {
               {sideCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
           </div>
-          <NavLink className="admin-side-root" to="/admin" end title={sideCollapsed ? tr('Dashboard') : undefined}>
+          <NavLink className="admin-side-root" to="/admin" end data-label={tr('Dashboard')} title={sideCollapsed ? tr('Dashboard') : undefined}>
             <Gauge size={18} /> <span className="admin-nav-label">{tr('Dashboard')}</span>
           </NavLink>
           {visibleGroups.map((group) => {
             const Icon = group.icon;
             const open = isGroupOpen(group);
+            const groupLabel = group.title === 'Admin' ? 'Administration' : group.title;
             return (
-              <section key={group.title} className={open ? 'admin-nav-group is-open' : 'admin-nav-group'} data-label={tr(group.title)}>
+              <section key={group.title} className={open ? 'admin-nav-group is-open' : 'admin-nav-group'} data-label={tr(groupLabel)}>
                 <button
                   className="admin-nav-group-toggle"
                   type="button"
                   aria-expanded={open}
                   aria-controls={`admin-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`}
                   onClick={() => toggleGroup(group.title)}
-                  title={sideCollapsed ? tr(group.title) : undefined}
+                  title={sideCollapsed ? tr(groupLabel) : undefined}
                 >
                   <Icon className="admin-nav-main-icon" size={17} />
-                  <span className="admin-nav-label">{tr(group.title)}</span>
+                  <span className="admin-nav-label">{tr(groupLabel)}</span>
                   <ChevronDown size={16} />
                 </button>
                 <nav
                   id={`admin-nav-${group.title.toLowerCase().replace(/\s+/g, '-')}`}
                   className={open ? 'admin-nav-links is-open' : 'admin-nav-links is-collapsed'}
+                  data-group-label={tr(groupLabel)}
                 >
                   {group.links.map((link) => {
                     const LinkIcon = link.icon || group.icon;
@@ -247,6 +265,19 @@ export default function AdminShell() {
               </section>
             );
           })}
+          <div className="admin-sidebar-utility">
+            <NavLink className="admin-sidebar-help" to="/contact" data-label={tr('Help')} title={sideCollapsed ? tr('Help') : undefined}>
+              <CircleHelp size={17} />
+              <span className="admin-nav-label">{tr('Help')}</span>
+            </NavLink>
+          </div>
+          <div className="admin-sidebar-profile" title={sideCollapsed ? `${displayName} - ${tr(roleLabel)}` : undefined}>
+            <span className="admin-sidebar-avatar" aria-hidden="true">{initials}</span>
+            <span className="admin-sidebar-profile-copy">
+              <strong>{displayName}</strong>
+              <small>{tr(roleLabel)}</small>
+            </span>
+          </div>
         </div>
       </aside>
       {mobileMenuOpen && (

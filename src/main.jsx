@@ -16,6 +16,7 @@ const Volunteer = lazy(() => import('./pages/Volunteer.jsx'));
 const Login = lazy(() => import('./pages/Login.jsx'));
 const Register = lazy(() => import('./pages/Register.jsx'));
 const Profile = lazy(() => import('./pages/Profile.jsx'));
+const PaymentReturn = lazy(() => import('./pages/PaymentReturn.jsx'));
 const Contact = lazy(() => import('./pages/Contact.jsx'));
 const Calendar = lazy(() => import('./pages/Calendar.jsx'));
 const Privacy = lazy(() => import('./pages/Privacy.jsx'));
@@ -43,6 +44,7 @@ createRoot(document.getElementById('root')).render(
               <Route path="login" element={<Login />} />
               <Route path="register" element={<Register />} />
               <Route path="profile" element={<Navigate to="/admin/profile" replace />} />
+              <Route path="payment-return" element={<PaymentReturn />} />
               <Route path="contact" element={<Contact />} />
               <Route path="calendar" element={<Calendar />} />
               <Route path="kannada-literature" element={<KannadaLiterature />} />

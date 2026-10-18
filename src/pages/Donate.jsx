@@ -440,15 +440,17 @@ export default function Donate() {
               Powered by <strong>PayPal</strong>
             </small>
           </div>
-          <a
-            className="paypal-hosted-link"
-            href={hostedPayment?.donateUrl || fallbackDonateLink}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <span>{language === 'kn' ? 'Hosted PayPal ದೇಣಿಗೆ' : hostedPayment?.environment === 'sandbox' ? 'Use live hosted PayPal donation' : 'Hosted PayPal donation'}</span>
-            <small>{language === 'kn' ? 'ಹಳೆಯ Kannada Bharati PayPal ಬಟನ್' : `Legacy button ${hostedPayment?.legacyHostedButtonId || 'EY5YVURQPDWEE'}`}</small>
-          </a>
+          {hostedPayment && hostedPayment.environment !== 'sandbox' && (
+            <a
+              className="paypal-hosted-link"
+              href={hostedPayment.donateUrl || fallbackDonateLink}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <span>{language === 'kn' ? 'Hosted PayPal ದೇಣಿಗೆ' : 'Hosted PayPal donation'}</span>
+              <small>{language === 'kn' ? 'ಹಳೆಯ Kannada Bharati PayPal ಬಟನ್' : `Legacy button ${hostedPayment.legacyHostedButtonId || 'EY5YVURQPDWEE'}`}</small>
+            </a>
+          )}
           {error && <p className="form-error">{error}</p>}
           {message && <p className="success">{message}</p>}
         </form>

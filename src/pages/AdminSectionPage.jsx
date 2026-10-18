@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
-import { BookOpen, Building2, CalendarDays, CheckCircle, ChevronRight, Clock3, CloudUpload, Copy, CreditCard, Download, Drama, Edit3, ExternalLink, Eye, FileSpreadsheet, FileText, Gamepad2, Globe2, GraduationCap, HandCoins, ImagePlus, Lamp, Link2, ListChecks, Mail, MapPin, Megaphone, Monitor, MoreHorizontal, Palette, Phone, Plus, Printer, ReceiptText, RefreshCw, Save, Search, Send, Smartphone, Sparkles, Trash2, UserRound, UserPlus, UsersRound, X } from 'lucide-react';
+import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { BellRing, BookOpen, Building2, CalendarDays, CheckCircle, ChevronRight, ClipboardCheck, Clock3, CloudUpload, Copy, CreditCard, Download, Drama, Edit3, ExternalLink, Eye, FileSpreadsheet, FileText, Gamepad2, Globe2, GraduationCap, HandCoins, ImagePlus, Lamp, Link2, ListChecks, Loader2, Mail, MapPin, Megaphone, Monitor, MoreHorizontal, Palette, Phone, Plus, Printer, ReceiptText, RefreshCw, Save, Search, Send, Shield, Smartphone, Sparkles, Trash2, TrendingUp, UserRound, UserPlus, UsersRound, X } from 'lucide-react';
 import AdminCreateForm from '../components/AdminCreateForm.jsx';
 import ContentSettingsNav, { contentSettingsTitles } from '../components/ContentSettingsNav.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 import ModalTitle from '../components/ModalTitle.jsx';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { culturalClasses, events, paataShaaleLevels } from '../data/siteData.js';
-import { adminPageCatalog, appendAdminRecordAsync, appendRecord, builtInAssignableRoles, canAccessAdminPath, defaultAdminPath, getAllowedFieldKeysForPath, getAssignableRoles, getCurrentUser, hasAnyRole, isAdmin, normalizeRoleId, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
+import { adminPageCatalog, appendAdminRecordAsync, appendRecord, builtInAssignableRoles, canAccessAdminPath, customRoleAccessForPath, defaultAdminPath, getAllowedFieldKeysForPath, getAssignableRoles, getCurrentUser, hasAnyRole, isAdmin, normalizeRoleId, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
 import { defaultAboutContent, normalizeAboutContent } from '../utils/aboutContent.js';
 import { defaultPaataTeachers, normalizePaataTeachers } from '../utils/paataTeachers.js';
 import {
@@ -48,6 +48,14 @@ const referenceVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIp
 const defaultVolunteerGoogleForm = {
   enabled: false,
   url: referenceVolunteerGoogleFormUrl
+};
+const defaultRegistrationNotifications = {
+  enabled: true,
+  recipients: '',
+  notifyNewRegistration: true,
+  notifyPaymentCompleted: true,
+  reminderEnabled: false,
+  reminderHours: 24
 };
 
 const sampleFindUsers = [
@@ -220,6 +228,29 @@ function formatDateShort(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return String(value);
   return parsed.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+}
+
+function parseDashboardEventDate(value) {
+  if (!value) return null;
+  const dateOnly = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatRelativeAge(value) {
+  if (!value) return 'Recently';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return formatDateShort(value);
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - parsed.getTime()) / 60000));
+  if (elapsedMinutes < 1) return 'Just now';
+  if (elapsedMinutes < 60) return `${elapsedMinutes} min ago`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours} hr${elapsedHours === 1 ? '' : 's'} ago`;
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays < 7) return `${elapsedDays} day${elapsedDays === 1 ? '' : 's'} ago`;
+  return formatDateShort(value);
 }
 
 function getInitials(value = '') {
@@ -1206,22 +1237,70 @@ function ReceiptLink({ row }) {
 function TableActionMenu({ primary, items = [] }) {
   const { tr } = useLanguage();
   const visibleItems = items.filter(Boolean);
+  const triggerRef = useRef(null);
+  const [menuPosition, setMenuPosition] = useState(null);
+
+  useEffect(() => {
+    if (!menuPosition) return undefined;
+    const close = (event) => {
+      if (event.type === 'pointerdown' && (triggerRef.current?.contains(event.target) || event.target.closest?.('.table-more-menu-list.is-portal'))) return;
+      setMenuPosition(null);
+    };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [menuPosition]);
+
+  function toggleMenu() {
+    if (menuPosition) {
+      setMenuPosition(null);
+      return;
+    }
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = 188;
+    const height = Math.min(visibleItems.length * 44 + 12, 340);
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow >= height + 10
+      ? rect.bottom + 8
+      : Math.max(8, rect.top - height - 8);
+    setMenuPosition({
+      top,
+      left: Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width)),
+      width
+    });
+  }
+
   return (
     <div className="table-action-cluster">
       {primary}
       {visibleItems.length ? (
-        <details className="table-more-menu">
-          <summary aria-label={tr('More actions')} title={tr('More actions')}>
+        <div className="table-more-menu">
+          <button
+            ref={triggerRef}
+            className={menuPosition ? 'table-more-trigger is-open' : 'table-more-trigger'}
+            type="button"
+            aria-label={tr('More actions')}
+            aria-expanded={Boolean(menuPosition)}
+            title={tr('More actions')}
+            onClick={toggleMenu}
+          >
             <MoreHorizontal size={18} />
-          </summary>
-          <div className="table-more-menu-list">
+          </button>
+          {menuPosition && createPortal(<div className="table-more-menu-list is-portal" style={menuPosition}>
             {visibleItems.map((item) => (
               <button
                 key={item.label}
                 className={item.danger ? 'is-danger' : ''}
                 type="button"
-                onClick={(event) => {
-                  event.currentTarget.closest('details')?.removeAttribute('open');
+                disabled={item.disabled}
+                onClick={() => {
+                  setMenuPosition(null);
                   item.onClick();
                 }}
               >
@@ -1229,8 +1308,8 @@ function TableActionMenu({ primary, items = [] }) {
                 <span>{tr(item.label)}</span>
               </button>
             ))}
-          </div>
-        </details>
+          </div>, document.body)}
+        </div>
       ) : null}
     </div>
   );
@@ -1668,6 +1747,10 @@ function formatRoleFieldLabel(field = '') {
 
 function getRoleFieldDescription(field = '') {
   const label = formatRoleFieldLabel(field).toLowerCase();
+  if (label === 'summary') return 'Top dashboard totals for registrations, approvals and active events.';
+  if (label === 'community management') return 'Recent registrations and the admin approval queue.';
+  if (label === 'my activity') return 'The signed-in user’s registrations and upcoming events.';
+  if (label === 'notifications') return 'Recent registration notifications on the dashboard.';
   if (/action|actions/.test(label)) return 'Row level actions such as view, edit, approve or assign.';
   if (/id|key|ref|reference/.test(label)) return 'Identifier used to connect related records.';
   if (/status|enabled|paid|payment/.test(label)) return 'Status shown for review and follow-up.';
@@ -2935,6 +3018,7 @@ export default function AdminSectionPage({ view }) {
   const [profileSaved, setProfileSaved] = useState(false);
   const [registrationError, setRegistrationError] = useState('');
   const [registrationSaved, setRegistrationSaved] = useState(false);
+  const [registrationAction, setRegistrationAction] = useState({ key: '', type: '', message: '' });
   const [checkinProgram, setCheckinProgram] = useState('');
   const [checkinEventId, setCheckinEventId] = useState('');
   const [checkinApplied, setCheckinApplied] = useState(false);
@@ -2948,6 +3032,8 @@ export default function AdminSectionPage({ view }) {
   const [eventTypes, setEventTypes] = useState(() => readJson('kb-event-types', defaultEventTypes));
   const [recurrences, setRecurrences] = useState(() => readJson('kb-recurrence-options', defaultRecurrences));
   const [volunteerGoogleForm, setVolunteerGoogleForm] = useState(() => readJson('kb-volunteer-google-form', defaultVolunteerGoogleForm));
+  const [registrationNotifications, setRegistrationNotifications] = useState(() => readJson('kb-registration-notifications', defaultRegistrationNotifications));
+  const [registrationNotificationsSaving, setRegistrationNotificationsSaving] = useState(false);
   const [aboutContent, setAboutContent] = useState(() => normalizeAboutContent(readJson('kb-about-content', defaultAboutContent)));
   const [aboutSaving, setAboutSaving] = useState(false);
   const [aboutNotice, setAboutNotice] = useState('');
@@ -3018,8 +3104,10 @@ export default function AdminSectionPage({ view }) {
   const [selectedSeatAssignedName, setSelectedSeatAssignedName] = useState('');
   const [studentViewTab, setStudentViewTab] = useState('registrations');
   const [studentViewSelectedName, setStudentViewSelectedName] = useState('');
-  const [dashboardEventSearch, setDashboardEventSearch] = useState('');
   const [teacherDirectoryQuery, setTeacherDirectoryQuery] = useState('');
+  const [dashboardMode, setDashboardMode] = useState('community');
+  const [dashboardRegistrationTab, setDashboardRegistrationTab] = useState('all');
+  const [dashboardRegistrationType, setDashboardRegistrationType] = useState('all');
   const registrations = dashboard.registrations || [];
   const users = dashboard.users || [];
   const donations = dashboard.donations || [];
@@ -3119,6 +3207,17 @@ export default function AdminSectionPage({ view }) {
     : volunteerGoogleFormSaved.enabled
       ? 'Needs URL'
       : 'Disabled';
+  const pendingPaymentReminderCount = registrationNotifications.reminderEnabled
+    ? registrations.filter((registration) => {
+        const createdAt = new Date(registration.createdAt || registration.created_at || 0).getTime();
+        const cutoff = Date.now() - Number(registrationNotifications.reminderHours || 24) * 60 * 60 * 1000;
+        return !registration.paid
+          && !registration.paymentReceived
+          && Number(registration.amount || 0) > 0
+          && Number.isFinite(createdAt)
+          && createdAt <= cutoff;
+      }).length
+    : 0;
   const bulkEventOptions = uniqueOptions(registrations.filter((row) => row.registrationType !== 'class'), 'program');
   const bulkClassOptions = uniqueOptions(registrations.filter((row) => (
     row.registrationType === 'class'
@@ -3384,15 +3483,23 @@ export default function AdminSectionPage({ view }) {
   useEffect(() => {
     if (view !== 'event-settings') return;
     let ignore = false;
-    apiReadSiteSetting('volunteer-google-form')
-      .then((setting) => {
-        if (ignore) return;
-        const normalized = normalizeVolunteerGoogleForm(setting || defaultVolunteerGoogleForm);
+    Promise.allSettled([
+      apiReadSiteSetting('volunteer-google-form'),
+      apiReadSiteSetting('registration-notifications')
+    ]).then(([formResult, notificationResult]) => {
+      if (ignore) return;
+      if (formResult.status === 'fulfilled') {
+        const normalized = normalizeVolunteerGoogleForm(formResult.value || defaultVolunteerGoogleForm);
         setVolunteerGoogleForm(normalized);
         writeJson('kb-volunteer-google-form', normalized);
-        window.dispatchEvent(new Event('kb-data-change'));
-      })
-      .catch(() => {});
+      }
+      if (notificationResult.status === 'fulfilled') {
+        const normalized = { ...defaultRegistrationNotifications, ...(notificationResult.value || {}) };
+        setRegistrationNotifications(normalized);
+        writeJson('kb-registration-notifications', normalized);
+      }
+      window.dispatchEvent(new Event('kb-data-change'));
+    });
     return () => {
       ignore = true;
     };
@@ -3573,19 +3680,21 @@ export default function AdminSectionPage({ view }) {
 
     const nextRow = { ...row, ...nextFallbackPatch };
     const nextRegistrations = registrations.map((item) => (sameRegistration(item, row) ? nextRow : item));
-    updateLocalRegistrations(nextRegistrations);
+    const actionKey = `${row.id || row.createdAt || row.email}-${action}`;
+    setRegistrationAction({ key: actionKey, type: 'loading', message: '' });
 
-    if (!row.id) return;
+    if (!row.id) {
+      updateLocalRegistrations(nextRegistrations);
+      setRegistrationAction({ key: actionKey, type: 'success', message: 'Registration updated locally.' });
+      return;
+    }
     try {
       const saved = await apiRegistrationAction(row.id, action, actionPayload);
       updateLocalRegistrations(nextRegistrations.map((item) => (sameRegistration(item, nextRow) ? saved : item)));
-    } catch {
-      try {
-        const saved = await apiUpdateSubmission('registration', row.id, nextFallbackPatch);
-        updateLocalRegistrations(nextRegistrations.map((item) => (sameRegistration(item, nextRow) ? saved : item)));
-      } catch {
-        // Keep local admin action result when API is unavailable.
-      }
+      const labels = { confirm: 'Registration confirmed.', paid: 'Payment marked as received.', emailstatus: 'Email sent.', reset: 'Registration status reset.', enable: 'Registration enabled.', delete: 'Registration disabled.' };
+      setRegistrationAction({ key: actionKey, type: 'success', message: labels[action] || 'Registration updated.' });
+    } catch (error) {
+      setRegistrationAction({ key: actionKey, type: 'error', message: error.message || 'The registration could not be updated.' });
     }
   }
 
@@ -3745,6 +3854,22 @@ export default function AdminSectionPage({ view }) {
       expense: expenses
     };
     const currentRows = currentRowsByKind[kind] || [];
+    if (kind === 'registration' && row.id) {
+      const actionKey = `${row.id}-edit`;
+      setRegistrationAction({ key: actionKey, type: 'loading', message: '' });
+      try {
+        const saved = await apiUpdateSubmission(kind, row.id, patch);
+        const savedRows = currentRows.map((item) => (idMatches(item) ? saved : item));
+        writeJson(storageKeyByKind[kind], savedRows);
+        setDashboard((current) => ({ ...current, [dashboardKeyByKind[kind]]: savedRows }));
+        window.dispatchEvent(new Event('kb-data-change'));
+        setEditRecord(null);
+        setRegistrationAction({ key: actionKey, type: 'success', message: 'Registration changes saved.' });
+      } catch (error) {
+        setRegistrationAction({ key: actionKey, type: 'error', message: error.message || 'Registration changes could not be saved.' });
+      }
+      return;
+    }
     const optimisticRow = { ...row, ...patch };
     const nextRows = currentRows.map((item) => (idMatches(item) ? optimisticRow : item));
     writeJson(storageKeyByKind[kind], nextRows);
@@ -3772,6 +3897,18 @@ export default function AdminSectionPage({ view }) {
   async function deleteAdminRecord(kind, row) {
     const confirmed = window.confirm(`Delete this ${kind} record?`);
     if (!confirmed) return;
+    if (kind === 'registration' && row.id) {
+      const actionKey = `${row.id}-delete`;
+      setRegistrationAction({ key: actionKey, type: 'loading', message: '' });
+      try {
+        await apiDeleteSubmission(kind, row.id);
+        updateLocalRegistrations(registrations.filter((item) => !sameRegistration(item, row)));
+        setRegistrationAction({ key: actionKey, type: 'success', message: 'Registration deleted.' });
+      } catch (error) {
+        setRegistrationAction({ key: actionKey, type: 'error', message: error.message || 'Registration could not be deleted.' });
+      }
+      return;
+    }
     const idMatches = (item) => (
       (item.id && row.id && item.id === row.id)
       || (item.createdAt && row.createdAt && item.createdAt === row.createdAt)
@@ -3848,24 +3985,36 @@ export default function AdminSectionPage({ view }) {
   function RegistrationActionMenu({ row, checkinAction = null, checkedLabel = '' }) {
     const confirmed = (row.status || 'Submitted') === 'Confirmed';
     const paid = isPaidRegistration(row);
+    const rowActionPrefix = `${row.id || row.createdAt || row.email}-`;
+    const busy = registrationAction.type === 'loading' && registrationAction.key.startsWith(rowActionPrefix);
     const primary = checkinAction || (!confirmed
-      ? <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'confirm', { status: 'Confirmed' })}>{tr('Confirm')}</button>
+      ? <button className="mini-action-link success" type="button" disabled={busy} onClick={() => runRegistrationAction(row, 'confirm', { status: 'Confirmed' })}>{busy ? <Loader2 className="spin-icon" size={15} /> : null}{tr('Confirm')}</button>
       : !paid
-        ? <button className="mini-action-link success" type="button" onClick={() => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' })}>{tr('Mark paid')}</button>
+        ? <button className="mini-action-link success" type="button" disabled={busy} onClick={() => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' })}>{busy ? <Loader2 className="spin-icon" size={15} /> : null}{tr('Mark paid')}</button>
         : <span className="confirmed-badge">{checkedLabel || tr('Confirmed')}</span>);
     return (
-      <TableActionMenu
-        primary={primary}
-        items={[
-          { label: 'View details', icon: <Eye size={15} />, onClick: () => setRegistrationDetail(row) },
-          { label: 'Edit', icon: <Edit3 size={15} />, onClick: () => setEditRecord({ kind: 'registration', row }) },
-          !confirmed && { label: 'Confirm', icon: <CheckCircle size={15} />, onClick: () => runRegistrationAction(row, 'confirm', { status: 'Confirmed' }) },
-          !paid && { label: 'Mark paid', icon: <CheckCircle size={15} />, onClick: () => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' }) },
-          { label: 'Email', icon: <Mail size={15} />, onClick: () => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' }) },
-          { label: 'Reset status', icon: <RefreshCw size={15} />, onClick: () => runRegistrationAction(row, 'reset', { status: 'Submitted' }) },
-          { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => deleteAdminRecord('registration', row) }
-        ]}
-      />
+      <>
+        <TableActionMenu
+          primary={primary}
+          items={[
+            { label: 'View details', icon: <Eye size={15} />, onClick: () => setRegistrationDetail(row), disabled: busy },
+            { label: 'Edit', icon: <Edit3 size={15} />, onClick: () => setEditRecord({ kind: 'registration', row }), disabled: busy },
+            !confirmed && { label: 'Confirm', icon: <CheckCircle size={15} />, onClick: () => runRegistrationAction(row, 'confirm', { status: 'Confirmed' }), disabled: busy },
+            !paid && { label: 'Mark paid', icon: <CheckCircle size={15} />, onClick: () => runRegistrationAction(row, 'paid', { paid: true, paymentReceived: true, status: 'Confirmed', emailStatus: 'Payment sent' }), disabled: busy },
+            { label: 'Email', icon: <Mail size={15} />, onClick: () => runRegistrationAction(row, 'emailstatus', { emailStatus: 'Sent' }), disabled: busy },
+            { label: 'Reset status', icon: <RefreshCw size={15} />, onClick: () => runRegistrationAction(row, 'reset', { status: 'Submitted' }), disabled: busy },
+            { label: 'Delete', icon: <Trash2 size={15} />, danger: true, onClick: () => deleteAdminRecord('registration', row), disabled: busy }
+          ]}
+        />
+        {registrationAction.key.startsWith(rowActionPrefix) && registrationAction.message && createPortal(
+          <div className={`registration-action-toast ${registrationAction.type}`} role="status">
+            {registrationAction.type === 'success' ? <CheckCircle size={18} /> : <X size={18} />}
+            <span>{registrationAction.message}</span>
+            <button type="button" aria-label="Dismiss message" onClick={() => setRegistrationAction({ key: '', type: '', message: '' })}><X size={16} /></button>
+          </div>,
+          document.body
+        )}
+      </>
     );
   }
 
@@ -4524,6 +4673,39 @@ export default function AdminSectionPage({ view }) {
     window.dispatchEvent(new Event('kb-data-change'));
   }
 
+  async function handleRegistrationNotificationsSubmit(event) {
+    event.preventDefault();
+    setSettingsError('');
+    setSettingsSaved(false);
+    const recipients = String(registrationNotifications.recipients || '')
+      .split(/[,;\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const invalid = recipients.find((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    if (invalid) {
+      setSettingsError(`Enter a valid notification email: ${invalid}`);
+      return;
+    }
+    const next = {
+      ...registrationNotifications,
+      recipients: recipients.join(', '),
+      reminderHours: Math.max(1, Math.min(168, Number(registrationNotifications.reminderHours || 24)))
+    };
+    setRegistrationNotificationsSaving(true);
+    try {
+      const saved = await apiSaveSiteSetting('registration-notifications', next);
+      const normalized = { ...defaultRegistrationNotifications, ...(saved || next) };
+      setRegistrationNotifications(normalized);
+      writeJson('kb-registration-notifications', normalized);
+      setSettingsSaved(true);
+      window.dispatchEvent(new Event('kb-data-change'));
+    } catch (error) {
+      setSettingsError(error.message || 'Could not save registration notification settings.');
+    } finally {
+      setRegistrationNotificationsSaving(false);
+    }
+  }
+
   async function handleAboutContentSave(contentOverride = aboutContent) {
     setAboutError('');
     setAboutNotice('');
@@ -5056,6 +5238,63 @@ export default function AdminSectionPage({ view }) {
                   </a>
                 )}
               </div>
+            </form>
+          </section>
+
+          <section className="admin-page-panel event-setting-panel registration-notification-settings">
+            <div className="event-setting-panel-heading">
+              <span className="event-setting-heading-icon"><BellRing size={29} /></span>
+              <div>
+                <h2>Registration notifications</h2>
+                <p>Choose which registration updates admins receive and when pending payments need attention.</p>
+              </div>
+              {registrationNotifications.reminderEnabled && (
+                <span className="notification-reminder-count">{pendingPaymentReminderCount} pending</span>
+              )}
+            </div>
+            <form className="registration-notification-form" onSubmit={handleRegistrationNotificationsSubmit}>
+              <label className="notification-recipient-field">
+                Notification recipients
+                <textarea
+                  rows="2"
+                  value={registrationNotifications.recipients || ''}
+                  onChange={(event) => setRegistrationNotifications((current) => ({ ...current, recipients: event.target.value }))}
+                  placeholder="Leave blank for the primary admin, or separate multiple emails with commas"
+                />
+              </label>
+              <div className="notification-option-grid">
+                {[
+                  ['enabled', 'Enable notifications', 'Master switch for registration notification emails'],
+                  ['notifyNewRegistration', 'New registrations', 'Notify admins after a registration is submitted'],
+                  ['notifyPaymentCompleted', 'Completed payments', 'Notify admins after PayPal confirms payment'],
+                  ['reminderEnabled', 'Pending payment reminder', 'Show overdue pending payments in the admin dashboard']
+                ].map(([key, title, description]) => (
+                  <label className="notification-option" key={key}>
+                    <span><strong>{title}</strong><small>{description}</small></span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(registrationNotifications[key])}
+                      onChange={(event) => setRegistrationNotifications((current) => ({ ...current, [key]: event.target.checked }))}
+                    />
+                  </label>
+                ))}
+              </div>
+              <label className="notification-reminder-hours">
+                Show pending reminder after
+                <input
+                  type="number"
+                  min="1"
+                  max="168"
+                  value={registrationNotifications.reminderHours || 24}
+                  disabled={!registrationNotifications.reminderEnabled}
+                  onChange={(event) => setRegistrationNotifications((current) => ({ ...current, reminderHours: event.target.value }))}
+                />
+                hours
+              </label>
+              <button className="button primary submit-with-loader" type="submit" disabled={registrationNotificationsSaving}>
+                {registrationNotificationsSaving ? <Loader2 className="spin-icon" size={18} /> : <Save size={18} />}
+                {registrationNotificationsSaving ? 'Saving...' : 'Save notifications'}
+              </button>
             </form>
           </section>
         </div>
@@ -7245,119 +7484,298 @@ export default function AdminSectionPage({ view }) {
     profile.firstName || user?.firstName || user?.name,
     profile.lastName || user?.lastName
   ].filter(Boolean).join(' ').trim() || user?.email || 'Member';
-  const dashboardInitials = dashboardName
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join('')
-    .toUpperCase();
-  const dashboardSpouseName = [profile.spouseFirstName, profile.spouseLastName].filter(Boolean).join(' ') || '-';
-  const dashboardPhone = profile.phone || user?.phone || '-';
-  const dashboardEvents = allEvents
-    .filter((row) => `${row.title || ''} ${row.location || ''}`.toLowerCase().includes(dashboardEventSearch.trim().toLowerCase()))
-    .slice(0, 4);
+  const dashboardGreetingName = profile.firstName || user?.firstName || dashboardName.split(/\s+/)[0] || 'Member';
+  const isDashboardClassRegistration = (item) => (
+    item.registrationType === 'class'
+    || programs.some((program) => program.title === item.program)
+    || /class|paata|shaale|guitar|dance|music|kannada/i.test(item.program || '')
+  );
+  const classRegistrations = registrations.filter(isDashboardClassRegistration);
+  const eventRegistrations = registrations.filter((item) => !isDashboardClassRegistration(item));
+  const pendingRegistrations = registrations.filter((item) => /pending|submitted|awaiting/i.test(item.status || ''));
+  const pendingVolunteers = volunteers.filter((item) => /pending|submitted|new|awaiting/i.test(item.status || 'pending'));
+  const pendingAccess = users.filter((item) => item.enabled === false || /pending|requested|awaiting/i.test(item.status || ''));
+  const pendingApprovalCount = pendingRegistrations.length + pendingVolunteers.length + pendingAccess.length;
+  const todayKey = new Date().toDateString();
+  const newTodayCount = registrations.filter((item) => {
+    const value = item.registeredOn || item.createdAt || item.created_at || item.date;
+    const parsed = value ? new Date(value) : null;
+    return parsed && !Number.isNaN(parsed.getTime()) && parsed.toDateString() === todayKey;
+  }).length;
+  const filteredDashboardRegistrations = registrations.filter((item) => {
+    const matchesTab = dashboardRegistrationTab === 'all' || /pending|submitted|awaiting/i.test(item.status || '');
+    const matchesType = dashboardRegistrationType === 'all'
+      || (dashboardRegistrationType === 'class' ? isDashboardClassRegistration(item) : !isDashboardClassRegistration(item));
+    return matchesTab && matchesType;
+  });
+  const recentRegistrations = [...filteredDashboardRegistrations]
+    .sort((left, right) => new Date(right.registeredOn || right.createdAt || right.created_at || right.date || 0) - new Date(left.registeredOn || left.createdAt || left.created_at || left.date || 0))
+    .slice(0, 5);
+  const notificationRegistrations = [...registrations]
+    .sort((left, right) => new Date(right.registeredOn || right.createdAt || right.created_at || right.date || 0) - new Date(left.registeredOn || left.createdAt || left.created_at || left.date || 0))
+    .slice(0, 3);
+  const dashboardUpcomingEvents = allEvents.slice(0, 2);
+  const dashboardCalendarToday = new Date();
+  const dashboardCalendarYear = dashboardCalendarToday.getFullYear();
+  const dashboardCalendarMonth = dashboardCalendarToday.getMonth();
+  const dashboardCalendarMonthName = dashboardCalendarToday.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const dashboardCalendarFirstWeekday = new Date(dashboardCalendarYear, dashboardCalendarMonth, 1).getDay();
+  const dashboardCalendarDaysInMonth = new Date(dashboardCalendarYear, dashboardCalendarMonth + 1, 0).getDate();
+  const dashboardCalendarCellCount = Math.ceil((dashboardCalendarFirstWeekday + dashboardCalendarDaysInMonth) / 7) * 7;
+  const dashboardCalendarEvents = allEvents.reduce((items, event) => {
+    const parsedDate = parseDashboardEventDate(event.startOn || event.date || event.eventDate || event.startDate);
+    if (parsedDate && parsedDate.getFullYear() === dashboardCalendarYear && parsedDate.getMonth() === dashboardCalendarMonth) {
+      items.push({ ...event, parsedDate });
+    }
+    return items;
+  }, []);
+  const dashboardEventsByDay = dashboardCalendarEvents.reduce((days, event) => {
+    const day = event.parsedDate.getDate();
+    days[day] = [...(days[day] || []), event];
+    return days;
+  }, {});
   const memberMetrics = [
-    { label: 'My registrations', value: userRegistrations.length, icon: UserRound, href: '/admin/registration-classes' },
-    { label: 'My classes', value: userClassRegistrations.length, icon: CalendarDays, href: '/admin/registration-classes' },
-    { label: 'My events', value: userEventRegistrations.length, icon: ReceiptText, href: '/admin/registrations' },
-    { label: 'Announcements', value: announcements.length, icon: Megaphone, href: '/admin/announcements' }
+    { label: 'Total registrations', detail: 'Across events and classes', value: registrations.length, icon: UsersRound, href: '/admin/registrations' },
+    { label: 'New today', detail: 'Latest submissions', value: newTodayCount, icon: TrendingUp, href: '/admin/registrations' },
+    { label: 'Pending approvals', detail: 'Needs review', value: pendingApprovalCount, icon: ClipboardCheck, href: '/admin/registrations', warning: true },
+    { label: 'Active events', detail: 'Published programs', value: allEvents.length, icon: CalendarDays, href: '/admin/events' }
   ];
-  const communityCards = [
-    { label: 'All registrations', value: registrations.length, icon: UsersRound, href: '/admin/registrations' },
-    { label: 'Current events', value: allEvents.length, icon: CalendarDays, href: '/admin/events' },
-    { label: 'Expenses', value: expenses.length, icon: ReceiptText, href: '/admin/expense' },
-    { label: 'Announcements', value: announcements.length, icon: Megaphone, href: '/admin/announcements' }
+  const dashboardCustomAccess = customRoleAccessForPath(user, '/admin');
+  const dashboardAllowedModules = getAllowedFieldKeysForPath(user, '/admin') || [];
+  const hasCustomDashboardRole = dashboardCustomAccess.length > 0;
+  const canViewDashboardModule = (module, legacyModule = '') => (
+    isAdmin(user)
+    || (hasCustomDashboardRole && (dashboardAllowedModules.includes(module) || (legacyModule && dashboardAllowedModules.includes(legacyModule))))
+    || (!hasCustomDashboardRole && module === 'myActivity')
+  );
+  const canViewCommunityDashboard = canViewDashboardModule('communityManagement', 'registrations');
+  const activeDashboardMode = canViewCommunityDashboard ? dashboardMode : 'personal';
+  const managementNotifications = [
+    ...notificationRegistrations.map((row, index) => ({
+      id: getRegistrationKey(row, index),
+      type: 'registration',
+      title: 'New registration received',
+      detail: `${row.parentName || row.registeredName || row.name || row.email || 'A member'} registered for ${row.program || row.eventTitle || 'a community program'}.`,
+      date: row.registeredOn || row.createdAt || row.created_at || row.date
+    })),
+    ...pendingVolunteers.slice(0, 2).map((row, index) => ({
+      id: row.id || row.email || `volunteer-${index}`,
+      type: 'volunteer',
+      title: 'Volunteer request awaiting review',
+      detail: `${row.name || row.email || 'A member'} submitted a volunteer application.`,
+      date: row.createdAt || row.created_at || row.date
+    }))
+  ].sort((left, right) => new Date(right.date || 0) - new Date(left.date || 0)).slice(0, 2);
+  const personalProfileChecks = [
+    { label: 'Email verified', complete: Boolean(user?.email), icon: Mail },
+    { label: 'Basic details added', complete: Boolean((profile.firstName || user?.firstName || user?.name) && (profile.lastName || user?.lastName)), icon: UserRound },
+    { label: 'Phone verification needed', complete: Boolean(profile.phone || user?.phone), icon: Phone }
   ];
+  const personalProfileCompletion = Math.round((personalProfileChecks.filter((item) => item.complete).length / personalProfileChecks.length) * 100);
+  const personalNotifications = [
+    ...userRegistrations.slice(0, 2).map((row, index) => ({
+      id: getRegistrationKey(row, index),
+      tone: /pending|submitted|awaiting/i.test(row.status || '') ? 'warning' : 'success',
+      icon: isDashboardClassRegistration(row) ? GraduationCap : ReceiptText,
+      title: /pending|submitted|awaiting/i.test(row.status || '') ? 'Registration awaiting approval' : 'Registration confirmed',
+      detail: `${row.program || row.eventTitle || 'Community program'} registration is ${String(row.status || 'confirmed').toLowerCase()}.`,
+      date: row.registeredOn || row.createdAt || row.created_at || row.date
+    })),
+    ...(!personalProfileChecks.every((item) => item.complete) ? [{
+      id: 'profile-completion',
+      tone: 'warning',
+      icon: UserRound,
+      title: 'Complete your account',
+      detail: 'Verify your phone to finish setup.',
+      date: null
+    }] : [])
+  ].slice(0, 3);
 
   return (
-    <div className="member-dashboard-page">
-      <nav className="member-dashboard-breadcrumb" aria-label="Breadcrumb"><strong>Admin</strong><span>/</span>Dashboard</nav>
-
-      <section className="member-dashboard-welcome">
-        <div className="member-dashboard-welcome-copy">
-          <h1>Member dashboard</h1>
-          <p>Welcome, {dashboardName}</p>
+    <div className="member-dashboard-page kb-overview-dashboard">
+      <header className="kb-overview-heading">
+        <div>
+          <h1>Namaskara, {dashboardGreetingName}</h1>
+          <p>Stay connected with your Kannada community.</p>
         </div>
-        <span className="member-dashboard-welcome-art" aria-hidden="true" />
-      </section>
+        <span className="kb-overview-heading-art" aria-hidden="true" />
+      </header>
 
-      <section className="member-dashboard-metrics" aria-label="Member dashboard summary">
+      {canViewCommunityDashboard && <section className="kb-dashboard-mode-switcher" aria-label="Dashboard view">
+        <div role="tablist" aria-label="Choose dashboard view">
+          <button className={activeDashboardMode === 'personal' ? 'active' : ''} type="button" role="tab" aria-selected={activeDashboardMode === 'personal'} onClick={() => setDashboardMode('personal')}><UserRound size={21} />My dashboard</button>
+          <button className={activeDashboardMode === 'community' ? 'active' : ''} type="button" role="tab" aria-selected={activeDashboardMode === 'community'} onClick={() => setDashboardMode('community')}><UsersRound size={21} />Community management{pendingApprovalCount > 0 && <span>{pendingApprovalCount}</span>}</button>
+        </div>
+        <p>{activeDashboardMode === 'community' ? 'Community overview, registrations and approvals.' : 'Your registrations, events and community activity.'}</p>
+        <aside><RefreshCw size={18} /><span>Switch views anytime.</span></aside>
+      </section>}
+
+      {activeDashboardMode === 'community' && canViewDashboardModule('summary') && <section className="member-dashboard-metrics kb-overview-metrics" aria-label="Community dashboard summary">
         {memberMetrics.map((card) => {
           const Icon = card.icon;
           return (
-            <a className="member-dashboard-metric" href={card.href} key={card.label}>
+            <Link className={`member-dashboard-metric${card.warning ? ' is-warning' : ''}`} to={card.href} key={card.label}>
               <span className="member-dashboard-metric-icon"><Icon size={22} /></span>
-              <span><small>{card.label}</small><strong>{card.value}</strong></span>
+              <span><strong>{card.value.toLocaleString()}</strong><small>{card.label}</small><em>{card.detail}</em></span>
               <ChevronRight size={16} aria-hidden="true" />
-            </a>
+            </Link>
           );
         })}
+      </section>}
+
+      {activeDashboardMode === 'community' && canViewCommunityDashboard && <>
+      <section className="kb-admin-operations-grid kb-community-management-grid">
+        <article className="kb-overview-panel kb-recent-registrations">
+          <div className="kb-admin-panel-title">
+            <div><h2>Recent registrations</h2></div>
+            <div className="kb-registration-toolbar">
+              <select aria-label="Registration type" value={dashboardRegistrationType} onChange={(event) => setDashboardRegistrationType(event.target.value)}><option value="all">All types</option><option value="class">Classes</option><option value="event">Events</option></select>
+              <Link to="/admin/registrations">View all <ChevronRight size={15} /></Link>
+            </div>
+          </div>
+          <div className="kb-registration-tabs" role="tablist" aria-label="Registration status">
+            <button className={dashboardRegistrationTab === 'all' ? 'active' : ''} type="button" role="tab" aria-selected={dashboardRegistrationTab === 'all'} onClick={() => setDashboardRegistrationTab('all')}>All registrations</button>
+            <button className={dashboardRegistrationTab === 'pending' ? 'active' : ''} type="button" role="tab" aria-selected={dashboardRegistrationTab === 'pending'} onClick={() => setDashboardRegistrationTab('pending')}>Needs approval <span>{pendingRegistrations.length}</span></button>
+          </div>
+            <div className="kb-registration-table-wrap">
+              <table className="kb-registration-table">
+                <thead><tr><th>Member</th><th>Registration</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody>
+                  {recentRegistrations.map((row, index) => {
+                    const memberName = row.parentName || row.registeredName || row.name || row.email || 'Member';
+                    const status = row.status || 'Pending approval';
+                    const pending = /pending|submitted|awaiting/i.test(status);
+                    const target = isDashboardClassRegistration(row) ? '/admin/registration-classes' : '/admin/registrations';
+                    return (
+                      <tr key={getRegistrationKey(row, index)}>
+                        <td><span className="kb-registration-avatar">{getInitials(memberName)}</span><strong>{memberName}</strong></td>
+                        <td>{row.program || row.eventTitle || row.registrationType || 'Community program'}</td>
+                        <td>{formatRelativeAge(row.registeredOn || row.createdAt || row.created_at || row.date)}</td>
+                        <td><span className={pending ? 'kb-status-pending' : 'kb-status-confirmed'}>{status}</span></td>
+                        <td><Link to={target}>{pending ? 'Review' : 'View'}</Link></td>
+                      </tr>
+                    );
+                  })}
+                  {recentRegistrations.length === 0 && <tr><td colSpan="5" className="kb-registration-empty">No registrations received yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+        </article>
+
+        <article className="kb-overview-panel kb-approval-panel">
+          <div className="kb-approval-heading"><span><Clock3 size={23} /></span><div><h2>Needs your approval</h2><strong>{pendingApprovalCount}</strong><small>Requests awaiting an admin decision.</small></div></div>
+          <div className="kb-approval-list">
+            <Link to="/admin/registration-classes"><ReceiptText size={18} /><span>Class registrations</span><strong>{pendingRegistrations.filter(isDashboardClassRegistration).length}</strong><ChevronRight size={15} /></Link>
+            <Link to="/admin/volunteer-interest"><UsersRound size={18} /><span>Volunteer applications</span><strong>{pendingVolunteers.length}</strong><ChevronRight size={15} /></Link>
+            <Link to="/admin/users"><Shield size={18} /><span>Access requests</span><em>Super Admin only</em><strong>{pendingAccess.length}</strong><ChevronRight size={15} /></Link>
+          </div>
+          <Link className="kb-review-all" to="/admin/registrations">Review pending requests <ChevronRight size={15} /></Link>
+        </article>
       </section>
 
-      <section className="member-dashboard-workspace">
-        <article className="member-dashboard-card member-dashboard-information">
-          <div className="member-dashboard-card-heading">
-            <h2>My information</h2>
-            <a className="member-dashboard-edit" href="/admin/profile"><Edit3 size={14} />Update profile</a>
+      <section className="kb-management-lower-grid">
+        <article className="kb-overview-panel kb-management-notifications">
+          <div className="kb-admin-panel-title"><div><h2>Management notifications</h2></div><Link to="/admin/registrations">View all <ChevronRight size={14} /></Link></div>
+          <div className="kb-management-notification-list">
+            {managementNotifications.map((item) => <div key={`${item.type}-${item.id}`}>
+              <i className={item.type}><span /></i>
+              <span>{item.type === 'volunteer' ? <UserRound size={17} /> : <ReceiptText size={17} />}</span>
+              <div><strong>{item.title}</strong><small>{item.detail}</small></div>
+              <time>{formatRelativeAge(item.date)}</time>
+            </div>)}
+            {managementNotifications.length === 0 && <div className="kb-notification-empty">No new management notifications.</div>}
           </div>
-          <div className="member-dashboard-identity">
-            <span className="member-dashboard-avatar">{dashboardInitials}</span>
-            <strong>{dashboardName}</strong>
+        </article>
+        <article className="kb-overview-panel kb-management-actions">
+          <div className="kb-admin-panel-title"><div><h2>Quick actions</h2></div></div>
+          <div>
+            <Link to="/admin/registrations"><UsersRound size={25} /><span><strong>Manage registrations</strong><small>View and manage all registrations</small></span><ChevronRight size={18} /></Link>
+            <Link to="/admin/announcements"><Megaphone size={25} /><span><strong>Send announcement</strong><small>Notify your community</small></span><ChevronRight size={18} /></Link>
           </div>
-          <div className="member-dashboard-profile-details">
-            <div><Mail size={16} /><span>Email</span><strong>{user?.email || '-'}</strong></div>
-            <div><Phone size={16} /><span>Phone</span><strong>{dashboardPhone}</strong></div>
-            <div><Building2 size={16} /><span>Company</span><strong>{profile.company || '-'}</strong></div>
-            <div><UsersRound size={16} /><span>Spouse</span><strong>{dashboardSpouseName}</strong></div>
-            <div><UserRound size={16} /><span>Children</span><strong>{profileChildren.length}</strong></div>
+        </article>
+      </section>
+      </>}
+
+      {activeDashboardMode === 'personal' && canViewDashboardModule('myActivity', 'events') && <section className="kb-personal-dashboard-grid">
+        <article className="kb-overview-panel kb-my-registrations-panel">
+          <div className="kb-admin-panel-title"><div><h2>My registrations</h2></div><Link to="/admin/registration-classes">View all <ChevronRight size={14} /></Link></div>
+          <div className="kb-personal-table-heading"><span>Event / Class</span><span>Registration ID</span><span>Date</span><span>Status</span><span>Action</span></div>
+          <div className="kb-personal-registration-list">
+            {userRegistrations.slice(0, 3).map((row, index) => {
+              const classRegistration = isDashboardClassRegistration(row);
+              return <div key={getRegistrationKey(row, index)}><span>{classRegistration ? <GraduationCap size={16} /> : <CalendarDays size={16} />}</span><div><strong>{row.program || row.eventTitle || 'Community program'}</strong></div><code>{row.registrationId || row.id || `KB-${String(index + 1).padStart(4, '0')}`}</code><time>{formatDateShort(row.registeredOn || row.createdAt || row.created_at || row.date)}</time><b className={/pending|submitted|awaiting/i.test(row.status || '') ? 'pending' : ''}>{row.status || 'Confirmed'}</b><Link to={classRegistration ? '/admin/registration-classes' : '/admin/registrations'}>{classRegistration ? 'View details' : 'View ticket'}</Link></div>;
+            })}
+            {userRegistrations.length === 0 && <div className="kb-activity-empty">You have no registrations yet.</div>}
+          </div>
+          {userRegistrations.some((row) => /pending|submitted|awaiting/i.test(row.status || '')) && <p className="kb-personal-attention"><Clock3 size={14} />We'll notify you when an admin reviews your request.</p>}
+        </article>
+
+        <article className="kb-overview-panel kb-account-completion-panel">
+          <div className="kb-admin-panel-title"><div><h2>Account completion</h2></div></div>
+          <div className="kb-account-summary"><span>{getInitials(dashboardName)}</span><div><strong>{dashboardName}</strong><small>{user?.role || 'Member'}</small></div><b>{personalProfileCompletion}% complete</b></div>
+          <div className="kb-account-progress"><span style={{ width: `${personalProfileCompletion}%` }} /></div>
+          <ul>{personalProfileChecks.map((item) => { const Icon = item.icon; return <li className={item.complete ? 'complete' : ''} key={item.label}><span>{item.complete ? <CheckCircle size={15} /> : <Icon size={15} />}</span>{item.label}</li>; })}</ul>
+          <Link to="/admin/profile">Complete account <ChevronRight size={15} /></Link>
+        </article>
+
+        <article className="kb-overview-panel kb-upcoming-events-panel">
+          <div className="kb-admin-panel-title"><div><h2>Upcoming events</h2></div><Link to="/events">View all <ChevronRight size={14} /></Link></div>
+          <div className="kb-upcoming-event-list">
+            {dashboardUpcomingEvents.map((event, index) => {
+              const dateValue = event.startOn || event.date || event.createdAt;
+              const parsedDate = dateValue ? new Date(dateValue) : null;
+              const validDate = parsedDate && !Number.isNaN(parsedDate.getTime());
+              const registered = userEventRegistrations.some((row) => String(row.program || row.eventTitle || '').toLowerCase() === String(event.title || '').toLowerCase());
+              return <div key={event.id || event.title || index}><img src={getProgramImage(event)} alt="" /><time><small>{validDate ? parsedDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() : 'EVENT'}</small><strong>{validDate ? String(parsedDate.getDate()).padStart(2, '0') : String(index + 1).padStart(2, '0')}</strong></time><div><strong>{event.title || 'Community event'}</strong><small><MapPin size={13} />{event.location || 'Venue to be announced'}</small></div><span className={registered ? 'registered' : ''}>{registered ? "You're registered" : 'Registration open'}</span><Link to="/events">{registered ? 'View event' : 'Register'}</Link></div>;
+            })}
           </div>
         </article>
 
-        <div className="member-dashboard-right-column">
-          <article className="member-dashboard-card member-dashboard-community-card">
-            <div className="member-dashboard-card-heading"><h2>Community overview</h2></div>
-            <div className="member-dashboard-community-grid">
-              {communityCards.map((card) => {
-                const Icon = card.icon;
-                return (
-                  <a href={card.href} key={card.label}>
-                    <span className="member-dashboard-metric-icon"><Icon size={20} /></span>
-                    <span><small>{card.label}</small><strong>{card.value}</strong></span>
-                    <ChevronRight size={15} aria-hidden="true" />
-                  </a>
-                );
-              })}
-            </div>
-          </article>
+        <article className="kb-overview-panel kb-personal-notifications-panel">
+          <div className="kb-admin-panel-title"><div><h2>My notifications</h2></div><Link to="/admin/registration-classes">View all <ChevronRight size={14} /></Link></div>
+          <div className="kb-personal-notification-list">
+            {personalNotifications.map((item) => { const Icon = item.icon; return <div key={item.id}><i className={item.tone} /><span><Icon size={16} /></span><div><strong>{item.title}</strong><small>{item.detail}</small></div><time>{item.date ? formatRelativeAge(item.date) : 'Today'}</time></div>; })}
+            {personalNotifications.length === 0 && <div className="kb-notification-empty">No new notifications.</div>}
+          </div>
+        </article>
 
-          <article className="member-dashboard-card member-dashboard-current-events">
-            <div className="member-dashboard-card-heading">
-              <h2>Current events</h2>
-              <span className="member-dashboard-count">{allEvents.length}</span>
-            </div>
-            <label className="member-dashboard-event-search">
-              <Search size={16} />
-              <input value={dashboardEventSearch} onChange={(event) => setDashboardEventSearch(event.target.value)} placeholder="Search" />
-            </label>
-            <div className="member-dashboard-event-list">
-              {dashboardEvents.map((event) => (
-                <a href={`/admin/register-member?program=${encodeURIComponent(event.title || '')}`} key={event.id || event.title}>
-                  <span className="member-dashboard-event-date"><CalendarDays size={17} /></span>
-                  <span><strong>{event.title}</strong><small>{event.date || event.startOn || event.month || 'Date to be announced'}{event.location ? ` · ${event.location}` : ''}</small></span>
-                  <ChevronRight size={16} />
-                </a>
-              ))}
-              {dashboardEvents.length === 0 && (
-                <div className="member-dashboard-events-empty">
-                  <CalendarDays size={38} />
-                  <span>No matching events</span>
-                </div>
-              )}
-            </div>
-          </article>
-        </div>
-      </section>
+        <article className="kb-overview-panel kb-my-classes-panel">
+          <div className="kb-admin-panel-title"><div><h2>My classes</h2></div><Link to="/admin/registration-classes">View all <ChevronRight size={14} /></Link></div>
+          <div className="kb-my-class-list">
+            {userClassRegistrations.slice(0, 4).map((row, index) => <div key={getRegistrationKey(row, index)}><span><GraduationCap size={17} /></span><strong>{row.program || 'Kannada class'}</strong><small><Clock3 size={13} />{row.schedule || row.time || formatDateShort(row.registeredOn || row.createdAt || row.date)}</small><Link to="/admin/registration-classes">View class</Link></div>)}
+            {userClassRegistrations.length === 0 && <div className="kb-activity-empty">No active classes.</div>}
+          </div>
+        </article>
+
+        <article className="kb-overview-panel kb-event-calendar-panel">
+          <div className="kb-admin-panel-title">
+            <div><span className="kb-calendar-title-icon"><CalendarDays size={16} /></span><h2>{dashboardCalendarMonthName}</h2></div>
+            <Link to="/events">View events <ChevronRight size={14} /></Link>
+          </div>
+          <div className="kb-event-calendar-weekdays" aria-hidden="true">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day}>{day}</span>)}
+          </div>
+          <div className="kb-event-calendar-grid" role="grid" aria-label={`${dashboardCalendarMonthName} event calendar`}>
+            {Array.from({ length: dashboardCalendarCellCount }, (_, index) => {
+              const day = index - dashboardCalendarFirstWeekday + 1;
+              if (day < 1 || day > dashboardCalendarDaysInMonth) return <span className="is-empty" aria-hidden="true" key={`empty-${index}`} />;
+              const dayEvents = dashboardEventsByDay[day] || [];
+              const isToday = day === dashboardCalendarToday.getDate();
+              const label = dayEvents.length
+                ? `${dashboardCalendarMonthName} ${day}: ${dayEvents.map((event) => event.title || 'Community event').join(', ')}`
+                : `${dashboardCalendarMonthName} ${day}`;
+              const dayContent = <><b>{day}</b>{dayEvents.length > 0 && <i aria-hidden="true">{Math.min(dayEvents.length, 3)}</i>}</>;
+              return dayEvents.length
+                ? <Link className={`${isToday ? 'is-today ' : ''}has-events`.trim()} to="/events" aria-label={label} title={dayEvents.map((event) => event.title || 'Community event').join(', ')} key={day}>{dayContent}</Link>
+                : <span className={isToday ? 'is-today' : ''} role="gridcell" aria-label={label} key={day}>{dayContent}</span>;
+            })}
+          </div>
+          <div className="kb-event-calendar-footer">
+            <span><i aria-hidden="true" />{dashboardCalendarEvents.length ? `${dashboardCalendarEvents.length} event${dashboardCalendarEvents.length === 1 ? '' : 's'} this month` : 'No dated events this month'}</span>
+            <Link to="/events">Open calendar <ChevronRight size={13} /></Link>
+          </div>
+        </article>
+      </section>}
       {detailRecord && <EventDetailModal item={detailRecord} onClose={() => setDetailRecord(null)} />}
     </div>
   );

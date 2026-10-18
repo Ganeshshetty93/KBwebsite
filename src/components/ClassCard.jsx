@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, CheckCircle2, Clock, MapPin, UserRound, X } from 'lucide-react';
+import { CalendarDays, CheckCircle2, Clock, Loader2, MapPin, UserRound, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { getCurrentUser, readJson, writeJson } from '../utils/storage.js';
@@ -97,6 +97,8 @@ export default function ClassCard({ item, registerSignal = 0 }) {
   const [showGuestForm, setShowGuestForm] = useState(false);
   const [guestError, setGuestError] = useState('');
   const [guestSaved, setGuestSaved] = useState(false);
+  const [guestSubmitting, setGuestSubmitting] = useState(false);
+  const [memberSubmitting, setMemberSubmitting] = useState(false);
   const [registrationToast, setRegistrationToast] = useState(null);
   const classImage = getClassImage(item);
   const registerUrl = `/register?program=${encodeURIComponent(item.title)}`;
@@ -144,6 +146,7 @@ export default function ClassCard({ item, registerSignal = 0 }) {
 
   async function handleGuestSubmit(event) {
     event.preventDefault();
+    if (guestSubmitting) return;
     setGuestError('');
     setGuestSaved(false);
 
@@ -178,6 +181,7 @@ export default function ClassCard({ item, registerSignal = 0 }) {
     };
 
     event.currentTarget.reset();
+    setGuestSubmitting(true);
     try {
       await saveRegistration(record);
       setGuestSaved(true);
@@ -191,11 +195,14 @@ export default function ClassCard({ item, registerSignal = 0 }) {
           : error.message || 'Guest registration could not be submitted.';
       setGuestError(message);
       showRegistrationToast('error', 'Guest registration failed', message);
+    } finally {
+      setGuestSubmitting(false);
     }
   }
 
   async function handleMemberSubmit(event) {
     event.preventDefault();
+    if (memberSubmitting) return;
     setMemberSaved(false);
     setMemberError('');
 
@@ -240,6 +247,7 @@ export default function ClassCard({ item, registerSignal = 0 }) {
       totalMembers: 1
     };
 
+    setMemberSubmitting(true);
     try {
       await saveRegistration(record);
       setMemberSaved(true);
@@ -254,6 +262,8 @@ export default function ClassCard({ item, registerSignal = 0 }) {
           : error.message || 'Registration could not be submitted.';
       setMemberError(message);
       showRegistrationToast('error', 'Registration failed', message);
+    } finally {
+      setMemberSubmitting(false);
     }
   }
 
@@ -314,9 +324,9 @@ export default function ClassCard({ item, registerSignal = 0 }) {
               <h3>{tr('Registration process')}</h3>
               <ol>
                 <li>{tr('Submit Registration')}</li>
-                <li>Wait for <strong>Approved</strong> email as confirmation</li>
-                <li>After receiving Approved email, <strong>donate</strong> {feeText}</li>
-                <li>Receive payment confirmation as proof of registration</li>
+                <li>Open your registrations from your account</li>
+                <li>Complete the secure PayPal payment of <strong>{feeText}</strong></li>
+                <li>Receive registration and payment confirmation by email</li>
               </ol>
             </section>
             <div className="class-detail-actions">
@@ -345,7 +355,10 @@ export default function ClassCard({ item, registerSignal = 0 }) {
                 {user && memberOptions.length === 1 && <p className="fine-print">Only self is available right now. Add spouse or children in your account profile to show them here.</p>}
                 {memberError && <p className="form-error">{memberError}</p>}
                 {memberSaved && <p className="success">Registration submitted. Admin will review and approve it before payment is completed.</p>}
-                <button className="blue-submit" type="submit" disabled={!user}>{tr('Register')}</button>
+                <button className="blue-submit submit-with-loader" type="submit" disabled={!user || memberSubmitting}>
+                  {memberSubmitting && <Loader2 className="spin-icon" size={17} aria-hidden="true" />}
+                  {memberSubmitting ? tr('Registering...') : tr('Register')}
+                </button>
               </form>
             )}
             {showGuestForm && (
@@ -362,7 +375,10 @@ export default function ClassCard({ item, registerSignal = 0 }) {
                 </div>
                 {guestError && <p className="form-error">{guestError}</p>}
                 {guestSaved && <p className="success">Guest registration submitted. Admin will review and approve it before payment is completed.</p>}
-                <button className="button primary" type="submit">{tr('Submit Registration')}</button>
+                <button className="button primary submit-with-loader" type="submit" disabled={guestSubmitting}>
+                  {guestSubmitting && <Loader2 className="spin-icon" size={17} aria-hidden="true" />}
+                  {guestSubmitting ? tr('Registering...') : tr('Submit Registration')}
+                </button>
               </form>
             )}
           </div>
