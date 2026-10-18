@@ -22,10 +22,10 @@ const jwtSecret = configuredJwtSecret || crypto.randomBytes(48).toString('hex');
 if (!configuredJwtSecret) {
   console.warn('JWT_SECRET is not set. A temporary development secret was generated; existing logins will expire when the server restarts.');
 }
-const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '';
-const paypalClientId = process.env.PAYPAL_CLIENT_ID || '';
-const paypalClientSecret = process.env.PAYPAL_CLIENT_SECRET || '';
-const azureStorageConnectionString = process.env.AZURE_STORAGE_CONNECTION_STRING || process.env.StorageAccount || '';
+const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || process.env.Google__ClientId || '';
+const paypalClientId = process.env.PAYPAL_CLIENT_ID || process.env.PayPal__ClientId || '';
+const paypalClientSecret = process.env.PAYPAL_CLIENT_SECRET || process.env.PayPal__ClientSecret || '';
+const azureStorageConnectionString = process.env.AZURE_STORAGE_CONNECTION_STRING || process.env.StorageAccount || process.env.ConnectionStrings__StorageAccount || '';
 const smtpHost = process.env.EMAIL_SMTP_HOST || process.env.SMTP_HOST || '';
 const smtpPort = Number(process.env.EMAIL_SMTP_PORT || process.env.SMTP_PORT || 587);
 const smtpUser = process.env.EMAIL_SMTP_USER || process.env.SMTP_USER || '';
@@ -34,16 +34,27 @@ const emailFromAddress = process.env.EMAIL_FROM_ADDRESS || smtpUser || 'no-reply
 const emailFromHeader = /<.+@.+>/.test(emailFromAddress) ? emailFromAddress : `"Kannada Bharati" <${emailFromAddress}>`;
 const emailLogoPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets/kannada-bharati-logo.png');
 const emailBackgroundPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets/kannada-bharati-email-background.png');
-const recaptchaSecret = process.env.GOOGLE_RECAPTCHA_SECRET || '';
+const recaptchaSecret = process.env.GOOGLE_RECAPTCHA_SECRET || process.env.GoogleReCaptcha__ClientSecret || '';
 const defaultVolunteerGoogleFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSc1etxiGQgKR7XKhpSBd5UuLR-9-_0KDmxg7Zxd98RXK1w2Kg/viewform?embedded=true';
+const defaultRegistrationNotificationSetting = {
+  enabled: true,
+  recipients: '',
+  notifyNewRegistration: true,
+  notifyPaymentCompleted: true,
+  reminderEnabled: false,
+  reminderHours: 24
+};
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || '';
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || '';
 const twilioFromPhone = process.env.TWILIO_FROM_PHONE || '';
+const twilioConfigured = [twilioAccountSid, twilioAuthToken, twilioFromPhone]
+  .every((value) => value && !/^replace-with/i.test(String(value).trim()));
 const paypalEnvironment = (process.env.PAYPAL_ENV || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
 const paypalBaseUrl = paypalEnvironment === 'sandbox'
   ? 'https://api-m.sandbox.paypal.com'
   : 'https://api-m.paypal.com';
-const appBaseUrl = process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'http://localhost:5174';
+const appBaseUrl = String(process.env.APP_BASE_URL || process.env.CLIENT_ORIGIN || 'http://localhost:5173').replace(/\/+$/, '');
+const apiPublicUrl = String(process.env.API_PUBLIC_URL || appBaseUrl).replace(/\/+$/, '');
 const kbPaypalDonateUrl = process.env.KB_PAYPAL_DONATE_URL || 'https://www.paypal.com/donate?token=yXa3TfA1QxdZl-dL-PRMtJzuNTDf_55QcI_FQp48Twwc1UBYepRrXg79VpA_BqL2NoCnFjuGg9CrKgMJ';
 const roleNames = ['member', 'admin', 'superadmin', 'welcomedesk', 'receptionist', 'teacher', 'volunteer', 'treasurer'];
 const isProduction = process.env.NODE_ENV === 'production';
@@ -116,7 +127,10 @@ function asyncHandler(handler) {
 }
 
 function publicUser(user) {
-  const roles = normalizeRoles(user.roles || user.role);
+  const email = String(user.email || '').toLowerCase();
+  const roles = normalizeRoles(email === adminEmail
+    ? [...normalizeRoles(user.roles || user.role), 'admin']
+    : user.roles || user.role);
   return {
     id: user.id,
     email: user.email,
@@ -842,6 +856,7 @@ function normalizePatch(table, payload) {
     if (payload.totalMembers !== undefined || payload.total_members !== undefined) patch.total_members = numberValue(payload.totalMembers ?? payload.total_members, 1);
     if (payload.seats !== undefined) patch.seats = numberValue(payload.seats, 1);
     if (payload.rsvp !== undefined) patch.rsvp = payload.rsvp || null;
+    if (payload.priceMenu !== undefined || payload.price_menu !== undefined) patch.price_menu = payload.priceMenu ?? payload.price_menu;
     if (payload.priceSelection !== undefined) patch.price_menu = mergePaymentDetails(payload.priceMenu || payload.price_menu, { priceSelection: payload.priceSelection });
     if (payload.emailStatus !== undefined || payload.email_status !== undefined) patch.email_status = payload.emailStatus ?? payload.email_status;
     return patch;
@@ -1388,7 +1403,7 @@ async function createPayPalRegistrationOrder({ kind, registrationId, amount, des
   };
 }
 
-function paypalPaymentDetails({ kind, order, payment, capture, phase, amount, registration }) {
+function paypalPaymentDetails({ kind, order, payment, capture, phase, amount, registration, returnToken = '' }) {
   return {
     method: 'PayPal',
     provider: 'PayPal',
@@ -1401,6 +1416,7 @@ function paypalPaymentDetails({ kind, order, payment, capture, phase, amount, re
     invoiceId: registration?.invoice_id || registration?.id || '',
     amount: numberValue(amount ?? registration?.amount, 0),
     payerEmail: payment?.payer?.email_address || '',
+    returnToken,
     updatedAt: new Date().toISOString()
   };
 }
@@ -1574,6 +1590,7 @@ async function markRegistrationPaid({ registrationId, orderId, captureId, paymen
   });
 
   await resetDefaulterAfterPayment(registration, event, 'payment');
+  await notifyAdminsAboutRegistration(registration, 'payment-completed');
   return registration;
 }
 
@@ -1630,6 +1647,24 @@ function registrationPaymentKind(registration = {}) {
   return 'event';
 }
 
+function registrationPaymentLinkToken(registration = {}) {
+  return jwt.sign({
+    purpose: 'registration-payment-link',
+    registrationId: registration.id,
+    kind: registrationPaymentKind(registration)
+  }, jwtSecret, { expiresIn: '14d' });
+}
+
+function readRegistrationPaymentLinkToken(token) {
+  try {
+    const payload = jwt.verify(String(token || ''), jwtSecret);
+    if (payload?.purpose !== 'registration-payment-link' || !payload.registrationId || !payload.kind) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 function registrationPaymentUrls(registration = {}) {
   const kind = registrationPaymentKind(registration);
   const registrationId = registration.id || '';
@@ -1637,8 +1672,8 @@ function registrationPaymentUrls(registration = {}) {
   const encodedId = encodeURIComponent(registrationId);
   if (kind === 'class') {
     return {
-      returnUrl: `${appBaseUrl}/admin/profile?payment=complete&kind=${encodedKind}&registrationId=${encodedId}`,
-      cancelUrl: `${appBaseUrl}/admin/profile?payment=cancel&registrationId=${encodedId}`
+      returnUrl: `${appBaseUrl}/payment-return?payment=complete&kind=${encodedKind}&registrationId=${encodedId}`,
+      cancelUrl: `${appBaseUrl}/payment-return?payment=cancel&kind=${encodedKind}&registrationId=${encodedId}`
     };
   }
 
@@ -1655,8 +1690,8 @@ async function sendRegistrationEmail(registration, reason = 'submitted') {
   const paid = registration.paid === true || registration.payment_received === true;
   let payUrl = '';
   if (amountDue > 0 && !paid && registration.id && reason !== 'paid') {
-    const kind = registrationPaymentKind(registration);
-    payUrl = `${appBaseUrl}${kind === 'class' ? '/admin/profile' : '/events'}?openPayment=1&kind=${encodeURIComponent(kind)}&registrationId=${encodeURIComponent(registration.id)}`;
+    const paymentToken = registrationPaymentLinkToken(registration);
+    payUrl = `${apiPublicUrl}/api/payments/registration/start?token=${encodeURIComponent(paymentToken)}`;
   }
   const subjectByReason = {
     submitted: `Kannada Bharati ${label} received`,
@@ -1670,6 +1705,62 @@ async function sendRegistrationEmail(registration, reason = 'submitted') {
     template: reason === 'paid' ? 'payment-confirmation' : (registration.registration_type === 'class' || registration.registrationType === 'class' ? 'class-registration' : 'registration-update'),
     payload: { registration, payUrl }
   });
+}
+
+function normalizeRegistrationNotificationSetting(value = {}) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    enabled: booleanValue(source.enabled, defaultRegistrationNotificationSetting.enabled),
+    recipients: String(source.recipients || '').trim(),
+    notifyNewRegistration: booleanValue(source.notifyNewRegistration, defaultRegistrationNotificationSetting.notifyNewRegistration),
+    notifyPaymentCompleted: booleanValue(source.notifyPaymentCompleted, defaultRegistrationNotificationSetting.notifyPaymentCompleted),
+    reminderEnabled: booleanValue(source.reminderEnabled, defaultRegistrationNotificationSetting.reminderEnabled),
+    reminderHours: Math.max(1, Math.min(168, numberValue(source.reminderHours, defaultRegistrationNotificationSetting.reminderHours)))
+  };
+}
+
+function registrationNotificationRecipients(setting = {}) {
+  return String(setting.recipients || '')
+    .split(/[,\n;]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .concat(setting.recipients ? [] : [adminEmail])
+    .filter((email, index, list) => /@/.test(email) && list.indexOf(email) === index);
+}
+
+async function notifyAdminsAboutRegistration(registration, eventName = 'new-registration') {
+  try {
+    const setting = normalizeRegistrationNotificationSetting(await getSiteSetting('registration-notifications', defaultRegistrationNotificationSetting));
+    if (!setting.enabled) return null;
+    const isPayment = eventName === 'payment-completed';
+    if (isPayment && !setting.notifyPaymentCompleted) return null;
+    if (!isPayment && !setting.notifyNewRegistration) return null;
+    const recipients = registrationNotificationRecipients(setting);
+    if (!recipients.length) return null;
+    const label = registrationKindLabel(registration);
+    const subject = isPayment
+      ? `Payment completed: ${registration.program || label}`
+      : `New ${label}: ${registration.program || 'Kannada Bharati registration'}`;
+    await Promise.all(recipients.map((to) => sendEmailOrQueue({
+      to,
+      subject,
+      template: 'registration-update',
+      payload: {
+        registration,
+        payUrl: '',
+        adminNotification: {
+          event: eventName,
+          label,
+          reminderEnabled: setting.reminderEnabled,
+          reminderHours: setting.reminderHours
+        }
+      }
+    })));
+    return { sent: recipients.length };
+  } catch (error) {
+    console.warn('Admin registration notification failed:', error.message || error);
+    return null;
+  }
 }
 
 async function createRegistrationRecord(payload, { sendEmail = true } = {}) {
@@ -1697,18 +1788,39 @@ async function createRegistrationRecord(payload, { sendEmail = true } = {}) {
         paymentReceived: false,
         emailStatus: null
       });
-      if (sendEmail) await sendRegistrationEmail(revived, revived.status === 'Confirmed' ? 'confirmed' : 'submitted');
+      if (sendEmail) {
+        try {
+          const delivery = await sendRegistrationEmail(revived, revived.status === 'Confirmed' ? 'confirmed' : 'submitted');
+          await updateRecord('kb_registrations', revived.id, { emailStatus: delivery?.status || 'Queued' });
+        } catch (error) {
+          console.warn('Registration email delivery failed:', error.message || error);
+          try {
+            await updateRecord('kb_registrations', revived.id, { emailStatus: 'Failed' });
+          } catch {
+            // Registration remains valid even if optional status tracking fails.
+          }
+        }
+      }
+      await notifyAdminsAboutRegistration(revived, 'new-registration');
       return revived;
     }
   }
   const registration = await insertRecord('kb_registrations', payload);
   if (sendEmail) {
-    await sendRegistrationEmail(registration, registration.status === 'Confirmed' ? 'confirmed' : 'submitted');
-    if (registration.email_status !== 'Sent') {
+    let emailStatus = 'Queued';
+    try {
+      const delivery = await sendRegistrationEmail(registration, registration.status === 'Confirmed' ? 'confirmed' : 'submitted');
+      emailStatus = delivery?.status || emailStatus;
+    } catch (error) {
+      emailStatus = 'Failed';
+      console.warn('Registration email delivery failed:', error.message || error);
+    }
+    await notifyAdminsAboutRegistration(registration, 'new-registration');
+    if (registration.email_status !== emailStatus) {
       try {
-        return await updateRecord('kb_registrations', registration.id, { emailStatus: 'Sent' });
+        return await updateRecord('kb_registrations', registration.id, { emailStatus });
       } catch {
-        // Email was sent; do not fail registration if optional update fails.
+        // Registration remains valid if optional delivery tracking fails.
       }
     }
   }
@@ -2234,7 +2346,7 @@ async function sendEmailOrQueue(message) {
     throw error;
   }
 
-  return queued;
+  return queued ? { ...queued, status: 'Sent' } : { status: 'Sent' };
 }
 
 async function sendEmailNow(message) {
@@ -2390,9 +2502,9 @@ async function sendSmsOrStore({ to, body, payload }) {
     to_phone: to,
     body,
     payload,
-    status: twilioAccountSid && twilioAuthToken && twilioFromPhone ? 'Queued' : 'Stored'
+    status: twilioConfigured ? 'Queued' : 'Stored'
   });
-  if (!twilioAccountSid || !twilioAuthToken || !twilioFromPhone) return stored;
+  if (!twilioConfigured) return stored;
 
   const credentials = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString('base64');
   const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(twilioAccountSid)}/Messages.json`, {
@@ -2568,10 +2680,12 @@ app.post('/api/auth/login', authRateLimit, asyncHandler(async (req, res) => {
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Invalid email or password.' });
 
-  if (user && email === adminEmail && user.role !== 'admin') {
+  const adminRolesMissing = email === adminEmail
+    && !normalizeRoles(user?.roles || user?.role).some((role) => ['admin', 'superadmin'].includes(role));
+  if (user && email === adminEmail && (user.role !== 'admin' || adminRolesMissing)) {
     const { data: updatedUser, error: updateError } = await supabase
       .from('kb_users')
-      .update({ role: 'admin', updated_at: new Date().toISOString() })
+      .update({ role: 'admin', roles: ['admin'], updated_at: new Date().toISOString() })
       .eq('id', user.id)
       .select('*')
       .single();
@@ -2694,7 +2808,7 @@ app.post('/api/auth/otp/verify', authRateLimit, asyncHandler(async (req, res) =>
 app.post('/api/auth/phone-otp/start', authRateLimit, asyncHandler(async (req, res) => {
   const phone = normalizePhoneNumber(req.body.phone);
   if (!phone) return res.status(400).json({ error: 'Enter a valid phone number.' });
-  if (isProduction && (!twilioAccountSid || !twilioAuthToken || !twilioFromPhone)) {
+  if (isProduction && !twilioConfigured) {
     return res.status(503).json({ error: 'Phone OTP is temporarily unavailable because SMS delivery is not configured.' });
   }
 
@@ -3222,6 +3336,10 @@ app.put('/api/about-content', authenticate, requireAdmin, asyncHandler(async (re
   res.json(await saveAboutContent(req.body));
 }));
 
+app.get('/api/settings/registration-notifications', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  res.json(normalizeRegistrationNotificationSetting(await getSiteSetting('registration-notifications', defaultRegistrationNotificationSetting)));
+}));
+
 app.get('/api/settings/:key', asyncHandler(async (req, res) => {
   const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides', 'page-hero-settings', 'event-memories', 'newsletter-draft']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
@@ -3252,7 +3370,7 @@ app.get('/api/settings/:key', asyncHandler(async (req, res) => {
 }));
 
 app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (req, res) => {
-  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides', 'page-hero-settings', 'event-memories', 'newsletter-draft']);
+  const allowedSettings = new Set(['volunteer-google-form', 'about-content', 'paata-teachers', 'site-message', 'role-definitions', 'teacher-allotments', 'events-hero-slides', 'page-hero-settings', 'event-memories', 'newsletter-draft', 'registration-notifications']);
   if (!allowedSettings.has(req.params.key)) return res.status(404).json({ error: 'Unknown setting.' });
   if (req.params.key === 'about-content') {
     return res.json(await saveAboutContent(req.body));
@@ -3270,6 +3388,9 @@ app.put('/api/settings/:key', authenticate, requireAdmin, asyncHandler(async (re
   if (req.params.key === 'role-definitions' || req.params.key === 'teacher-allotments') {
     const value = Array.isArray(req.body) ? req.body : [];
     return res.json(await saveSiteSetting(req.params.key, value));
+  }
+  if (req.params.key === 'registration-notifications') {
+    return res.json(await saveSiteSetting(req.params.key, normalizeRegistrationNotificationSetting(req.body)));
   }
   if (req.params.key === 'events-hero-slides') {
     const value = (Array.isArray(req.body) ? req.body : [])
@@ -3489,7 +3610,7 @@ app.delete('/api/auth/external-logins/:provider', authenticate, asyncHandler(asy
 app.post('/api/auth/verify-phone/start', authRateLimit, authenticate, asyncHandler(async (req, res) => {
   const phone = normalizePhoneNumber(req.body.phone);
   if (!phone) return res.status(400).json({ error: 'Phone number is required.' });
-  if (isProduction && (!twilioAccountSid || !twilioAuthToken || !twilioFromPhone)) {
+  if (isProduction && !twilioConfigured) {
     return res.status(503).json({ error: 'Phone verification is temporarily unavailable because SMS delivery is not configured.' });
   }
   const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -3560,7 +3681,7 @@ app.delete('/api/auth/phone', authenticate, asyncHandler(async (req, res) => {
 
 app.post('/api/registrations/:id/action', authenticate, requireRole('welcomedesk', 'receptionist'), asyncHandler(async (req, res) => {
   const action = String(req.body.action || '').toLowerCase();
-  const existingRegistration = action === 'paid' ? await getRegistrationById(req.params.id) : null;
+  const existingRegistration = ['paid', 'emailstatus'].includes(action) ? await getRegistrationById(req.params.id) : null;
   const paymentDetails = req.body.paymentDetails || null;
   const patchByAction = {
     confirm: { status: 'Confirmed' },
@@ -3589,9 +3710,18 @@ app.post('/api/registrations/:id/action', authenticate, requireRole('welcomedesk
   };
   const patch = patchByAction[action];
   if (!patch) return res.status(400).json({ error: 'Unknown registration action.' });
+  if (action === 'emailstatus') {
+    if (!existingRegistration) return res.status(404).json({ error: 'Registration was not found.' });
+    await sendRegistrationEmail(existingRegistration, 'updated');
+    return res.json(await updateRecord('kb_registrations', req.params.id, patch));
+  }
   const registration = await updateRecord('kb_registrations', req.params.id, patch);
-  if (['confirm', 'emailstatus', 'paid'].includes(action)) {
-    await sendRegistrationEmail(registration, action === 'confirm' ? 'confirmed' : action === 'paid' ? 'paid' : 'updated');
+  if (['confirm', 'paid'].includes(action)) {
+    try {
+      await sendRegistrationEmail(registration, action === 'confirm' ? 'confirmed' : 'paid');
+    } catch (error) {
+      console.warn(`Registration ${action} email failed:`, error.message || error);
+    }
   }
   res.json(registration);
 }));
@@ -3745,20 +3875,21 @@ async function startRegistrationPaymentFlow(kind, body = {}, actor = null) {
     throw error;
   }
   const isGuestPayment = ['guest-event', 'guest'].includes(kind);
-  const amount = numberValue(body.amount || body.totalPrice || body.TotalPrice || body.fee, 0);
-  if (amount <= 0) {
-    const error = new Error('Payment amount must be greater than zero.');
-    error.status = 400;
-    throw error;
-  }
+  let amount = numberValue(body.amount || body.totalPrice || body.TotalPrice || body.fee, 0);
 
   let registrationId = body.registrationId || body.invoiceId || body.InvoiceId;
+  let paymentRegistration = null;
   if (!isGuestPayment && !actor) {
     const error = new Error('Login required to start this payment.');
     error.status = 401;
     throw error;
   }
   if (!registrationId && body.email) {
+    if (amount <= 0) {
+      const error = new Error('Payment amount must be greater than zero.');
+      error.status = 400;
+      throw error;
+    }
     if (!isGuestPayment && !canManagePayment(actor) && String(actor?.email || '').toLowerCase() !== String(body.email || '').toLowerCase()) {
       const error = new Error('You can only create payments for your own registration.');
       error.status = 403;
@@ -3791,8 +3922,38 @@ async function startRegistrationPaymentFlow(kind, body = {}, actor = null) {
     registrationId = registration.id;
   }
 
-  const returnUrl = body.returnUrl || `${appBaseUrl}/profile?payment=complete`;
-  const cancelUrl = body.cancelUrl || `${appBaseUrl}/profile?payment=cancel`;
+  if (registrationId) {
+    paymentRegistration = await getRegistrationById(registrationId);
+    if (!paymentRegistration) {
+      const error = new Error('Registration was not found for this payment.');
+      error.status = 404;
+      throw error;
+    }
+    if (!isGuestPayment && !canAccessRegistrationPayment(actor, paymentRegistration)) {
+      const error = new Error('You can only pay for your own registration.');
+      error.status = 403;
+      throw error;
+    }
+    if (paymentRegistration.paid || paymentRegistration.payment_received) {
+      const error = new Error('This registration is already paid.');
+      error.status = 409;
+      throw error;
+    }
+    amount = numberValue(paymentRegistration.amount, amount);
+  }
+  if (amount <= 0) {
+    const error = new Error('Payment amount must be greater than zero.');
+    error.status = 400;
+    throw error;
+  }
+
+  const paymentReturnToken = registrationId ? crypto.randomBytes(24).toString('hex') : '';
+  const returnUrl = registrationId
+    ? `${appBaseUrl}/payment-return?payment=complete&kind=${encodeURIComponent(kind)}&registrationId=${encodeURIComponent(registrationId)}&rt=${encodeURIComponent(paymentReturnToken)}`
+    : body.returnUrl || `${appBaseUrl}/profile?payment=complete`;
+  const cancelUrl = registrationId
+    ? `${appBaseUrl}/payment-return?payment=cancel&kind=${encodeURIComponent(kind)}&registrationId=${encodeURIComponent(registrationId)}&rt=${encodeURIComponent(paymentReturnToken)}`
+    : body.cancelUrl || `${appBaseUrl}/profile?payment=cancel`;
   const created = await createPayPalRegistrationOrder({
     kind,
     registrationId,
@@ -3803,18 +3964,14 @@ async function startRegistrationPaymentFlow(kind, body = {}, actor = null) {
   });
 
   if (registrationId) {
-    const existing = await getRegistrationById(registrationId);
+    const existing = paymentRegistration;
     if (existing) {
-      if (!isGuestPayment && !canAccessRegistrationPayment(actor, existing)) {
-        const error = new Error('You can only pay for your own registration.');
-        error.status = 403;
-        throw error;
-      }
       const fallbackDetails = paypalPaymentDetails({
         kind,
         order: created.order,
         phase: 'Created',
         amount,
+        returnToken: paymentReturnToken,
         registration: existing
       });
       await updateRegistrationPaymentState(registrationId, {
@@ -3888,6 +4045,121 @@ async function completeRegistrationPaymentFlow(kind, body = {}, actor = null) {
     status: body.status
   });
   return { paymentStatus: payment.status || 'COMPLETED', orderId: payment.id || orderId, captureId: capture?.id || body.captureId || null, registration };
+}
+
+function registrationPaymentReturnToken(registration = {}) {
+  return registration?.price_menu?.paymentDetails?.returnToken
+    || registration?.priceMenu?.paymentDetails?.returnToken
+    || '';
+}
+
+function registrationMatchesPaymentKind(registration, kind) {
+  return registrationPaymentKind(registration) === kind
+    || (kind === 'guest' && registrationPaymentKind(registration) === 'guest-event');
+}
+
+async function completeRegistrationPaymentReturn(kind, body = {}) {
+  if (!['class', 'event', 'guest-event', 'guest'].includes(kind)) {
+    const error = new Error('Unknown payment type.');
+    error.status = 404;
+    throw error;
+  }
+  const orderId = body.orderId || body.token || body.PaypalOrder?.id || body.paypalOrder?.id;
+  const registrationId = body.registrationId || body.invoiceId || body.InvoiceId;
+  const returnToken = String(body.returnToken || body.rt || '').trim();
+  if (!orderId || !registrationId || !returnToken) {
+    const error = new Error('Payment return details are incomplete.');
+    error.status = 400;
+    throw error;
+  }
+  const existing = await getRegistrationById(registrationId);
+  if (!existing || !registrationMatchesPaymentKind(existing, kind)) {
+    const error = new Error('Registration was not found for this payment.');
+    error.status = 404;
+    throw error;
+  }
+  if (registrationPaymentReturnToken(existing) !== returnToken) {
+    const error = new Error('Payment return token does not match this registration.');
+    error.status = 403;
+    throw error;
+  }
+  if (existing.paypal_order_id && String(existing.paypal_order_id) !== String(orderId)) {
+    const error = new Error('PayPal order does not match this registration.');
+    error.status = 403;
+    throw error;
+  }
+  if (existing.paid || existing.payment_received) {
+    return {
+      paymentStatus: existing.payment_status || 'Paid',
+      orderId: existing.paypal_order_id || orderId,
+      captureId: existing.paypal_capture_id || null,
+      registration: existing
+    };
+  }
+  const token = await paypalAccessToken();
+  const payment = await fetchJson(`${paypalBaseUrl}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  const customId = payment.purchase_units?.[0]?.custom_id;
+  if (String(customId || '') !== String(registrationId)) {
+    const error = new Error('PayPal order does not match this registration.');
+    error.status = 403;
+    throw error;
+  }
+  const capture = payment.purchase_units?.[0]?.payments?.captures?.[0];
+  const registration = await markRegistrationPaid({
+    registrationId,
+    orderId: payment.id || orderId,
+    captureId: capture?.id || null,
+    paymentPayload: payment,
+    paypalOrder: existing.paypal_order || null,
+    kind
+  });
+  return { paymentStatus: payment.status || 'COMPLETED', orderId: payment.id || orderId, captureId: capture?.id || null, registration };
+}
+
+async function cancelRegistrationPaymentReturn(kind, body = {}) {
+  if (!['class', 'event', 'guest-event', 'guest'].includes(kind)) {
+    const error = new Error('Unknown payment type.');
+    error.status = 404;
+    throw error;
+  }
+  const registrationId = body.registrationId || body.invoiceId || body.InvoiceId;
+  const returnToken = String(body.returnToken || body.rt || '').trim();
+  if (!registrationId || !returnToken) {
+    const error = new Error('Payment cancellation details are incomplete.');
+    error.status = 400;
+    throw error;
+  }
+  const existing = await getRegistrationById(registrationId);
+  if (!existing || !registrationMatchesPaymentKind(existing, kind)) {
+    const error = new Error('Registration was not found for this payment.');
+    error.status = 404;
+    throw error;
+  }
+  if (registrationPaymentReturnToken(existing) !== returnToken) {
+    const error = new Error('Payment return token does not match this registration.');
+    error.status = 403;
+    throw error;
+  }
+  const fallbackDetails = paypalPaymentDetails({
+    kind,
+    order: existing.paypal_order,
+    phase: 'Cancelled',
+    registration: existing
+  });
+  const registration = await updateRegistrationPaymentState(registrationId, {
+    status: 'Payment Cancelled',
+    paymentStatus: 'Cancelled',
+    paymentReceived: false,
+    paymentCancelledAt: new Date().toISOString(),
+    priceMenu: mergePaymentDetails(existing.price_menu, fallbackDetails)
+  }, fallbackDetails);
+  return { ok: true, registration };
 }
 
 async function cancelRegistrationPaymentFlow(kind, body = {}, actor = null) {
@@ -4006,6 +4278,42 @@ app.post('/api/payments/:kind/complete', requirePaymentKindAccess, asyncHandler(
 
 app.post('/api/payments/:kind/cancel', requirePaymentKindAccess, asyncHandler(async (req, res) => {
   res.json(await cancelRegistrationPaymentFlow(String(req.params.kind || '').toLowerCase(), req.body, req.user));
+}));
+
+app.get('/api/payments/registration/start', asyncHandler(async (req, res) => {
+  const payload = readRegistrationPaymentLinkToken(req.query.token);
+  if (!payload) return res.redirect(303, `${appBaseUrl}/payment-return?payment=error&message=${encodeURIComponent('This payment link is invalid or has expired.')}`);
+  const registration = await getRegistrationById(payload.registrationId);
+  if (!registration || !registrationMatchesPaymentKind(registration, payload.kind)) {
+    return res.redirect(303, `${appBaseUrl}/payment-return?payment=error&message=${encodeURIComponent('The registration for this payment link was not found.')}`);
+  }
+  if (registration.paid || registration.payment_received) {
+    return res.redirect(303, `${appBaseUrl}/payment-return?payment=paid&kind=${encodeURIComponent(payload.kind)}&registrationId=${encodeURIComponent(registration.id)}`);
+  }
+  const amount = numberValue(registration.amount, 0);
+  if (amount <= 0) {
+    return res.redirect(303, `${appBaseUrl}/payment-return?payment=error&message=${encodeURIComponent('This registration does not have an amount due.')}`);
+  }
+  const actor = ['guest-event', 'guest'].includes(payload.kind)
+    ? null
+    : { email: registration.email, role: 'member', roles: ['member'] };
+  const payment = await startRegistrationPaymentFlow(payload.kind, {
+    registrationId: registration.id,
+    amount,
+    description: `${registration.program || 'Kannada Bharati'} registration`
+  }, actor);
+  if (!payment.approvalUrl) {
+    return res.redirect(303, `${appBaseUrl}/payment-return?payment=error&message=${encodeURIComponent('PayPal did not return a checkout link. Please try again.')}`);
+  }
+  return res.redirect(303, payment.approvalUrl);
+}));
+
+app.post('/api/payment-return/:kind/complete', asyncHandler(async (req, res) => {
+  res.json(await completeRegistrationPaymentReturn(String(req.params.kind || '').toLowerCase(), req.body));
+}));
+
+app.post('/api/payment-return/:kind/cancel', asyncHandler(async (req, res) => {
+  res.json(await cancelRegistrationPaymentReturn(String(req.params.kind || '').toLowerCase(), req.body));
 }));
 
 app.get('/api/eventmgmt/seats', authenticate, requireRole('welcomedesk', 'receptionist'), asyncHandler(async (req, res) => {

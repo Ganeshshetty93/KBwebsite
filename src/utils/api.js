@@ -182,7 +182,9 @@ export function normalizeClass(row) {
     fee: row.fee,
     location: row.location,
     focus: row.focus,
-    photo: row.photo
+    photo: row.photo,
+    isOpenForRegistration: row.is_open_for_registration ?? row.isOpenForRegistration,
+    enabled: row.enabled ?? true
   };
 }
 
@@ -583,6 +585,20 @@ export async function apiCompleteFlowPayment(kind, payload) {
 
 export async function apiCancelFlowPayment(kind, payload) {
   return request(`/payments/${encodeURIComponent(kind)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiCompletePaymentReturn(kind, payload) {
+  return request(`/payment-return/${encodeURIComponent(kind)}/complete`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function apiCancelPaymentReturn(kind, payload) {
+  return request(`/payment-return/${encodeURIComponent(kind)}/cancel`, {
     method: 'POST',
     body: JSON.stringify(payload)
   });

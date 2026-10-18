@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Camera, CheckCircle2, ReceiptText, Plus, Trash2, X, UserRound, Lock, ListChecks, MapPin, UsersRound } from 'lucide-react';
+import { Camera, CheckCircle2, Loader2, ReceiptText, Plus, Trash2, X, UserRound, Lock, ListChecks, MapPin, UsersRound } from 'lucide-react';
 import { getCurrentUser, readJson, setCurrentUser, writeJson } from '../utils/storage.js';
 import {
   apiAddProfileChild,
@@ -98,6 +98,7 @@ export default function Profile() {
   const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [paymentMessage, setPaymentMessage] = useState('');
   const [paymentError, setPaymentError] = useState('');
+  const [payingRegistrationId, setPayingRegistrationId] = useState('');
   const [activeProfileTab, setActiveProfileTab] = useState('profile');
   const googleTokenClientRef = useRef(null);
 
@@ -270,6 +271,7 @@ export default function Profile() {
   }
 
   async function startRegistrationPayment(row) {
+    if (payingRegistrationId) return;
     setPaymentError('');
     setPaymentMessage('');
     const amount = Number(row.amount || String(row.fee || '').replace(/[^\d.]/g, '') || 0);
@@ -278,6 +280,7 @@ export default function Profile() {
       return;
     }
     const kind = row.registrationType === 'class' ? 'class' : row.registrationType === 'guest' ? 'guest-event' : 'event';
+    setPayingRegistrationId(String(row.id || 'payment'));
     try {
       const returnUrl = `${window.location.origin}/admin/profile?payment=complete&kind=${encodeURIComponent(kind)}&registrationId=${encodeURIComponent(row.id || '')}`;
       const cancelUrl = `${window.location.origin}/admin/profile?payment=cancel&registrationId=${encodeURIComponent(row.id || '')}`;
@@ -296,6 +299,8 @@ export default function Profile() {
       else setPaymentError('PayPal approval link was not returned.');
     } catch (error) {
       setPaymentError(error.message || 'Payment could not be started.');
+    } finally {
+      setPayingRegistrationId('');
     }
   }
 
@@ -609,7 +614,7 @@ export default function Profile() {
                   {children.length ? children.map((child) => (
                     <tr key={child.id}>
                       <td>{child.firstName}</td><td>{child.lastName}</td><td>{child.gender}</td><td>{child.birthDate}</td>
-                      <td><button className="table-icon-button" type="button" onClick={() => removeChild(child.id)}><Trash2 size={15} /> Remove</button></td>
+                      <td><button className="table-icon-button danger" type="button" onClick={() => removeChild(child.id)}><Trash2 size={15} /> Remove</button></td>
                     </tr>
                   )) : <tr><td colSpan="5">No children added yet.</td></tr>}
                 </tbody>
@@ -733,7 +738,12 @@ export default function Profile() {
                         <td>
                           <div className="admin-row-actions">
                             <button className="mini-action-link secondary" type="button" onClick={() => setSelectedRegistration(row)}>{tr('Details')}</button>
-                            {paid ? <span className="confirmed-badge">{tr('Confirmed')}</span> : <button className="mini-action-link success" type="button" onClick={() => startRegistrationPayment(row)}>{tr('Pay now')}</button>}
+                            {paid ? <span className="confirmed-badge">{tr('Confirmed')}</span> : (
+                              <button className="mini-action-link success submit-with-loader" type="button" disabled={Boolean(payingRegistrationId)} onClick={() => startRegistrationPayment(row)}>
+                                {payingRegistrationId === String(row.id || 'payment') && <Loader2 className="spin-icon" size={14} aria-hidden="true" />}
+                                {payingRegistrationId === String(row.id || 'payment') ? tr('Opening payment...') : tr('Pay now')}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -769,7 +779,10 @@ export default function Profile() {
               <span><strong>Price option</strong>{selectedRegistration.priceSelection || '-'}</span>
             </div>
             {!(selectedRegistration.paid || selectedRegistration.paymentReceived) && (
-              <button className="button primary" type="button" onClick={() => startRegistrationPayment(selectedRegistration)}>{tr('Pay now')}</button>
+              <button className="button primary submit-with-loader" type="button" disabled={Boolean(payingRegistrationId)} onClick={() => startRegistrationPayment(selectedRegistration)}>
+                {payingRegistrationId === String(selectedRegistration.id || 'payment') && <Loader2 className="spin-icon" size={17} aria-hidden="true" />}
+                {payingRegistrationId === String(selectedRegistration.id || 'payment') ? tr('Opening payment...') : tr('Pay now')}
+              </button>
             )}
           </div>
         </div>
