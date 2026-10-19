@@ -35944,6 +35944,50 @@ button {
     grid-row: 1 / span 4;
   }
 }
+
+/* Tablet keeps the desktop sidebar while using the compact action header. */
+@media (min-width: 901px) and (max-width: 1080px) {
+  html body .site-shell.is-admin-route .admin-site-header {
+    width: calc(100% - 228px) !important;
+    max-width: calc(100% - 228px) !important;
+    margin-left: 228px !important;
+  }
+
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    width: calc(100% - 66px) !important;
+    max-width: calc(100% - 66px) !important;
+    margin-left: 66px !important;
+  }
+}
+
+@media (max-width: 1080px) {
+  html body .site-shell.is-admin-route .admin-view-site::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    z-index: 5200;
+    top: calc(100% + 8px);
+    right: 0;
+    width: max-content;
+    max-width: 150px;
+    padding: 6px 8px;
+    border-radius: 5px;
+    color: #ffffff;
+    background: #123f39;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-3px);
+    transition: opacity 140ms ease, transform 140ms ease;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site:hover::after,
+  html body .site-shell.is-admin-route .admin-view-site:focus-visible::after {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 /* Keep the authenticated toolbar on one row at tablet and phone widths. */
 @media (max-width: 900px) {
   .site-shell.is-admin-route .admin-site-header,
@@ -36429,7 +36473,7 @@ button {
 }
 
 /* Anchor the open account menu to the profile button at every viewport size. */
-.site-header .nav-profile-dropdown.is-positioned {
+.nav-profile-dropdown.profile-portal.is-positioned {
   position: fixed !important;
   top: var(--profile-menu-top) !important;
   right: auto !important;
@@ -36448,12 +36492,12 @@ button {
   align-items: center;
 }
 
-.site-header .nav-profile-dropdown {
-  z-index: 1400 !important;
+.nav-profile-dropdown.profile-portal {
+  z-index: 5000 !important;
 }
 
-.site-header .nav-profile-dropdown > a,
-.site-header .nav-profile-dropdown > button {
+.nav-profile-dropdown.profile-portal > a,
+.nav-profile-dropdown.profile-portal > button {
   position: relative !important;
   z-index: 1;
   display: flex !important;
@@ -36477,17 +36521,353 @@ button {
   white-space: nowrap !important;
 }
 
-.site-header .nav-profile-dropdown > a::before,
-.site-header .nav-profile-dropdown > a::after {
+.nav-profile-dropdown.profile-portal > a::before,
+.nav-profile-dropdown.profile-portal > a::after {
   display: none !important;
 }
 
-.site-header .nav-profile-dropdown > a:hover,
-.site-header .nav-profile-dropdown > button:hover,
-.site-header .nav-profile-dropdown > a:focus-visible,
-.site-header .nav-profile-dropdown > button:focus-visible {
+.nav-profile-dropdown.profile-portal > a:hover,
+.nav-profile-dropdown.profile-portal > button:hover,
+.nav-profile-dropdown.profile-portal > a:focus-visible,
+.nav-profile-dropdown.profile-portal > button:focus-visible {
   color: #00614e !important;
   background: #eef6f3 !important;
+}
+
+/* Keep authenticated admin actions above the dashboard and show the full menu. */
+.site-shell.is-admin-route .admin-site-header {
+  z-index: 1500 !important;
+  overflow: visible !important;
+}
+
+.site-shell.is-admin-route .admin-site-header .main-nav,
+.site-shell.is-admin-route .admin-site-header .nav-profile-menu {
+  overflow: visible !important;
+}
+
+.site-shell.is-admin-route .admin-site-header .nav-profile-menu {
+  position: relative !important;
+  z-index: 1550 !important;
+}
+
+.site-shell.is-admin-route .admin-site-header .nav-profile-dropdown {
+  z-index: 1600 !important;
+}
+
+.admin-mobile-brand {
+  display: none;
+}
+
+/* Phone and tablet admin chrome: one compact ivory toolbar on every page. */
+@media (max-width: 900px) {
+  .site-shell.is-admin-route .admin-site-header,
+  .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    display: grid !important;
+    grid-template-columns: 46px minmax(0, 1fr) auto !important;
+    grid-template-rows: 48px !important;
+    align-items: center !important;
+    width: 100% !important;
+    min-height: 64px !important;
+    height: 64px !important;
+    gap: 8px !important;
+    padding: 8px 10px !important;
+    color: #123f39 !important;
+    background: #fffdf5 !important;
+    border-bottom: 1px solid #e8e1cf !important;
+    box-shadow: 0 5px 16px rgba(37, 57, 51, 0.1) !important;
+  }
+
+  .site-shell.is-admin-route .admin-mobile-brand {
+    grid-column: 1;
+    grid-row: 1;
+    display: grid !important;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    border: 0;
+    border-radius: 6px;
+    padding: 3px;
+    background: transparent;
+  }
+
+  .site-shell.is-admin-route .admin-mobile-brand img {
+    display: block;
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+  }
+
+  .site-shell.is-admin-route .admin-toolbar-title {
+    display: none !important;
+  }
+
+  .site-shell.is-admin-route .admin-toolbar-actions {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex !important;
+    justify-content: flex-end !important;
+    width: auto !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+  }
+
+  .site-shell.is-admin-route .admin-toolbar-search {
+    display: none !important;
+  }
+
+  .site-shell.is-admin-route .admin-view-site {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 40px !important;
+    gap: 6px !important;
+    margin: 0 !important;
+    border-color: #087567 !important;
+    border-radius: 7px !important;
+    padding: 0 10px !important;
+    color: #075f54 !important;
+    background: #ffffff !important;
+    font-size: 0.78rem !important;
+    white-space: nowrap !important;
+  }
+
+  .site-shell.is-admin-route .admin-site-header > .menu-button {
+    display: none !important;
+  }
+
+  .site-shell.is-admin-route .admin-site-header .main-nav,
+  .site-shell.is-admin-route .admin-site-header .main-nav.is-open {
+    grid-column: 3;
+    grid-row: 1;
+    position: static !important;
+    inset: auto !important;
+    display: flex !important;
+    flex-flow: row nowrap !important;
+    align-items: center !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 44px !important;
+    max-height: none !important;
+    gap: 4px !important;
+    margin: 0 !important;
+    border: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .site-shell.is-admin-route .admin-site-header .admin-notification-button,
+  .site-shell.is-admin-route .admin-site-header .nav-profile-button {
+    color: #075f54 !important;
+    background: #ffffff !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .site-shell.is-admin-route .admin-site-header,
+  .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    grid-template-columns: 42px minmax(0, 1fr) auto !important;
+    gap: 5px !important;
+    padding-inline: 7px !important;
+  }
+
+  .site-shell.is-admin-route .admin-mobile-brand {
+    width: 42px;
+    height: 42px;
+  }
+
+  .site-shell.is-admin-route .admin-mobile-brand img {
+    width: 37px;
+    height: 37px;
+  }
+
+  .site-shell.is-admin-route .admin-view-site {
+    gap: 4px !important;
+    padding-inline: 7px !important;
+    font-size: 0.7rem !important;
+  }
+}
+
+/* Definitive mobile containment and alignment. Keep this after all legacy breakpoints. */
+@media (max-width: 900px) {
+  html,
+  body,
+  #root,
+  .site-shell.is-admin-route,
+  .site-shell.is-admin-route .admin-app-shell,
+  .site-shell.is-admin-route .admin-route-content {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100vw !important;
+    margin-inline: 0 !important;
+    overflow-x: clip !important;
+    box-sizing: border-box !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    inset-inline: 0 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .site-shell.is-admin-route .admin-route-content > *,
+  .site-shell.is-admin-route .admin-route-content section,
+  .site-shell.is-admin-route .admin-route-content article {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+@media (max-width: 600px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-template-rows: 48px !important;
+    justify-content: stretch !important;
+    align-items: center !important;
+    gap: 0 !important;
+    min-height: 64px !important;
+    height: 64px !important;
+    padding: 8px 4px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    justify-self: center !important;
+    margin: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-actions {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    justify-self: center !important;
+    width: 40px !important;
+    margin: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .main-nav,
+  html body .site-shell.is-admin-route .admin-site-header .main-nav.is-open {
+    display: contents !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-menu {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+    justify-self: center !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-menu {
+    grid-column: 4 !important;
+    grid-row: 1 !important;
+    justify-self: center !important;
+  }
+}
+
+@media (max-width: 320px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    grid-template-rows: 44px !important;
+    min-height: 58px !important;
+    height: 58px !important;
+    padding: 7px 2px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand,
+  html body .site-shell.is-admin-route .admin-view-site,
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-button,
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-button {
+    width: 38px !important;
+    min-width: 38px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+  }
+}
+
+/* Small screens: give each header control an equal, stable alignment zone. */
+@media (max-width: 600px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-template-rows: 48px !important;
+    justify-content: stretch !important;
+    gap: 0 !important;
+    padding-inline: 6px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    justify-self: center !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-actions {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    justify-self: center !important;
+    width: 40px !important;
+    margin: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .main-nav,
+  html body .site-shell.is-admin-route .admin-site-header .main-nav.is-open {
+    display: contents !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-menu {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+    justify-self: center !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-menu {
+    grid-column: 4 !important;
+    grid-row: 1 !important;
+    justify-self: center !important;
+  }
+}
+
+@media (max-width: 320px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    min-height: 58px !important;
+    height: 58px !important;
+    grid-template-rows: 44px !important;
+    padding: 7px 4px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand,
+  html body .site-shell.is-admin-route .admin-view-site,
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-button,
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-button {
+    width: 38px !important;
+    min-width: 38px !important;
+    height: 38px !important;
+    min-height: 38px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    flex-basis: 38px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand img {
+    width: 34px !important;
+    height: 34px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-side-menu,
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-menu {
+    top: 58px !important;
+  }
 }
 
 .site-shell:not(.is-admin-route) .site-header > .public-profile-menu .nav-profile-button {
@@ -36532,5 +36912,436 @@ button {
   .site-shell:not(.is-admin-route) .site-header > .main-nav {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+}
+
+/* Final responsive admin toolbar: prevent legacy grid rules from creating a second row. */
+@media (max-width: 900px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    display: flex !important;
+    flex-flow: row nowrap !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 64px !important;
+    height: 64px !important;
+    gap: 7px !important;
+    padding: 8px 10px !important;
+    overflow: visible !important;
+    color: #123f39 !important;
+    background: #fffdf5 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    order: 1;
+    display: grid !important;
+    flex: 0 0 44px !important;
+    place-items: center;
+    width: 44px !important;
+    height: 44px !important;
+    margin: 0 !important;
+    padding: 2px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand img {
+    width: 39px !important;
+    height: 39px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-title,
+  html body .site-shell.is-admin-route .admin-toolbar-search,
+  html body .site-shell.is-admin-route .admin-site-header > .menu-button {
+    display: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-actions {
+    order: 2;
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    width: auto !important;
+    min-width: 0 !important;
+    gap: 0 !important;
+    margin: 0 0 0 auto !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site {
+    position: relative !important;
+    display: inline-flex !important;
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    gap: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 0.75rem !important;
+    white-space: nowrap !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site span {
+    display: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    z-index: 5200;
+    top: calc(100% + 8px);
+    right: 0;
+    width: max-content;
+    max-width: 150px;
+    border-radius: 5px;
+    padding: 6px 8px;
+    color: #ffffff;
+    background: #123f39;
+    box-shadow: 0 8px 20px rgba(7, 63, 60, 0.2);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.2;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-3px);
+    transition: opacity 140ms ease, transform 140ms ease;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site:hover::after,
+  html body .site-shell.is-admin-route .admin-view-site:focus-visible::after {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .main-nav,
+  html body .site-shell.is-admin-route .admin-site-header .main-nav.is-open {
+    order: 3;
+    position: static !important;
+    inset: auto !important;
+    display: flex !important;
+    flex: 0 0 auto !important;
+    flex-flow: row nowrap !important;
+    align-items: center !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 44px !important;
+    max-height: none !important;
+    gap: 6px !important;
+    margin: 0 !important;
+    border: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-menu,
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-menu {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-button {
+    display: grid !important;
+    place-items: center !important;
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-button {
+    display: grid !important;
+    place-items: center !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    padding: 3px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-side-menu,
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-menu {
+    top: 64px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-app-shell,
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed {
+    min-height: calc(100dvh - 64px) !important;
+  }
+}
+
+@media (max-width: 390px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    gap: 4px !important;
+    padding-inline: 6px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    flex-basis: 40px !important;
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand img {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site {
+    gap: 0 !important;
+    padding: 0 !important;
+    font-size: 0.67rem !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-button,
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-button {
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+  }
+}
+
+/* Authoritative phone layout: intentionally last in the cascade. */
+@media (max-width: 900px) {
+  html,
+  body,
+  #root,
+  .site-shell.is-admin-route,
+  .site-shell.is-admin-route .admin-app-shell,
+  .site-shell.is-admin-route .admin-route-content {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100vw !important;
+    margin-inline: 0 !important;
+    overflow-x: clip !important;
+    box-sizing: border-box !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    inset-inline: 0 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+}
+
+@media (max-width: 600px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-template-rows: 48px !important;
+    align-items: center !important;
+    gap: 0 !important;
+    min-height: 64px !important;
+    height: 64px !important;
+    padding: 8px 4px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand,
+  html body .site-shell.is-admin-route .admin-toolbar-actions,
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-menu,
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-menu {
+    grid-row: 1 !important;
+    justify-self: center !important;
+    margin: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand { grid-column: 1 !important; }
+  html body .site-shell.is-admin-route .admin-toolbar-actions { grid-column: 2 !important; width: 40px !important; }
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-menu { grid-column: 3 !important; }
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-menu { grid-column: 4 !important; }
+
+  html body .site-shell.is-admin-route .admin-site-header .main-nav,
+  html body .site-shell.is-admin-route .admin-site-header .main-nav.is-open {
+    display: contents !important;
+  }
+}
+
+/* Final compact header for phones and tablets: logo left, three actions right. */
+@media (max-width: 1080px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    display: flex !important;
+    flex-flow: row nowrap !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 64px !important;
+    height: 64px !important;
+    gap: 6px !important;
+    margin: 0 !important;
+    padding: 8px 10px !important;
+    overflow: visible !important;
+    color: #123f39 !important;
+    background: #fffdf5 !important;
+    box-sizing: border-box !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    order: 1;
+    display: grid !important;
+    flex: 0 0 44px !important;
+    place-items: center !important;
+    width: 44px !important;
+    height: 44px !important;
+    margin: 0 !important;
+    padding: 2px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand img {
+    width: 39px !important;
+    height: 39px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-title,
+  html body .site-shell.is-admin-route .admin-toolbar-search,
+  html body .site-shell.is-admin-route .admin-site-header > .menu-button,
+  html body .site-shell.is-admin-route .admin-profile-role,
+  html body .site-shell.is-admin-route .admin-profile-chevron {
+    display: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-actions {
+    order: 2;
+    display: flex !important;
+    flex: 0 0 40px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 40px !important;
+    min-width: 40px !important;
+    margin: 0 0 0 auto !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site {
+    position: relative !important;
+    display: grid !important;
+    place-items: center !important;
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site span {
+    display: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .main-nav,
+  html body .site-shell.is-admin-route .admin-site-header .main-nav.is-open {
+    order: 3;
+    position: static !important;
+    inset: auto !important;
+    display: flex !important;
+    flex: 0 0 auto !important;
+    flex-flow: row nowrap !important;
+    align-items: center !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 44px !important;
+    max-height: none !important;
+    gap: 6px !important;
+    margin: 0 !important;
+    border: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-menu,
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-menu {
+    position: relative !important;
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-menu {
+    flex-basis: 44px !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    max-width: 44px !important;
+    height: 44px !important;
+    padding: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .admin-notification-button {
+    display: grid !important;
+    place-items: center !important;
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .nav-profile-button {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    place-items: center !important;
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    padding: 3px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    gap: 4px !important;
+    padding-inline: 6px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    flex-basis: 40px !important;
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand img {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .main-nav,
+  html body .site-shell.is-admin-route .admin-site-header .main-nav.is-open {
+    gap: 4px !important;
+  }
+}
+
+/* Preserve the sidebar gutter after all compact-header overrides. */
+@media (min-width: 901px) and (max-width: 1080px) {
+  html body .site-shell.is-admin-route .admin-site-header {
+    width: calc(100% - 228px) !important;
+    max-width: calc(100% - 228px) !important;
+    margin-left: 228px !important;
+  }
+
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    width: calc(100% - 66px) !important;
+    max-width: calc(100% - 66px) !important;
+    margin-left: 66px !important;
   }
 }
