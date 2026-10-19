@@ -1,8 +1,9 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import { BellRing, Camera, CheckCircle2, ChevronDown, ClipboardCheck, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Mail, Megaphone, Menu, MessagesSquare, Play, Search, UserCircle, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLanguage } from './context/LanguageContext.jsx';
-import { getCurrentUser, readJson, setCurrentUser, writeJson } from './utils/storage.js';
+import { getCurrentUser, isAdmin, readJson, setCurrentUser, userRoles, writeJson } from './utils/storage.js';
 import { apiAdminDashboard, apiReadRecords, apiReadSiteSetting, apiSubscribeNewsletter } from './utils/api.js';
 import PageLoader from './components/PageLoader.jsx';
 
@@ -280,8 +281,8 @@ export default function App() {
   const announcementKey = (item, index = 0) => String(item.id || item.createdAt || item.startOn || item.text || index);
 
   const currentEmail = String(user?.email || '').trim().toLowerCase();
-  const userRoles = [user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])].filter(Boolean).join(' ');
-  const managesCommunity = /admin|superadmin|welcome.?desk|receptionist/i.test(userRoles);
+  const userRoleText = [user?.role, ...(Array.isArray(user?.roles) ? user.roles : [])].filter(Boolean).join(' ');
+  const managesCommunity = /admin|superadmin|welcome.?desk|receptionist/i.test(userRoleText);
   const pendingPattern = /pending|submitted|awaiting|requested|new/i;
   const sortedRegistrations = [...notificationActivity.registrations].sort((left, right) => (
     new Date(right.registeredOn || right.createdAt || right.created_at || right.date || 0)
@@ -365,8 +366,21 @@ export default function App() {
   const adminPageTitle = adminPageTitles[location.pathname]
     || Object.entries(adminPageTitles).find(([path]) => path !== '/admin' && location.pathname.startsWith(`${path}/`))?.[1]
     || 'Dashboard';
-  const rawAdminRole = String(user?.role || user?.roles?.[0] || 'Member');
-  const adminRoleLabel = /super.?admin/i.test(rawAdminRole) ? 'Super Admin' : /admin/i.test(rawAdminRole) ? 'Admin' : rawAdminRole;
+  const currentRoles = userRoles(user);
+  const primaryHeaderRole = currentRoles.includes('superadmin')
+    ? 'Super Admin'
+    : isAdmin(user)
+      ? 'Admin'
+      : currentRoles.includes('welcomedesk')
+        ? 'Welcome Desk'
+        : currentRoles.includes('teacher')
+          ? 'Teacher'
+          : currentRoles.includes('treasurer')
+            ? 'Treasurer'
+            : currentRoles.includes('volunteer')
+              ? 'Volunteer'
+              : 'Member';
+  const adminRoleLabel = primaryHeaderRole;
 
   function handleAdminSearch(event) {
     event.preventDefault();
@@ -388,10 +402,10 @@ export default function App() {
         {isAdminRoute && <b className="admin-profile-role">{adminRoleLabel}</b>}
         {isAdminRoute && <ChevronDown className="admin-profile-chevron" size={15} />}
       </button>
-      {profileOpen && (
+      {profileOpen && typeof document !== 'undefined' && createPortal(
         <div
           ref={profileDropdownRef}
-          className={`nav-profile-dropdown${profileMenuPosition ? ' is-positioned' : ''}`}
+          className={`nav-profile-dropdown profile-portal${profileMenuPosition ? ' is-positioned' : ''}`}
           style={profileMenuPosition ? {
             '--profile-menu-top': `${profileMenuPosition.top}px`,
             '--profile-menu-left': `${profileMenuPosition.left}px`,
@@ -404,7 +418,8 @@ export default function App() {
           <button type="button" onClick={handleLogout}>
             <LogOut size={17} /> {t('navLogout')}
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   ) : null;
@@ -419,13 +434,20 @@ export default function App() {
     <div className={isAdminRoute ? 'site-shell is-admin-route' : 'site-shell'}>
       <PageLoader active={routeLoading} />
       <header className={isAdminRoute ? 'site-header admin-site-header' : 'site-header'}>
+        {isAdminRoute && (
+          <Link className="admin-mobile-brand" to="/" aria-label="Kannada Bharati website">
+            <img src="/assets/kannada-bharati-logo.png" alt="Kannada Bharati logo" />
+          </Link>
+        )}
         {isAdminRoute && <h1 className="admin-toolbar-title">{adminPageTitle}</h1>}
         {isAdminRoute && <div className="admin-toolbar-actions">
           <form className="admin-toolbar-search" role="search" onSubmit={handleAdminSearch}>
             <Search size={17} aria-hidden="true" />
             <input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search members, events..." aria-label="Search members and events" />
           </form>
-          <Link className="admin-view-site" to="/"><Globe2 size={17} />View website</Link>
+          <Link className="admin-view-site" to="/" aria-label="View website" data-tooltip="View website" title="View website">
+            <Globe2 size={17} /><span>View website</span>
+          </Link>
         </div>}
         {!isAdminRoute && (
           <Link className="brand" to="/" onClick={() => setOpen(false)}>
