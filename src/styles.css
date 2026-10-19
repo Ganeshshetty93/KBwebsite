@@ -35960,6 +35960,20 @@ button {
   }
 }
 
+/* The compact 64px toolbar plus 54px mobile menu bar ends at 118px. */
+@media (max-width: 900px) {
+  html body .site-shell.is-admin-route .admin-side-menu.is-mobile-open .admin-side-menu-content,
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-menu.is-mobile-open .admin-side-menu-content {
+    top: 118px !important;
+    height: calc(100dvh - 118px) !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-side-menu.is-mobile-open .admin-mobile-nav-backdrop,
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-menu.is-mobile-open .admin-mobile-nav-backdrop {
+    inset: 118px 0 0 !important;
+  }
+}
+
 @media (max-width: 1080px) {
   html body .site-shell.is-admin-route .admin-view-site::after {
     content: attr(data-tooltip);
@@ -37343,5 +37357,19 @@ button {
     width: calc(100% - 66px) !important;
     max-width: calc(100% - 66px) !important;
     margin-left: 66px !important;
+  }
+}
+
+/* Keep a small visual break below the mobile menu bar. */
+@media (max-width: 900px) {
+  html body .site-shell.is-admin-route .admin-side-menu.is-mobile-open .admin-side-menu-content,
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-menu.is-mobile-open .admin-side-menu-content {
+    top: 126px !important;
+    height: calc(100dvh - 126px) !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-side-menu.is-mobile-open .admin-mobile-nav-backdrop,
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-menu.is-mobile-open .admin-mobile-nav-backdrop {
+    inset: 126px 0 0 !important;
   }
 }
