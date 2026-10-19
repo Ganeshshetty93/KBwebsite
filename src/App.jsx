@@ -345,7 +345,7 @@ export default function App() {
             <Search size={17} aria-hidden="true" />
             <input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search members, events..." aria-label="Search members and events" />
           </form>
-          <Link className="admin-view-site" to="/" target="_blank" rel="noreferrer"><Globe2 size={17} />View website <span aria-hidden="true">↗</span></Link>
+          <Link className="admin-view-site" to="/"><Globe2 size={17} />View website</Link>
         </div>}
         {!isAdminRoute && (
           <Link className="brand" to="/" onClick={() => setOpen(false)}>
