@@ -1,6 +1,6 @@
 import { Outlet, NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import { BellRing, Camera, CheckCircle2, ChevronDown, ClipboardCheck, Gauge, Globe2, HeartHandshake, LogIn, LogOut, Mail, Megaphone, Menu, MessagesSquare, Play, Search, UserCircle, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from './context/LanguageContext.jsx';
 import { getCurrentUser, readJson, setCurrentUser, writeJson } from './utils/storage.js';
 import { apiAdminDashboard, apiReadRecords, apiReadSiteSetting, apiSubscribeNewsletter } from './utils/api.js';
@@ -67,6 +67,7 @@ function dateOnly(value) {
 export default function App() {
   const [open, setOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profileMenuPosition, setProfileMenuPosition] = useState(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [adminSearch, setAdminSearch] = useState('');
   const [user, setUser] = useState(() => getCurrentUser());
@@ -87,6 +88,44 @@ export default function App() {
   const { t, toggleLanguage } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
+  const profileButtonRef = useRef(null);
+  const profileDropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (!profileOpen) {
+      setProfileMenuPosition(null);
+      return undefined;
+    }
+
+    const updateProfileMenuPosition = () => {
+      const button = profileButtonRef.current;
+      if (!button) return;
+
+      const rect = button.getBoundingClientRect();
+      const headerRect = button.closest('.site-header')?.getBoundingClientRect();
+      const edgeGap = window.innerWidth <= 420 ? 8 : 10;
+      const menuWidth = Math.min(window.innerWidth <= 1080 ? 180 : 190, window.innerWidth - (edgeGap * 2));
+      const menuHeight = profileDropdownRef.current?.offsetHeight || 100;
+      const left = Math.min(
+        Math.max(edgeGap, rect.right - menuWidth),
+        window.innerWidth - menuWidth - edgeGap
+      );
+      const belowTop = Math.max(rect.bottom, headerRect?.bottom || rect.bottom) + 8;
+      const top = belowTop + menuHeight <= window.innerHeight - edgeGap
+        ? belowTop
+        : Math.max(edgeGap, rect.top - menuHeight - 8);
+
+      setProfileMenuPosition({ top, left, width: menuWidth });
+    };
+
+    updateProfileMenuPosition();
+    window.addEventListener('resize', updateProfileMenuPosition);
+    window.addEventListener('scroll', updateProfileMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateProfileMenuPosition);
+      window.removeEventListener('scroll', updateProfileMenuPosition, true);
+    };
+  }, [profileOpen]);
 
   useEffect(() => {
     function syncUser() {
@@ -335,6 +374,47 @@ export default function App() {
     navigate(query ? `/admin/user-search?query=${encodeURIComponent(query)}` : '/admin/user-search');
   }
 
+  const profileMenu = user ? (
+    <div className={`nav-profile-menu${isAdminRoute ? '' : ' public-profile-menu'}`}>
+      <button
+        ref={profileButtonRef}
+        className="nav-profile-button"
+        type="button"
+        aria-label="Open profile menu"
+        aria-expanded={profileOpen}
+        onClick={() => { setNotificationOpen(false); setProfileOpen((value) => !value); }}
+      >
+        {memberProfile.photo ? <img src={memberProfile.photo} alt="" /> : isAdminRoute ? <span>{adminInitials}</span> : <UserCircle size={24} />}
+        {isAdminRoute && <b className="admin-profile-role">{adminRoleLabel}</b>}
+        {isAdminRoute && <ChevronDown className="admin-profile-chevron" size={15} />}
+      </button>
+      {profileOpen && (
+        <div
+          ref={profileDropdownRef}
+          className={`nav-profile-dropdown${profileMenuPosition ? ' is-positioned' : ''}`}
+          style={profileMenuPosition ? {
+            '--profile-menu-top': `${profileMenuPosition.top}px`,
+            '--profile-menu-left': `${profileMenuPosition.left}px`,
+            '--profile-menu-width': `${profileMenuPosition.width}px`
+          } : undefined}
+        >
+          <Link to="/admin/profile" onClick={() => { setOpen(false); setProfileOpen(false); }}>
+            <UserCircle size={17} /> Profile
+          </Link>
+          <button type="button" onClick={handleLogout}>
+            <LogOut size={17} /> {t('navLogout')}
+          </button>
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const loginLink = (
+    <NavLink className="nav-login" to="/login" onClick={() => setOpen(false)}>
+      <LogIn size={17} /> {t('navLogin')}
+    </NavLink>
+  );
+
   return (
     <div className={isAdminRoute ? 'site-shell is-admin-route' : 'site-shell'}>
       <PageLoader active={routeLoading} />
@@ -418,36 +498,10 @@ export default function App() {
               )}
             </div>
           )}
-          {user ? (
-            <div className="nav-profile-menu">
-              <button
-                className="nav-profile-button"
-                type="button"
-                aria-label="Open profile menu"
-                aria-expanded={profileOpen}
-                onClick={() => { setNotificationOpen(false); setProfileOpen((value) => !value); }}
-              >
-                {memberProfile.photo ? <img src={memberProfile.photo} alt="" /> : isAdminRoute ? <span>{adminInitials}</span> : <UserCircle size={24} />}
-                {isAdminRoute && <b className="admin-profile-role">{adminRoleLabel}</b>}
-                {isAdminRoute && <ChevronDown className="admin-profile-chevron" size={15} />}
-              </button>
-              {profileOpen && (
-                <div className="nav-profile-dropdown">
-                  <Link to="/admin/profile" onClick={() => { setOpen(false); setProfileOpen(false); }}>
-                    <UserCircle size={17} /> Profile
-                  </Link>
-                  <button type="button" onClick={handleLogout}>
-                    <LogOut size={17} /> {t('navLogout')}
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <NavLink className="nav-login" to="/login" onClick={() => setOpen(false)}>
-              <LogIn size={17} /> {t('navLogin')}
-            </NavLink>
-          )}
+          {isAdminRoute && (profileMenu || loginLink)}
+          {!isAdminRoute && !user && loginLink}
         </nav>
+        {!isAdminRoute && profileMenu}
       </header>
 
       {!isAdminRoute && activeAnnouncements.length > 0 && (

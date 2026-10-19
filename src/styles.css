@@ -36330,3 +36330,207 @@ button {
     max-width: none !important;
   }
 }
+
+/* Signed-in public header: keep the profile menu below the navigation. */
+@media (min-width: 1081px) {
+  .site-shell:not(.is-admin-route) .site-header {
+    overflow: visible !important;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-menu {
+    position: relative !important;
+  }
+}
+
+@media (max-width: 1080px) {
+  .site-shell:not(.is-admin-route),
+  .site-shell:not(.is-admin-route) .site-header,
+  .site-shell:not(.is-admin-route) .site-header .main-nav {
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header {
+    overflow: visible !important;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header .main-nav {
+    max-height: calc(100dvh - 90px) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header .main-nav.is-open {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-menu {
+    position: static !important;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-dropdown {
+    position: fixed !important;
+    z-index: 1200 !important;
+    top: 90px !important;
+    right: 10px !important;
+    bottom: auto !important;
+    left: auto !important;
+    display: grid !important;
+    width: min(180px, calc(100vw - 20px)) !important;
+    min-width: 0 !important;
+    max-width: calc(100vw - 20px) !important;
+    padding: 6px !important;
+    overflow: hidden !important;
+    border: 1px solid #dce7e3 !important;
+    border-radius: 8px !important;
+    background: #ffffff !important;
+    box-shadow: 0 16px 36px rgba(7, 63, 60, 0.22) !important;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-dropdown a,
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-dropdown button {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    gap: 10px !important;
+    margin: 0 !important;
+    padding: 9px 11px !important;
+    color: #183c36 !important;
+    background: transparent !important;
+    font-size: 0.88rem !important;
+    font-weight: 750 !important;
+    line-height: 1.2 !important;
+    text-align: left !important;
+    white-space: nowrap !important;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-dropdown a:hover,
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-dropdown button:hover,
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-dropdown a:focus-visible,
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-dropdown button:focus-visible {
+    color: #00614e !important;
+    background: #eef6f3 !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .site-shell:not(.is-admin-route) .site-header .nav-profile-dropdown {
+    right: 8px !important;
+    width: min(180px, calc(100vw - 16px)) !important;
+    max-width: calc(100vw - 16px) !important;
+  }
+}
+
+/* Anchor the open account menu to the profile button at every viewport size. */
+.site-header .nav-profile-dropdown.is-positioned {
+  position: fixed !important;
+  top: var(--profile-menu-top) !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: var(--profile-menu-left) !important;
+  width: var(--profile-menu-width) !important;
+  max-width: calc(100vw - 16px) !important;
+}
+
+/* Keep the signed-in public profile control visible outside the collapsible nav. */
+.site-shell:not(.is-admin-route) .site-header > .public-profile-menu {
+  position: relative !important;
+  z-index: 1300 !important;
+  display: inline-flex !important;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.site-header .nav-profile-dropdown {
+  z-index: 1400 !important;
+}
+
+.site-header .nav-profile-dropdown > a,
+.site-header .nav-profile-dropdown > button {
+  position: relative !important;
+  z-index: 1;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 44px !important;
+  gap: 9px !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 10px 14px !important;
+  color: #183c36 !important;
+  background: #ffffff !important;
+  font: inherit !important;
+  font-weight: 850 !important;
+  line-height: 1.2 !important;
+  text-align: left !important;
+  text-decoration: none !important;
+  white-space: nowrap !important;
+}
+
+.site-header .nav-profile-dropdown > a::before,
+.site-header .nav-profile-dropdown > a::after {
+  display: none !important;
+}
+
+.site-header .nav-profile-dropdown > a:hover,
+.site-header .nav-profile-dropdown > button:hover,
+.site-header .nav-profile-dropdown > a:focus-visible,
+.site-header .nav-profile-dropdown > button:focus-visible {
+  color: #00614e !important;
+  background: #eef6f3 !important;
+}
+
+.site-shell:not(.is-admin-route) .site-header > .public-profile-menu .nav-profile-button {
+  margin: 0 !important;
+}
+
+@media (min-width: 1081px) {
+  .site-shell:not(.is-admin-route) .site-header .main-nav {
+    margin-left: auto;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header > .public-profile-menu {
+    margin-left: -14px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .site-shell:not(.is-admin-route) .site-header {
+    grid-template-columns: minmax(0, 1fr) auto auto !important;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header > .brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header > .public-profile-menu {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    justify-self: end;
+    width: auto !important;
+    min-width: 42px;
+    margin: 0 !important;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header > .menu-button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .site-shell:not(.is-admin-route) .site-header > .main-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
