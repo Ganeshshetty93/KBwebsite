@@ -11,11 +11,13 @@ export default function Register() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [saved, setSaved] = useState(false);
+  const [successToast, setSuccessToast] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [phoneVerification, setPhoneVerification] = useState({ phone: '', code: '', sent: false, devCode: '', verified: false });
   const [recaptchaToken, setRecaptchaToken] = useState('');
   const recaptchaRef = useRef(null);
+  const redirectTimerRef = useRef(null);
   const selectedProgram = params.get('program') || 'General membership';
 
   useEffect(() => {
@@ -53,6 +55,17 @@ export default function Register() {
   useEffect(() => {
     if (saved) window.scrollTo({ top: 0, behavior: 'auto' });
   }, [saved]);
+
+  useEffect(() => () => window.clearTimeout(redirectTimerRef.current), []);
+
+  function completeRegistration(user) {
+    setCurrentUser(user);
+    setSaved(true);
+    setSuccessToast({
+      name: user?.name || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Member'
+    });
+    redirectTimerRef.current = window.setTimeout(() => navigate('/admin', { replace: true }), 1800);
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -113,15 +126,13 @@ export default function Register() {
         password: payload.password,
         recaptchaToken
       });
-      setCurrentUser(savedUser);
+      completeRegistration(savedUser);
     } catch (registerError) {
       setError(registerError.message || 'Account could not be created. Please check your details and try again.');
       return;
     }
     form.reset();
-    setSaved(true);
     if (!phone) {
-      window.setTimeout(() => navigate('/admin/profile'), 1800);
       return;
     }
 
@@ -130,7 +141,7 @@ export default function Register() {
       setPhoneVerification({ phone, code: result.devCode || '', sent: true, devCode: result.devCode || '', verified: false });
       setNotice(result.devCode ? `Phone verification code generated: ${result.devCode}` : `A verification code was sent to ${phone}.`);
     } catch (phoneError) {
-      setError(phoneError.message || 'Your account was created, but phone verification could not be started. You can verify it from your profile.');
+      setNotice(phoneError.message || 'Your account is ready. You can verify your phone from your profile.');
     }
   }
 
@@ -157,6 +168,15 @@ export default function Register() {
 
   return (
     <main className="account-page register-page">
+      {successToast && (
+        <div className="account-registration-toast" role="status" aria-live="polite">
+          <CheckCircle2 size={24} aria-hidden="true" />
+          <div>
+            <strong>Registration successful</strong>
+            <span>Welcome, {successToast.name}. You are signed in and your dashboard is opening.</span>
+          </div>
+        </div>
+      )}
       <section className={`register-shell${saved ? ' is-success' : ''}`} aria-labelledby={saved ? 'registration-success-title' : 'register-title'}>
         <aside className="register-welcome">
           <img src="/assets/kannada-bharati-logo.png" alt="Kannada Bharati logo" />
@@ -196,7 +216,7 @@ export default function Register() {
                   </form>
                 </>
               ) : (
-                <p>{phoneVerification.verified ? 'Your phone number is verified. Opening your member profile now.' : 'Your account is ready and you are signed in. Opening your member profile now.'}</p>
+                <p>{phoneVerification.verified ? 'Your phone number is verified. Opening your dashboard now.' : 'Your account is ready and you are signed in. Opening your dashboard now.'}</p>
               )}
               {error && <p className="form-error">{error}</p>}
               {notice && <p className="success">{notice}</p>}

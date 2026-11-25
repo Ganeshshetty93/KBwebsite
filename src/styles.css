@@ -27119,6 +27119,46 @@ tbody tr:hover > td,
   background: #eef5f2;
 }
 
+.account-registration-toast {
+  position: fixed;
+  z-index: 6000;
+  top: 20px;
+  left: 50%;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  width: min(460px, calc(100vw - 32px));
+  border: 1px solid rgba(0, 124, 92, 0.25);
+  border-radius: 8px;
+  padding: 14px 16px;
+  color: #063c35;
+  background: #fffdf5;
+  box-shadow: 0 18px 42px rgba(7, 63, 60, 0.22);
+  transform: translateX(-50%);
+  animation: registrationToastIn 260ms ease-out both, registrationToastPulse 1800ms ease-in-out 260ms 1;
+}
+
+.account-registration-toast > svg {
+  color: #007c5c;
+}
+
+.account-registration-toast strong,
+.account-registration-toast span {
+  display: block;
+}
+
+.account-registration-toast strong {
+  font-weight: 900;
+}
+
+.account-registration-toast span {
+  margin-top: 2px;
+  color: #536661;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
 @keyframes registrationToastIn {
   from {
     opacity: 0;
@@ -27178,6 +27218,10 @@ tbody tr:hover > td,
     right: 14px;
     left: 14px;
     width: auto;
+  }
+
+  .account-registration-toast {
+    top: 12px;
   }
 }
 
