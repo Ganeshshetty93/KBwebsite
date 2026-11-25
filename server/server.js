@@ -66,6 +66,7 @@ const allowedOrigins = new Set([
   process.env.CLIENT_ORIGIN,
   process.env.APP_BASE_URL,
   'https://k-bwebsite-two.vercel.app',
+  'https://www.kbwa.org',
   'http://127.0.0.1:5173',
   'http://localhost:5173',
   ...configuredAllowedOrigins
