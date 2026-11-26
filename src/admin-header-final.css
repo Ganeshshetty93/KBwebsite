@@ -1,0 +1,292 @@
+/* Loaded after the legacy stylesheet so the admin toolbar always has one source of truth. */
+@media (min-width: 901px) {
+  .site-shell.is-admin-route .admin-site-header,
+  .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 76px !important;
+    min-height: 76px !important;
+    margin-left: 0 !important;
+    padding: 0 26px 0 18px !important;
+    color: #fffdf5 !important;
+    background: linear-gradient(102deg, rgba(0, 66, 58, .98), rgba(0, 93, 79, .93)), url('/assets/profile-palace-header.png') center / cover no-repeat !important;
+    border-bottom: 2px solid #efbf36 !important;
+  }
+
+  .site-shell.is-admin-route .admin-mobile-brand { display: grid !important; flex: 0 0 76px !important; place-items: center !important; width: 76px !important; height: 76px !important; }
+  .site-shell.is-admin-route .admin-mobile-brand img { display: block !important; width: 58px !important; height: 58px !important; object-fit: contain !important; }
+  .site-shell.is-admin-route .admin-toolbar-title { display: block !important; margin: 0 !important; color: #fffdf5 !important; font-size: clamp(1.45rem, 2vw, 2rem) !important; white-space: nowrap !important; }
+  .site-shell.is-admin-route .admin-toolbar-actions { display: flex !important; flex: 1 1 auto !important; align-items: center !important; justify-content: flex-end !important; gap: 12px !important; margin-left: auto !important; }
+  .site-shell.is-admin-route .admin-toolbar-search { display: flex !important; align-items: center !important; width: clamp(230px, 25vw, 405px) !important; height: 46px !important; margin: 0 !important; padding: 0 18px !important; color: #07584f !important; background: #fffdf5 !important; border: 1px solid rgba(255,255,255,.82) !important; border-radius: 999px !important; }
+  .site-shell.is-admin-route .admin-view-site { display: inline-flex !important; align-items: center !important; justify-content: center !important; min-height: 46px !important; padding: 0 17px !important; color: #fffdf5 !important; background: transparent !important; border: 2px solid rgba(255,253,245,.88) !important; border-radius: 999px !important; }
+  .site-shell.is-admin-route .menu-button { display: none !important; }
+  .site-shell.is-admin-route .main-nav { position: static !important; display: flex !important; align-items: center !important; width: auto !important; margin: 0 !important; padding: 0 0 0 14px !important; background: transparent !important; border-left: 1px solid rgba(255,253,245,.58) !important; box-shadow: none !important; }
+  .site-shell.is-admin-route .main-nav > a, .site-shell.is-admin-route .main-nav > .nav-tool { display: none !important; }
+  .site-shell.is-admin-route .admin-notification-button { width: 44px !important; height: 44px !important; color: #fffdf5 !important; background: transparent !important; border: 0 !important; }
+  .site-shell.is-admin-route .nav-profile-menu { margin: 0 !important; }
+  .site-shell.is-admin-route .nav-profile-button { display: grid !important; grid-template-columns: 36px minmax(0, auto) 15px !important; align-items: center !important; min-width: 0 !important; height: 46px !important; gap: 8px !important; padding: 4px 10px 4px 5px !important; color: #fffdf5 !important; background: rgba(0,61,54,.7) !important; border: 1px solid rgba(255,253,245,.58) !important; border-radius: 999px !important; box-shadow: none !important; }
+  .site-shell.is-admin-route .nav-profile-button > span, .site-shell.is-admin-route .nav-profile-button img { width: 36px !important; min-width: 36px !important; height: 36px !important; border: 2px solid #efbf36 !important; border-radius: 50% !important; }
+  .site-shell.is-admin-route .nav-profile-button > span { display: grid !important; place-items: center !important; color: #fffdf5 !important; background: #087268 !important; }
+  .site-shell.is-admin-route .admin-profile-role, .site-shell.is-admin-route .admin-profile-chevron { display: block !important; color: #fffdf5 !important; opacity: 1 !important; visibility: visible !important; }
+
+  .site-shell.is-admin-route .admin-side-menu { overflow: visible !important; }
+  .site-shell.is-admin-route .admin-kannada-motto { position: relative !important; min-height: 74px !important; }
+  .site-shell.is-admin-route .admin-side-collapse { position: absolute !important; top: 14px !important; right: 12px !important; z-index: 30 !important; display: inline-grid !important; place-items: center !important; width: 38px !important; height: 38px !important; padding: 0 !important; color: #fffdf5 !important; background: #087268 !important; border: 1px solid #efbf36 !important; border-radius: 9px !important; opacity: 1 !important; visibility: visible !important; }
+  .site-shell.is-admin-route .admin-side-collapse:hover, .site-shell.is-admin-route .admin-side-collapse:focus-visible { color: #063d37 !important; background: #efbf36 !important; }
+  .site-shell.is-admin-route .admin-sidebar-brand img { display: block !important; width: 52px !important; height: 52px !important; object-fit: contain !important; }
+}
+
+/* The sidebar starts below the fixed toolbar; its navigation can always scroll. */
+@media (min-width: 901px) {
+  html body .site-shell.is-admin-route .admin-side-menu,
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-menu {
+    top: 76px !important;
+    height: calc(100dvh - 76px) !important;
+    min-height: calc(100dvh - 76px) !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-side-menu-content,
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-menu-content {
+    top: auto !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    scrollbar-width: thin !important;
+    padding-top: 14px !important;
+    padding-bottom: 22px !important;
+  }
+}
+
+/* Match the legacy selectors' specificity; these controls must never be hidden. */
+@media (min-width: 901px) {
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    display: grid !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand img {
+    display: block !important;
+    width: 58px !important;
+    height: 58px !important;
+  }
+
+  html body .site-shell.is-admin-route .nav-profile-button {
+    display: grid !important;
+    color: #fffdf5 !important;
+    background: #07584f !important;
+    border-color: #d8b13c !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  html body .site-shell.is-admin-route .nav-profile-button .admin-profile-role,
+  html body .site-shell.is-admin-route .nav-profile-button .admin-profile-chevron {
+    display: block !important;
+    color: #fffdf5 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-side-collapse {
+    position: absolute !important;
+    top: 14px !important;
+    right: 12px !important;
+    z-index: 100 !important;
+    display: inline-grid !important;
+    place-items: center !important;
+    width: 38px !important;
+    height: 38px !important;
+    color: #fffdf5 !important;
+    background: #087268 !important;
+    border: 1px solid #efbf36 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+}
+
+/* Reference desktop arrangement: menu, logo and title on the left; utilities on the right. */
+@media (min-width: 901px) {
+  html body .site-shell.is-admin-route .admin-site-header {
+    display: grid !important;
+    grid-template-columns: 58px 76px minmax(220px, 1fr) auto auto !important;
+    gap: 0 !important;
+    padding: 0 20px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header .menu-button {
+    grid-column: 1 !important;
+    display: inline-grid !important;
+    place-items: center !important;
+    width: 48px !important;
+    height: 44px !important;
+    margin: 0 14px 0 0 !important;
+    padding: 0 !important;
+    color: #fffdf5 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-right: 1px solid rgba(255, 253, 245, 0.58) !important;
+    border-radius: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand { grid-column: 2 !important; }
+  html body .site-shell.is-admin-route .admin-toolbar-title { grid-column: 3 !important; font-size: 1.65rem !important; letter-spacing: -.02em !important; }
+  html body .site-shell.is-admin-route .admin-toolbar-actions { grid-column: 4 !important; flex: 0 1 auto !important; }
+  html body .site-shell.is-admin-route .main-nav { grid-column: 5 !important; }
+
+  html body .site-shell.is-admin-route .admin-view-site {
+    width: 48px !important;
+    min-width: 48px !important;
+    padding: 0 !important;
+    border-width: 0 !important;
+    border-radius: 0 !important;
+    border-left: 1px solid rgba(255, 253, 245, 0.58) !important;
+    border-right: 1px solid rgba(255, 253, 245, 0.58) !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site span { display: none !important; }
+
+  html body .site-shell.is-admin-route .nav-profile-button {
+    grid-template-columns: 36px max-content 15px !important;
+    min-width: 158px !important;
+    color: #fffdf5 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .nav-profile-button .admin-profile-role {
+    display: block !important;
+    max-width: 112px !important;
+    overflow: hidden !important;
+    color: #fffdf5 !important;
+    font-size: .9rem !important;
+    font-weight: 800 !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+}
+
+/* Keep the toolbar on exactly one row regardless of the DOM order of its controls. */
+@media (min-width: 901px) {
+  html body .site-shell.is-admin-route header.admin-site-header {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route header.admin-site-header > .menu-button {
+    order: 1 !important;
+    display: inline-grid !important;
+    flex: 0 0 50px !important;
+    place-items: center !important;
+    width: 50px !important;
+    height: 44px !important;
+    margin: 0 14px 0 0 !important;
+    color: #fffdf5 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-right: 1px solid rgba(255, 253, 245, .58) !important;
+    border-radius: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route header.admin-site-header > a.admin-mobile-brand {
+    order: 2 !important;
+    display: grid !important;
+    flex: 0 0 76px !important;
+    place-items: center !important;
+    width: 76px !important;
+    height: 76px !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  html body .site-shell.is-admin-route header.admin-site-header > a.admin-mobile-brand > img {
+    display: block !important;
+    width: 58px !important;
+    height: 58px !important;
+    max-width: none !important;
+    object-fit: contain !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  html body .site-shell.is-admin-route header.admin-site-header > .admin-toolbar-title {
+    order: 3 !important;
+    flex: 0 0 auto !important;
+    margin: 0 !important;
+    padding: 0 18px 0 8px !important;
+    color: #fffdf5 !important;
+  }
+
+  html body .site-shell.is-admin-route header.admin-site-header > .admin-toolbar-actions {
+    order: 4 !important;
+    flex: 1 1 auto !important;
+    margin-left: auto !important;
+  }
+
+  html body .site-shell.is-admin-route header.admin-site-header > .main-nav {
+    order: 5 !important;
+    flex: 0 0 auto !important;
+  }
+
+  html body .site-shell.is-admin-route header.admin-site-header > .main-nav .nav-profile-menu .nav-profile-button {
+    display: grid !important;
+    min-width: 158px !important;
+    color: #fffdf5 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route header.admin-site-header > .main-nav .nav-profile-menu .nav-profile-button .admin-profile-role,
+  html body .site-shell.is-admin-route header.admin-site-header > .main-nav .nav-profile-menu .nav-profile-button .admin-profile-chevron {
+    display: block !important;
+    color: #fffdf5 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+}
+
+/* Responsive guardrails: no viewport width may introduce horizontal scrolling. */
+html,
+body,
+#root,
+.site-shell.is-admin-route {
+  max-width: 100% !important;
+  overflow-x: clip !important;
+}
+
+@media (min-width: 901px) and (max-width: 1180px) {
+  html body .site-shell.is-admin-route header.admin-site-header { padding-inline: 12px !important; }
+  html body .site-shell.is-admin-route header.admin-site-header > .admin-toolbar-title { font-size: 1.35rem !important; padding-right: 10px !important; }
+  html body .site-shell.is-admin-route .admin-toolbar-search { width: clamp(190px, 24vw, 280px) !important; }
+  html body .site-shell.is-admin-route header.admin-site-header > .main-nav .nav-profile-menu .nav-profile-button { min-width: 126px !important; }
+  html body .site-shell.is-admin-route .nav-profile-button .admin-profile-role { max-width: 72px !important; }
+}
+
+@media (max-width: 900px) {
+  html body .site-shell.is-admin-route .admin-site-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1500 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-actions { min-width: 0 !important; }
+  html body .site-shell.is-admin-route .admin-toolbar-search { display: none !important; }
+  html body .site-shell.is-admin-route .admin-view-site { flex: 0 0 42px !important; width: 42px !important; min-width: 42px !important; }
+  html body .site-shell.is-admin-route .admin-view-site span { display: none !important; }
+  html body .site-shell.is-admin-route .admin-toolbar-title { min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+  html body .site-shell.is-admin-route .admin-app-shell,
+  html body .site-shell.is-admin-route .admin-main-content { min-width: 0 !important; max-width: 100% !important; }
+  html body .site-shell.is-admin-route .admin-side-menu.is-mobile-open { max-width: calc(100vw - 12px) !important; }
+}

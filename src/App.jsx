@@ -439,7 +439,7 @@ export default function App() {
             <img src="/assets/kannada-bharati-logo.png" alt="Kannada Bharati logo" />
           </Link>
         )}
-        {isAdminRoute && <h1 className="admin-toolbar-title">{adminPageTitle}</h1>}
+        {isAdminRoute && <h1 className="admin-toolbar-title">Kannada Bharathi</h1>}
         {isAdminRoute && <div className="admin-toolbar-actions">
           <form className="admin-toolbar-search" role="search" onSubmit={handleAdminSearch}>
             <Search size={17} aria-hidden="true" />
@@ -464,11 +464,14 @@ export default function App() {
         <button
           className="icon-button menu-button"
           type="button"
-          aria-label="Toggle menu"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
+          aria-label={isAdminRoute ? 'Toggle sidebar' : 'Toggle menu'}
+          aria-expanded={isAdminRoute ? undefined : open}
+          onClick={() => {
+            if (isAdminRoute) window.dispatchEvent(new Event('kb:toggle-admin-sidebar'));
+            else setOpen((value) => !value);
+          }}
         >
-          {open ? <X size={22} /> : <Menu size={22} />}
+          {isAdminRoute ? <Menu size={25} /> : (open ? <X size={22} /> : <Menu size={22} />)}
         </button>
 
         <nav className={open ? 'main-nav is-open' : 'main-nav'}>

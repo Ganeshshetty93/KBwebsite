@@ -5056,6 +5056,346 @@ h3 {
   }
 }
 
+/* Final desktop admin header layer: keep all toolbar controls legible and aligned. */
+@media (min-width: 901px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 76px !important;
+    min-height: 76px !important;
+    margin-left: 0 !important;
+    padding: 0 26px 0 18px !important;
+    color: #fffdf5 !important;
+    background: linear-gradient(102deg, rgba(0, 66, 58, 0.98), rgba(0, 93, 79, 0.93)), url('/assets/profile-palace-header.png') center / cover no-repeat !important;
+    border-bottom: 2px solid #efbf36 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    display: grid !important;
+    flex: 0 0 76px !important;
+    place-items: center !important;
+    width: 76px !important;
+    height: 76px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand img {
+    width: 58px !important;
+    height: 58px !important;
+    object-fit: contain !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-title {
+    display: block !important;
+    margin: 0 !important;
+    color: #fffdf5 !important;
+    font-size: clamp(1.45rem, 2vw, 2rem) !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-actions {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 12px !important;
+    margin-left: auto !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-search {
+    display: flex !important;
+    align-items: center !important;
+    width: clamp(230px, 25vw, 405px) !important;
+    height: 46px !important;
+    margin: 0 !important;
+    padding: 0 18px !important;
+    color: #07584f !important;
+    background: #fffdf5 !important;
+    border: 1px solid rgba(255, 253, 245, 0.82) !important;
+    border-radius: 999px !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 46px !important;
+    padding: 0 17px !important;
+    color: #fffdf5 !important;
+    background: transparent !important;
+    border: 2px solid rgba(255, 253, 245, 0.88) !important;
+    border-radius: 999px !important;
+  }
+
+  html body .site-shell.is-admin-route .menu-button { display: none !important; }
+
+  html body .site-shell.is-admin-route .main-nav {
+    position: static !important;
+    display: flex !important;
+    align-items: center !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 0 0 14px !important;
+    background: transparent !important;
+    border-left: 1px solid rgba(255, 253, 245, 0.58) !important;
+    box-shadow: none !important;
+  }
+
+  html body .site-shell.is-admin-route .main-nav > a,
+  html body .site-shell.is-admin-route .main-nav > .nav-tool { display: none !important; }
+
+  html body .site-shell.is-admin-route .admin-notification-button {
+    width: 44px !important;
+    height: 44px !important;
+    color: #fffdf5 !important;
+    background: transparent !important;
+    border: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .nav-profile-menu { margin: 0 !important; }
+
+  html body .site-shell.is-admin-route .nav-profile-button {
+    display: grid !important;
+    grid-template-columns: 36px minmax(0, auto) 15px !important;
+    align-items: center !important;
+    min-width: 0 !important;
+    height: 46px !important;
+    gap: 8px !important;
+    padding: 4px 10px 4px 5px !important;
+    color: #fffdf5 !important;
+    background: rgba(0, 61, 54, 0.3) !important;
+    border: 1px solid rgba(255, 253, 245, 0.58) !important;
+    border-radius: 999px !important;
+    box-shadow: none !important;
+  }
+
+  html body .site-shell.is-admin-route .nav-profile-button > span,
+  html body .site-shell.is-admin-route .nav-profile-button img {
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+    border: 2px solid #efbf36 !important;
+    border-radius: 50% !important;
+  }
+
+  html body .site-shell.is-admin-route .nav-profile-button > span {
+    display: grid !important;
+    place-items: center !important;
+    color: #fffdf5 !important;
+    background: #087268 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-profile-role,
+  html body .site-shell.is-admin-route .admin-profile-chevron { color: #fffdf5 !important; }
+}
+
+/* Desktop administration toolbar — a single full-width, purpose-built header. */
+@media (min-width: 901px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1500 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 16px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 76px !important;
+    height: 76px !important;
+    margin-left: 0 !important;
+    padding: 0 26px 0 18px !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+    color: #fffdf5 !important;
+    background:
+      linear-gradient(102deg, rgba(0, 66, 58, 0.98), rgba(0, 93, 79, 0.93)),
+      url('/assets/profile-palace-header.png') center / cover no-repeat !important;
+    border-bottom: 2px solid #efbf36 !important;
+    box-shadow: 0 5px 18px rgba(0, 49, 43, 0.22) !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand {
+    display: grid !important;
+    flex: 0 0 76px !important;
+    place-items: center !important;
+    width: 76px !important;
+    height: 76px !important;
+    margin: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand img {
+    display: block !important;
+    width: 58px !important;
+    height: 58px !important;
+    max-width: none !important;
+    object-fit: contain !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-title {
+    display: block !important;
+    flex: 0 1 auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #fffdf5 !important;
+    font-size: clamp(1.45rem, 2vw, 2rem) !important;
+    font-weight: 800 !important;
+    line-height: 1.1 !important;
+    letter-spacing: -0.035em !important;
+    white-space: nowrap !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-actions {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 12px !important;
+    min-width: 0 !important;
+    margin: 0 0 0 auto !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-search {
+    display: flex !important;
+    align-items: center !important;
+    width: clamp(230px, 25vw, 405px) !important;
+    min-width: 0 !important;
+    height: 46px !important;
+    margin: 0 !important;
+    padding: 0 18px !important;
+    color: #07584f !important;
+    background: rgba(255, 253, 245, 0.96) !important;
+    border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    border-radius: 999px !important;
+    box-shadow: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-toolbar-search input {
+    min-width: 0 !important;
+    color: #07584f !important;
+    background: transparent !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site {
+    display: inline-flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    min-height: 46px !important;
+    margin: 0 !important;
+    padding: 0 17px !important;
+    color: #fffdf5 !important;
+    background: transparent !important;
+    border: 2px solid rgba(255, 253, 245, 0.88) !important;
+    border-radius: 999px !important;
+    box-shadow: none !important;
+    font-weight: 750 !important;
+    white-space: nowrap !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-view-site:hover,
+  html body .site-shell.is-admin-route .admin-view-site:focus-visible {
+    color: #07584f !important;
+    background: #fffdf5 !important;
+  }
+
+  html body .site-shell.is-admin-route .menu-button {
+    display: none !important;
+  }
+
+  html body .site-shell.is-admin-route .main-nav {
+    position: static !important;
+    display: flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    gap: 10px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 0 0 14px !important;
+    background: transparent !important;
+    border-left: 1px solid rgba(255, 253, 245, 0.58) !important;
+    box-shadow: none !important;
+  }
+
+  html body .site-shell.is-admin-route .main-nav > a,
+  html body .site-shell.is-admin-route .main-nav > .nav-tool {
+    display: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-notification-button {
+    width: 44px !important;
+    height: 44px !important;
+    color: #fffdf5 !important;
+    background: transparent !important;
+    border: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-notification-button span {
+    top: 1px !important;
+    right: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .profile-menu,
+  html body .site-shell.is-admin-route .admin-profile-menu {
+    margin: 0 !important;
+  }
+
+  html body .site-shell.is-admin-route .profile-trigger,
+  html body .site-shell.is-admin-route .nav-profile-button {
+    min-height: 46px !important;
+    padding: 4px 10px 4px 5px !important;
+    color: #fffdf5 !important;
+    background: rgba(0, 61, 54, 0.3) !important;
+    border: 1px solid rgba(255, 253, 245, 0.46) !important;
+    border-radius: 999px !important;
+    box-shadow: none !important;
+    white-space: nowrap !important;
+  }
+
+  html body .site-shell.is-admin-route .profile-trigger img,
+  html body .site-shell.is-admin-route .nav-profile-button img {
+    width: 36px !important;
+    height: 36px !important;
+    border: 2px solid #efbf36 !important;
+  }
+
+  html body .site-shell.is-admin-route .nav-profile-button {
+    display: grid !important;
+    grid-template-columns: 36px minmax(0, auto) 15px !important;
+    align-items: center !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 46px !important;
+    gap: 8px !important;
+  }
+
+  html body .site-shell.is-admin-route .nav-profile-button > span {
+    display: grid !important;
+    place-items: center !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 36px !important;
+    color: #fffdf5 !important;
+    background: #087268 !important;
+    border: 2px solid #efbf36 !important;
+    border-radius: 50% !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-profile-role,
+  html body .site-shell.is-admin-route .admin-profile-chevron {
+    color: #fffdf5 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-app-shell {
+    min-height: calc(100dvh - 76px) !important;
+  }
+}
+
 /* Tail override: modal headers must visibly cover the close-button lane. */
 .popup-panel:has(.admin-create-form > h2.modal-title:first-child) .popup-close,
 .popup-panel:has(.admin-create-form > .role-modal-heading:first-child) .popup-close,
@@ -36018,6 +36358,232 @@ button {
   }
 }
 
+/* Phone-wide containment: keep the document fixed while preserving inner table scrolling. */
+@media (max-width: 900px) {
+  html,
+  body,
+  #root,
+  .site-shell {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: clip !important;
+    overscroll-behavior-x: none;
+  }
+
+  .site-shell > *,
+  .site-shell main,
+  .site-shell section,
+  .site-shell article,
+  .site-shell .page-content,
+  .site-shell .admin-route-content {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .table-scroll,
+  .data-table-scroll,
+  .admin-table-scroll {
+    max-width: 100%;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Registration detail modal: centered, safely padded, and always dismissible. */
+.popup-backdrop:has(.registration-detail-popup) {
+  align-items: center !important;
+  justify-items: center !important;
+  padding: clamp(16px, 3vh, 32px) clamp(12px, 3vw, 32px) !important;
+}
+
+.popup-backdrop .registration-detail-popup {
+  position: relative !important;
+  width: min(900px, 100%) !important;
+  max-height: calc(100dvh - 48px) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  scrollbar-color: #087268 #e7efeb;
+  scrollbar-width: thin;
+}
+
+.popup-backdrop .registration-detail-popup::-webkit-scrollbar {
+  width: 10px;
+}
+
+.popup-backdrop .registration-detail-popup::-webkit-scrollbar-track {
+  background: #e7efeb;
+}
+
+.popup-backdrop .registration-detail-popup::-webkit-scrollbar-thumb {
+  border: 2px solid #e7efeb;
+  border-radius: 999px;
+  background: #087268;
+}
+
+.popup-backdrop .registration-detail-popup .registration-detail-close {
+  position: sticky !important;
+  top: 12px !important;
+  z-index: 100 !important;
+  float: right;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  min-width: 94px !important;
+  height: 42px !important;
+  margin: 12px 12px -54px auto !important;
+  border: 1px solid rgba(255, 255, 255, 0.72) !important;
+  border-radius: 7px !important;
+  padding: 0 12px !important;
+  color: #063d37 !important;
+  background: #fffdf5 !important;
+  box-shadow: 0 8px 22px rgba(0, 27, 25, 0.28) !important;
+  font-size: 0.8rem !important;
+  font-weight: 900 !important;
+}
+
+.popup-backdrop .registration-detail-popup .registration-detail-close:hover,
+.popup-backdrop .registration-detail-popup .registration-detail-close:focus-visible {
+  color: #ffffff !important;
+  background: #087268 !important;
+  outline: 3px solid rgba(255, 207, 82, 0.5) !important;
+  outline-offset: 2px !important;
+  transform: none !important;
+}
+
+.popup-backdrop .registration-detail-popup .registration-detail-heading {
+  padding-right: 132px !important;
+}
+
+@media (max-width: 600px) {
+  .popup-backdrop:has(.registration-detail-popup) {
+    align-items: center !important;
+    padding: 12px 8px !important;
+  }
+
+  .popup-backdrop .registration-detail-popup {
+    max-height: calc(100dvh - 24px) !important;
+  }
+
+  .popup-backdrop .registration-detail-popup .registration-detail-heading {
+    padding-right: 70px !important;
+  }
+
+  .popup-backdrop .registration-detail-popup .registration-detail-close {
+    min-width: 42px !important;
+    margin: 10px 10px -52px auto !important;
+    padding: 0 !important;
+  }
+
+  .popup-backdrop .registration-detail-popup .registration-detail-close span {
+    display: none !important;
+  }
+}
+
+/* The compact logo belongs only to phone and tablet headers. */
+@media (min-width: 901px) {
+  html body .site-shell.is-admin-route .admin-site-header .admin-mobile-brand {
+    display: none !important;
+  }
+}
+
+/* Final visibility rules for the desktop sidebar control and registration dialog close action. */
+@media (min-width: 901px) {
+  html body .site-shell.is-admin-route .admin-app-shell:not(.side-collapsed) .admin-side-collapse {
+    position: absolute !important;
+    top: 12px !important;
+    right: 12px !important;
+    left: auto !important;
+    z-index: 800 !important;
+    display: grid !important;
+    place-items: center !important;
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    border: 1px solid rgba(255, 207, 82, 0.76) !important;
+    border-radius: 7px !important;
+    color: #ffe7a1 !important;
+    background: #07574f !important;
+    box-shadow: 0 5px 14px rgba(0, 26, 24, 0.28) !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-collapse {
+    position: absolute !important;
+    top: 56px !important;
+    right: auto !important;
+    left: 13px !important;
+    z-index: 800 !important;
+    display: grid !important;
+    place-items: center !important;
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    border: 1px solid rgba(255, 207, 82, 0.76) !important;
+    border-radius: 7px !important;
+    color: #ffe7a1 !important;
+    background: #07574f !important;
+    box-shadow: 0 5px 14px rgba(0, 26, 24, 0.28) !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-side-collapse:hover,
+  html body .site-shell.is-admin-route .admin-side-collapse:focus-visible {
+    color: #ffffff !important;
+    background: #087268 !important;
+    outline: 3px solid rgba(255, 207, 82, 0.34) !important;
+    outline-offset: 2px !important;
+  }
+}
+
+.registration-detail-popup .registration-detail-close {
+  position: absolute !important;
+  top: 14px !important;
+  right: 14px !important;
+  z-index: 40 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  width: auto !important;
+  min-width: 82px !important;
+  height: 40px !important;
+  border: 1px solid rgba(255, 255, 255, 0.54) !important;
+  border-radius: 7px !important;
+  padding: 0 11px !important;
+  color: #073f39 !important;
+  background: #fffdf5 !important;
+  box-shadow: 0 7px 18px rgba(0, 27, 25, 0.22) !important;
+  font-size: 0.78rem !important;
+  font-weight: 850 !important;
+}
+
+.registration-detail-popup .registration-detail-close:hover,
+.registration-detail-popup .registration-detail-close:focus-visible {
+  color: #ffffff !important;
+  background: #087268 !important;
+  transform: none !important;
+  outline: 3px solid rgba(255, 207, 82, 0.38) !important;
+  outline-offset: 2px !important;
+}
+
+@media (max-width: 480px) {
+  .registration-detail-popup .registration-detail-close {
+    min-width: 40px !important;
+    padding: 0 !important;
+  }
+
+  .registration-detail-popup .registration-detail-close span {
+    display: none !important;
+  }
+}
+
 @media (max-width: 1080px) {
   html body .site-shell.is-admin-route .admin-view-site::after {
     content: attr(data-tooltip);
@@ -37416,4 +37982,266 @@ button {
   html body .site-shell.is-admin-route .admin-app-shell.side-collapsed .admin-side-menu.is-mobile-open .admin-mobile-nav-backdrop {
     inset: 126px 0 0 !important;
   }
+}
+
+/* Final mobile overflow guard: the page itself must never pan sideways. */
+@media (max-width: 900px) {
+  html,
+  body,
+  #root,
+  .site-shell {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: clip !important;
+    overscroll-behavior-x: none;
+  }
+
+  .site-shell > *,
+  .site-shell main,
+  .site-shell section,
+  .site-shell article,
+  .site-shell .page-content,
+  .site-shell .admin-route-content {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .table-scroll,
+  .data-table-scroll,
+  .admin-table-scroll {
+    max-width: 100%;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Last registration detail modal override: keep the dismiss action above scrolling content. */
+.popup-backdrop:has(.registration-detail-popup) {
+  align-items: center !important;
+  justify-items: center !important;
+  padding: clamp(28px, 6vh, 56px) clamp(12px, 3vw, 32px) !important;
+}
+
+.popup-backdrop .popup-panel.registration-detail-popup {
+  width: min(900px, 100%) !important;
+  max-height: min(760px, calc(100dvh - 112px)) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  scrollbar-color: #087268 #e7efeb;
+  scrollbar-width: thin;
+}
+
+.popup-backdrop .popup-panel.registration-detail-popup .popup-close.registration-detail-close {
+  position: absolute !important;
+  top: 14px !important;
+  right: 14px !important;
+  left: auto !important;
+  z-index: 1000 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  min-width: 94px !important;
+  height: 42px !important;
+  margin: 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.72) !important;
+  border-radius: 7px !important;
+  padding: 0 12px !important;
+  color: #063d37 !important;
+  background: #fffdf5 !important;
+  box-shadow: 0 8px 22px rgba(0, 27, 25, 0.28) !important;
+  font-size: 0.8rem !important;
+  font-weight: 900 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.popup-backdrop .popup-panel.registration-detail-popup .popup-close.registration-detail-close:hover,
+.popup-backdrop .popup-panel.registration-detail-popup .popup-close.registration-detail-close:focus-visible {
+  color: #ffffff !important;
+  background: #087268 !important;
+  outline: 3px solid rgba(255, 207, 82, 0.5) !important;
+  outline-offset: 2px !important;
+  transform: none !important;
+}
+
+.popup-backdrop .popup-panel.registration-detail-popup .registration-detail-heading {
+  padding-right: 132px !important;
+}
+
+.popup-backdrop .popup-panel.registration-detail-popup::-webkit-scrollbar {
+  width: 10px;
+}
+
+.popup-backdrop .popup-panel.registration-detail-popup::-webkit-scrollbar-track {
+  background: #e7efeb;
+}
+
+.popup-backdrop .popup-panel.registration-detail-popup::-webkit-scrollbar-thumb {
+  border: 2px solid #e7efeb;
+  border-radius: 999px;
+  background: #087268;
+}
+
+@media (max-width: 600px) {
+  .popup-backdrop:has(.registration-detail-popup) {
+    padding: 16px 8px !important;
+  }
+
+  .popup-backdrop .popup-panel.registration-detail-popup {
+    max-height: calc(100dvh - 32px) !important;
+  }
+
+  .popup-backdrop .popup-panel.registration-detail-popup .registration-detail-heading {
+    padding-right: 70px !important;
+  }
+
+  .popup-backdrop .popup-panel.registration-detail-popup .popup-close.registration-detail-close {
+    min-width: 42px !important;
+    top: 10px !important;
+    right: 10px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .popup-backdrop .popup-panel.registration-detail-popup .registration-detail-close span {
+    display: none !important;
+  }
+}
+
+/* Shared popup standard: every dialog stays centered, scrollable, and dismissible. */
+.popup-backdrop {
+  align-items: center !important;
+  justify-items: center !important;
+  padding: clamp(28px, 6vh, 56px) clamp(12px, 3vw, 32px) !important;
+}
+
+.popup-backdrop > .popup-panel {
+  position: relative !important;
+  width: min(920px, 100%) !important;
+  max-height: min(760px, calc(100dvh - 112px)) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  scrollbar-color: #087268 #e7efeb;
+  scrollbar-width: thin;
+}
+
+.popup-backdrop > .popup-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.popup-backdrop > .popup-panel::-webkit-scrollbar-track {
+  background: #e7efeb;
+}
+
+.popup-backdrop > .popup-panel::-webkit-scrollbar-thumb {
+  border: 2px solid #e7efeb;
+  border-radius: 999px;
+  background: #087268;
+}
+
+.popup-backdrop > .popup-panel > .popup-close {
+  position: absolute !important;
+  top: 12px !important;
+  right: 12px !important;
+  left: auto !important;
+  z-index: 900 !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 42px !important;
+  min-width: 42px !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  border: 1px solid rgba(255, 255, 255, 0.72) !important;
+  border-radius: 7px !important;
+  padding: 0 !important;
+  color: #063d37 !important;
+  background: #fffdf5 !important;
+  box-shadow: 0 8px 22px rgba(0, 27, 25, 0.28) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.popup-backdrop > .popup-panel > .popup-close:hover,
+.popup-backdrop > .popup-panel > .popup-close:focus-visible {
+  color: #ffffff !important;
+  background: #087268 !important;
+  outline: 3px solid rgba(255, 207, 82, 0.5) !important;
+  outline-offset: 2px !important;
+  transform: none !important;
+}
+
+@media (max-width: 600px) {
+  .popup-backdrop {
+    padding: 16px 8px !important;
+  }
+
+  .popup-backdrop > .popup-panel {
+    max-height: calc(100dvh - 32px) !important;
+  }
+
+  .popup-backdrop > .popup-panel > .popup-close {
+    top: 10px !important;
+    right: 10px !important;
+  }
+}
+
+/* Desktop admin content must always start after its visible sidebar rail. */
+@media (min-width: 901px) {
+  html,
+  body,
+  #root,
+  .site-shell.is-admin-route {
+    overflow-x: clip !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-site-header {
+    width: calc(100% - 228px) !important;
+    max-width: calc(100% - 228px) !important;
+    margin-left: 228px !important;
+    box-sizing: border-box !important;
+  }
+
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    width: calc(100% - 66px) !important;
+    max-width: calc(100% - 66px) !important;
+    margin-left: 66px !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* Header finish: intentionally last so legacy responsive rules cannot override it. */
+@media (min-width: 901px) {
+  html body .site-shell.is-admin-route .admin-site-header,
+  html body .site-shell.is-admin-route:has(.admin-app-shell.side-collapsed) .admin-site-header {
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 76px !important;
+    height: 76px !important;
+    margin-left: 0 !important;
+    padding: 0 26px 0 18px !important;
+    color: #fffdf5 !important;
+    background: linear-gradient(102deg, rgba(0, 66, 58, 0.98), rgba(0, 93, 79, 0.93)), url('/assets/profile-palace-header.png') center / cover no-repeat !important;
+    border-bottom: 2px solid #efbf36 !important;
+  }
+
+  html body .site-shell.is-admin-route .admin-mobile-brand { display: grid !important; flex: 0 0 76px !important; place-items: center !important; width: 76px !important; height: 76px !important; }
+  html body .site-shell.is-admin-route .admin-mobile-brand img { width: 58px !important; height: 58px !important; object-fit: contain !important; }
+  html body .site-shell.is-admin-route .admin-toolbar-title { display: block !important; margin: 0 !important; color: #fffdf5 !important; font-size: clamp(1.45rem, 2vw, 2rem) !important; line-height: 1.1 !important; white-space: nowrap !important; }
+  html body .site-shell.is-admin-route .admin-toolbar-actions { display: flex !important; flex: 1 1 auto !important; align-items: center !important; justify-content: flex-end !important; gap: 12px !important; margin-left: auto !important; }
+  html body .site-shell.is-admin-route .admin-toolbar-search { display: flex !important; align-items: center !important; width: clamp(230px, 25vw, 405px) !important; height: 46px !important; margin: 0 !important; padding: 0 18px !important; color: #07584f !important; background: #fffdf5 !important; border: 1px solid rgba(255, 253, 245, 0.82) !important; border-radius: 999px !important; }
+  html body .site-shell.is-admin-route .admin-view-site { display: inline-flex !important; align-items: center !important; justify-content: center !important; min-height: 46px !important; padding: 0 17px !important; color: #fffdf5 !important; background: transparent !important; border: 2px solid rgba(255, 253, 245, 0.88) !important; border-radius: 999px !important; }
+  html body .site-shell.is-admin-route .menu-button { display: none !important; }
+  html body .site-shell.is-admin-route .main-nav { position: static !important; display: flex !important; align-items: center !important; width: auto !important; margin: 0 !important; padding: 0 0 0 14px !important; background: transparent !important; border-left: 1px solid rgba(255, 253, 245, 0.58) !important; box-shadow: none !important; }
+  html body .site-shell.is-admin-route .main-nav > a, html body .site-shell.is-admin-route .main-nav > .nav-tool { display: none !important; }
+  html body .site-shell.is-admin-route .admin-notification-button { width: 44px !important; height: 44px !important; color: #fffdf5 !important; background: transparent !important; border: 0 !important; }
+  html body .site-shell.is-admin-route .nav-profile-menu { margin: 0 !important; }
+  html body .site-shell.is-admin-route .nav-profile-button { display: grid !important; grid-template-columns: 36px minmax(0, auto) 15px !important; align-items: center !important; min-width: 0 !important; height: 46px !important; gap: 8px !important; padding: 4px 10px 4px 5px !important; color: #fffdf5 !important; background: rgba(0, 61, 54, 0.3) !important; border: 1px solid rgba(255, 253, 245, 0.58) !important; border-radius: 999px !important; box-shadow: none !important; }
+  html body .site-shell.is-admin-route .nav-profile-button > span, html body .site-shell.is-admin-route .nav-profile-button img { width: 36px !important; min-width: 36px !important; height: 36px !important; border: 2px solid #efbf36 !important; border-radius: 50% !important; }
+  html body .site-shell.is-admin-route .nav-profile-button > span { display: grid !important; place-items: center !important; color: #fffdf5 !important; background: #087268 !important; }
+  html body .site-shell.is-admin-route .admin-profile-role, html body .site-shell.is-admin-route .admin-profile-chevron { color: #fffdf5 !important; }
 }

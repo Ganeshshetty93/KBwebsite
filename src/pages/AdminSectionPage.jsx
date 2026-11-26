@@ -1463,6 +1463,15 @@ function EventDetailModal({ item, onClose }) {
 }
 
 function RegistrationDetailModal({ row, onClose }) {
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const profile = row.profile || readJson(memberProfileKey(row.email), {});
   const children = row.children || readJson(memberChildrenKey(row.email), []);
   const registrations = row.registrations || [];
@@ -1510,8 +1519,9 @@ function RegistrationDetailModal({ row, onClose }) {
   return (
     <div className="popup-backdrop" role="presentation">
       <div className="popup-panel detail-popup registration-detail-popup" role="dialog" aria-modal="true" aria-label={`${row.parentName || row.email} registration details`}>
-        <button className="popup-close" type="button" aria-label="Close popup" onClick={onClose}>
+        <button className="popup-close registration-detail-close" type="button" aria-label="Close registration details" title="Close registration details" onClick={onClose}>
           <X size={20} />
+          <span>Close</span>
         </button>
         <div className="registration-detail-heading">
           <div className="member-avatar">
