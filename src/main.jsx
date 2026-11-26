@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import App from './App.jsx';
 import './styles.css';
+import './admin-header-final.css';
 import { LanguageProvider } from './context/LanguageContext.jsx';
 import PageLoader from './components/PageLoader.jsx';
 

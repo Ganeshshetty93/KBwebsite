@@ -13,8 +13,6 @@ import {
   Mail,
   Menu,
   Megaphone,
-  PanelLeftClose,
-  PanelLeftOpen,
   Search,
   ShieldCheck,
   UserCog,
@@ -160,6 +158,12 @@ export default function AdminShell() {
   }, [sideCollapsed]);
 
   useEffect(() => {
+    const toggleSidebar = () => setSideCollapsed((value) => !value);
+    window.addEventListener('kb:toggle-admin-sidebar', toggleSidebar);
+    return () => window.removeEventListener('kb:toggle-admin-sidebar', toggleSidebar);
+  }, []);
+
+  useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
@@ -203,23 +207,7 @@ export default function AdminShell() {
           </button>
         </div>
         <div className="admin-side-menu-content" id="admin-navigation-panel">
-          <div className="admin-kannada-motto">
-            <div className="admin-sidebar-brand">
-              <img src="/assets/kannada-bharati-logo.png" alt="" aria-hidden="true" />
-              <strong>Kannada Bharathi</strong>
-              <span>ಕನ್ನಡ ಭಾರತಿ</span>
-              <i aria-hidden="true" />
-            </div>
-            <button
-              className="admin-side-collapse"
-              type="button"
-              aria-label={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
-              title={tr(sideCollapsed ? 'Expand side panel' : 'Collapse side panel')}
-              onClick={() => setSideCollapsed((value) => !value)}
-            >
-              {sideCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-            </button>
-          </div>
+          {/* Sidebar branding and its duplicate collapse control intentionally live in the top header. */}
           <NavLink className="admin-side-root" to="/admin" end data-label={tr('Dashboard')} title={sideCollapsed ? tr('Dashboard') : undefined}>
             <Gauge size={18} /> <span className="admin-nav-label">{tr('Dashboard')}</span>
           </NavLink>
